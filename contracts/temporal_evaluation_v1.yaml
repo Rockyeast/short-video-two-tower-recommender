@@ -1,0 +1,48 @@
+contract_id: kuairec-temporal-next-strong-positive-v1
+purpose: model_selection_and_future_recommendation_evaluation
+source: big_matrix.csv
+label:
+  expression: watch_ratio > 2.0
+query:
+  unit: user_next_strong_positive_timestamp_group
+  history_rule: all user events with timestamp strictly less than target timestamp
+  history_truncation: none_in_the_evaluation_contract
+  same_timestamp_rule: >-
+    Strong-positive videos sharing the same next timestamp form one multi-target
+    query. They share history ending strictly before that timestamp. No event at
+    the timestamp may predict another event at the same timestamp.
+target:
+  type: set_of_next_strong_positive_videos
+  unseen_rule: >-
+    A target video must have no interaction from this user at a timestamp
+    strictly before the target timestamp. Multiple events for the same video at
+    the target timestamp produce one target video.
+candidate_catalog:
+  upload_timestamp_precision: calendar_date_only
+  available_rule: upload_date_plus_one_local_midnight <= query_target_timestamp
+  conservative_tradeoff: >-
+    Same-day items may already be live, but their exact upload time is unknown.
+    They are excluded rather than made available early with future information.
+  exclude: all videos observed by the user before the target timestamp
+  target_must_be_eligible: true
+  ineligible_target_policy: >-
+    Remove targets logged before their declared upload date, on the upload date
+    with unverifiable exact time, with missing upload metadata, or previously
+    seen by the user. If a timestamp group has no eligible target left, omit
+    that query and report each exclusion reason separately.
+replay:
+  score_before_consume: true
+  consume_same_timestamp_as_group: true
+metrics:
+  multi_target_recall: hits_divided_by_number_of_targets
+  ndcg_relevance: binary_strong_positive
+leakage_guards:
+  split_by_global_timestamp: true
+  split_timezone_for_reporting: Asia/Shanghai
+  raw_date_field_is_not_a_split_source: true
+  model_parameters_frozen_outside_train: true
+  item_daily_features_lag_days: 1
+  validation_updates_history_but_not_parameters: true
+final_holdout:
+  locked_by_default: true
+  baseline_entrypoint_access: forbidden

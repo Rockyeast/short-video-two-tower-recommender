@@ -1,0 +1,52 @@
+contract_id: kuairec-mixed-negative-sampling-v1
+status: design_only_not_implemented_in_phase_0
+session:
+  sort: [user_id, timestamp]
+  new_session_when_gap_minutes_strictly_greater_than: 30
+  equal_timestamps_are_one_atomic_event_group: true
+candidate_hard_negatives:
+  source: quick_skip_events
+  quick_skip_expression: play_duration < min(3000, video_duration)
+  window: >-
+    After the query cutoff and within 30 minutes in the same session. The item
+    must have been uploaded by query time and must be unseen at query time.
+  terminology: same_session_future_window_observed_negative
+  not_same_impression: true
+seen_quick_skips:
+  role: history_context_and_seen_filter_only
+  eligible_as_primary_candidate_negative: false
+random_unexposed_negatives:
+  catalog: available_and_unseen_at_query_time
+  distribution: uniform_over_eligible_catalog_excluding_the_positive_target_set
+  per_source_probability: q_uniform(i)=1/eligible_catalog_size
+  separate_loss_weight: none
+popular_negatives:
+  popularity_source: interactions_strictly_before_query_time
+  exclude: current_positive_target_set
+  distribution: count(i)^0.75 normalized over available unseen items
+  per_source_probability: q_popular(i)=count(i)^0.75/sum_j(count(j)^0.75)
+candidate_hard_negative_distribution:
+  pool: deduplicated_eligible_item_ids_excluding_current_positive_target_set
+  distribution: uniform_over_the_eligible_same_session_future_quick_skip_item_pool
+  per_source_probability: q_hard(i)=1/eligible_hard_pool_size
+sampled_source_mixture:
+  selection_split: validation_only
+  preregistered_candidates:
+    - {name: uniform_only, uniform: 1.0, hard: 0.0, popular: 0.0}
+    - {name: balanced, uniform: 0.3333333333, hard: 0.3333333333, popular: 0.3333333334}
+    - {name: hard_heavy, uniform: 0.25, hard: 0.5, popular: 0.25}
+  empty_source_pool: renormalize_nonzero_source_weights_and_record_effective_weights
+  sampling: with_replacement
+probability_correction:
+  total_probability: >-
+    q(i|u,t)=pi_uniform*q_uniform(i)+pi_hard*q_hard(i)+
+    pi_popular*q_popular(i), using the effective mixture after empty-pool
+    renormalization. Overlapping source support is summed, not double counted.
+  sampled_softmax_logit_adjustment: subtract log(K*q(i|u,t))
+  required_log_fields: [source, effective_source_weights, q_source, q_total, K]
+  arbitrary_source_specific_loss_weight: forbidden
+in_batch_negatives:
+  source: other positive items in the training batch after same-user and true-positive masking
+  probability: empirical strong-positive item frequency in immutable train split
+  correction: subtract log((batch_size-1)*q_batch(i))
+  enters_sampled_source_mixture: false

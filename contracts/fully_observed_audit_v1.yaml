@@ -1,0 +1,41 @@
+contract_id: kuairec-small-matrix-fully-observed-audit-v1
+purpose: static_preference_ranking_audit_not_future_forecast
+training_source: big_matrix.csv
+ground_truth_source: small_matrix.csv
+label:
+  expression: watch_ratio > 2.0
+user_representation:
+  source: big_matrix.csv
+  allowed_splits:
+    - train
+    - validation
+  forbidden_sources:
+    - temporal_final
+    - small_matrix
+candidate_catalog:
+  source: small_matrix.csv
+  expected_size: 3327
+  ranking_scope: all_3327_videos_for_every_user
+  missing_user_item_pairs: >-
+    Retained in the ranked catalog as unjudged items. They are not positive
+    ground truth and must never be used as training negatives. Coverage and a
+    judged-only sensitivity result must be reported alongside the primary audit.
+ground_truth:
+  small_matrix_only: true
+  positive_set: observed pairs with watch_ratio > 2.0
+  missing_feedback_is_positive: false
+  enters_training: false
+  enters_user_history: false
+ranking:
+  type: complete_per_user_catalog_ranking
+  relevance: binary_strong_positive
+  primary_metrics: positive-set Recall and binary NDCG over all 3327 ranked items
+  sensitivity_metrics: repeat metrics after removing unjudged pairs from each ranking
+time_claim:
+  future_forecast: false
+  description: >-
+    This is the official pair-disjoint, nearly fully-observed preference audit.
+    It is reported separately from the temporal final holdout.
+lock:
+  locked_by_default: true
+  ordinary_baseline_entrypoint_access: forbidden

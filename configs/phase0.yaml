@@ -1,0 +1,46 @@
+dataset:
+  name: KuaiRec
+  source: https://zenodo.org/records/18164998/files/KuaiRec.zip
+  zenodo_record: "18164998"
+  archive_md5: 261550d472c48eff4990fb13c0e5bcf7
+  expected_files:
+    - big_matrix.csv
+    - small_matrix.csv
+    - item_categories.csv
+    - item_daily_features.csv
+    - user_features.csv
+    - social_network.csv
+    - kuairec_caption_category.csv
+
+label:
+  field: watch_ratio
+  operator: ">"
+  threshold: 2.0
+  quick_skip_ms: 3000
+
+split:
+  source: big_matrix.csv
+  time_field: timestamp
+  timezone: Asia/Shanghai
+  unit: global_interaction_timestamp
+  boundary_method: exact_interaction_count_quantile_keep_equal_timestamps_atomic
+  train_fraction: 0.70
+  validation_fraction: 0.15
+  temporal_final_fraction: 0.15
+  final_locked: true
+  small_matrix_audit_locked: true
+
+evaluation:
+  history_scope: all_events_strictly_before_query_timestamp
+  upload_availability: next_asia_shanghai_midnight_after_upload_date
+  simultaneous_timestamp_policy: group_targets_shared_pre_group_history
+  filter_seen_items: true
+  small_matrix_history_source: big_matrix_train_plus_validation_only
+
+negative_sampling:
+  session_gap_minutes: 30
+  local_window_minutes: 30
+  candidate_hard_negative_direction: future_from_query_time
+  seen_quick_skips_are_context_only: true
+  random_unexposed_correction: sampled_softmax_log_expected_sampling_count
+  correction_probability: full_source_mixture_probability

@@ -1,0 +1,350 @@
+{
+  "schema_version": 1,
+  "created_at_utc": "2026-07-21T08:53:10.933286+00:00",
+  "immutable": true,
+  "dataset": {
+    "name": "KuaiRec",
+    "zenodo_record": "18164998",
+    "source": "https://zenodo.org/records/18164998/files/KuaiRec.zip",
+    "archive_md5": "261550d472c48eff4990fb13c0e5bcf7",
+    "archive_sha256": "c23f211cf109c7a060a25a4afe9e8c681b1ccbbc816cca921d87ad37dd11c70c",
+    "source_files": {
+      "big_matrix.csv": {
+        "relative_path": "KuaiRec 2.0/data/big_matrix.csv",
+        "size_bytes": 1083521226,
+        "sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9"
+      },
+      "small_matrix.csv": {
+        "relative_path": "KuaiRec 2.0/data/small_matrix.csv",
+        "size_bytes": 406155844,
+        "sha256": "6b601cd38b2600d8734b4aede309ad73d1e201fdc4bd76d4bc7d2534793d7d15"
+      },
+      "item_categories.csv": {
+        "relative_path": "KuaiRec 2.0/data/item_categories.csv",
+        "size_bytes": 113130,
+        "sha256": "b8b8330387cd69659ff6b35b9b69bb35303196a5264d5d7743e92ae8e19cd15e"
+      },
+      "item_daily_features.csv": {
+        "relative_path": "KuaiRec 2.0/data/item_daily_features.csv",
+        "size_bytes": 85855213,
+        "sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b"
+      },
+      "user_features.csv": {
+        "relative_path": "KuaiRec 2.0/data/user_features.csv",
+        "size_bytes": 744174,
+        "sha256": "c03ce5c6e90c50407b45585bde983db3079492346f7fa676d860777abfd783f4"
+      },
+      "social_network.csv": {
+        "relative_path": "KuaiRec 2.0/data/social_network.csv",
+        "size_bytes": 6910,
+        "sha256": "92a65bc4190778f737619167bf46d920d935e4666b93101c963647c35a80c6a6"
+      },
+      "kuairec_caption_category.csv": {
+        "relative_path": "KuaiRec 2.0/data/kuairec_caption_category.csv",
+        "size_bytes": 1964578,
+        "sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9"
+      }
+    }
+  },
+  "config_sha256": "82e3a681a06c0190e44911168a1e7d4f43728b936d8282fb82100ad8cf85ab66",
+  "contract_sha256": {
+    "contracts/fully_observed_audit_v1.yaml": "1804b6e60940e965a947704496827391ccf68679e54c7e16a8ed1104a7081cd4",
+    "contracts/negative_sampling_v1.yaml": "35a878a08de20f2de797d976f0eb158217003fdf88748277d1552233dc7610a4",
+    "contracts/temporal_evaluation_v1.yaml": "e1a4c191528337285a055c671726001197506bbce15aea029bbd7170a8a1778b",
+    "contracts/two_tower_cold_start_v1.yaml": "3a7870714d12b523a8f31f07ac7930aaa0555358c800365d6a463f9f34193818"
+  },
+  "generation_code": {
+    "path": "scripts/audit_phase0.py",
+    "sha256": "a2557238389c7127a3295545f220d98ee156e255f8a52951921274004174b2b7"
+  },
+  "label": {
+    "expression": "watch_ratio > 2.0",
+    "field": "watch_ratio",
+    "operator": ">",
+    "threshold": 2.0
+  },
+  "split_algorithm": {
+    "source": "big_matrix.csv",
+    "time_field": "timestamp",
+    "timezone_for_reporting": "Asia/Shanghai",
+    "sort_unit": "global interaction timestamp",
+    "train_fraction": 0.7,
+    "validation_fraction": 0.15,
+    "temporal_final_fraction": 0.15,
+    "boundary_method": "floor interaction-count quantile; equal boundary timestamps remain atomic in the later split",
+    "train_end_exclusive": 1597015523.563,
+    "train_end_exclusive_asia_shanghai": "2020-08-10T07:25:23.563000+08:00",
+    "validation_end_exclusive": 1598783760.238,
+    "validation_end_exclusive_asia_shanghai": "2020-08-30T18:36:00.238000+08:00",
+    "raw_date_field_used": false,
+    "new_entity_fraction_denominator": "unique active entities in the split"
+  },
+  "splits": {
+    "train": {
+      "timestamp_start_inclusive": 1592872451.373,
+      "timestamp_end_inclusive": 1597015523.497,
+      "time_start_asia_shanghai": "2020-06-23T08:34:11.373000+08:00",
+      "time_end_asia_shanghai": "2020-08-10T07:25:23.497000+08:00",
+      "rows": 8771564,
+      "users": 7174,
+      "videos": 7896,
+      "positive_count": 658907,
+      "eligible_positive_count": 549976,
+      "interaction_before_declared_upload_date_count": 1025,
+      "interaction_same_day_upload_time_unverifiable_count": 699059,
+      "positive_before_declared_upload_date_count": 212,
+      "positive_same_day_upload_time_unverifiable_count": 65995,
+      "positive_missing_upload_count": 0,
+      "positive_previously_seen_count": 42724,
+      "unique_eligible_target_count": 513242,
+      "positive_fraction": 0.07511853074320611,
+      "temporal_query_count": 513242,
+      "multi_target_query_count": 0,
+      "multi_target_query_fraction": 0.0,
+      "targets_per_query": {
+        "count": 513242,
+        "mean": 1.0,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 1.0,
+          "p50": 1.0,
+          "p75": 1.0,
+          "p90": 1.0,
+          "p95": 1.0,
+          "p99": 1.0,
+          "p100": 1.0
+        }
+      },
+      "positives_per_active_user": {
+        "count": 7174,
+        "mean": 91.84652913298021,
+        "zero_count": 12,
+        "zero_fraction": 0.0016727069974909396,
+        "quantiles": {
+          "p00": 0.0,
+          "p25": 31.0,
+          "p50": 66.0,
+          "p75": 123.0,
+          "p90": 203.0,
+          "p95": 259.0,
+          "p99": 407.2699999999995,
+          "p100": 1794.0
+        }
+      },
+      "events_per_active_user": {
+        "count": 7174,
+        "mean": 1222.688040144968,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 53.0,
+          "p25": 563.0,
+          "p50": 1276.0,
+          "p75": 1759.0,
+          "p90": 2117.0,
+          "p95": 2377.399999999998,
+          "p99": 2920.6999999999953,
+          "p100": 12141.0
+        }
+      },
+      "new_user_count": null,
+      "new_user_fraction_of_split_users": null,
+      "new_video_count": null,
+      "new_video_fraction_of_split_videos": null
+    },
+    "validation": {
+      "timestamp_start_inclusive": 1597015523.563,
+      "timestamp_end_inclusive": 1598783760.167,
+      "time_start_asia_shanghai": "2020-08-10T07:25:23.563000+08:00",
+      "time_end_asia_shanghai": "2020-08-30T18:36:00.167000+08:00",
+      "rows": 1879621,
+      "users": 7094,
+      "videos": 5431,
+      "positive_count": 136711,
+      "eligible_positive_count": 99296,
+      "interaction_before_declared_upload_date_count": 8,
+      "interaction_same_day_upload_time_unverifiable_count": 153560,
+      "positive_before_declared_upload_date_count": 1,
+      "positive_same_day_upload_time_unverifiable_count": 16154,
+      "positive_missing_upload_count": 0,
+      "positive_previously_seen_count": 21260,
+      "unique_eligible_target_count": 99270,
+      "positive_fraction": 0.07273327974096906,
+      "temporal_query_count": 99270,
+      "multi_target_query_count": 0,
+      "multi_target_query_fraction": 0.0,
+      "targets_per_query": {
+        "count": 99270,
+        "mean": 1.0,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 1.0,
+          "p50": 1.0,
+          "p75": 1.0,
+          "p90": 1.0,
+          "p95": 1.0,
+          "p99": 1.0,
+          "p100": 1.0
+        }
+      },
+      "positives_per_active_user": {
+        "count": 7094,
+        "mean": 19.27135607555681,
+        "zero_count": 263,
+        "zero_fraction": 0.0370735833098393,
+        "quantiles": {
+          "p00": 0.0,
+          "p25": 5.0,
+          "p50": 12.0,
+          "p75": 27.0,
+          "p90": 45.0,
+          "p95": 60.0,
+          "p99": 97.0,
+          "p100": 322.0
+        }
+      },
+      "events_per_active_user": {
+        "count": 7094,
+        "mean": 264.9592613476177,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 100.0,
+          "p50": 230.0,
+          "p75": 380.0,
+          "p90": 531.0,
+          "p95": 624.0,
+          "p99": 818.0,
+          "p100": 2065.0
+        }
+      },
+      "new_user_count": 2,
+      "new_user_fraction_of_split_users": 0.000281928390188892,
+      "new_video_count": 1495,
+      "new_video_fraction_of_split_videos": 0.27527158902596205
+    },
+    "temporal_final": {
+      "timestamp_start_inclusive": 1598783760.238,
+      "timestamp_end_inclusive": 1599694332.427,
+      "time_start_asia_shanghai": "2020-08-30T18:36:00.238000+08:00",
+      "time_end_asia_shanghai": "2020-09-10T07:32:12.427000+08:00",
+      "rows": 1879621,
+      "users": 6911,
+      "videos": 5246,
+      "positive_count": 140772,
+      "eligible_positive_count": 99637,
+      "interaction_before_declared_upload_date_count": 13,
+      "interaction_same_day_upload_time_unverifiable_count": 192873,
+      "positive_before_declared_upload_date_count": 3,
+      "positive_same_day_upload_time_unverifiable_count": 23557,
+      "positive_missing_upload_count": 0,
+      "positive_previously_seen_count": 17575,
+      "unique_eligible_target_count": 83701,
+      "positive_fraction": 0.0748938216800089,
+      "temporal_query_count": 83701,
+      "multi_target_query_count": 0,
+      "multi_target_query_fraction": 0.0,
+      "targets_per_query": {
+        "count": 83701,
+        "mean": 1.0,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 1.0,
+          "p50": 1.0,
+          "p75": 1.0,
+          "p90": 1.0,
+          "p95": 1.0,
+          "p99": 1.0,
+          "p100": 1.0
+        }
+      },
+      "positives_per_active_user": {
+        "count": 6911,
+        "mean": 20.369266386919403,
+        "zero_count": 188,
+        "zero_fraction": 0.027203009694689625,
+        "quantiles": {
+          "p00": 0.0,
+          "p25": 6.0,
+          "p50": 14.0,
+          "p75": 27.0,
+          "p90": 44.0,
+          "p95": 58.0,
+          "p99": 97.0,
+          "p100": 2224.0
+        }
+      },
+      "events_per_active_user": {
+        "count": 6911,
+        "mean": 271.97525683692663,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 119.0,
+          "p50": 226.0,
+          "p75": 382.5,
+          "p90": 524.0,
+          "p95": 620.5,
+          "p99": 880.2999999999975,
+          "p100": 5875.0
+        }
+      },
+      "new_user_count": 0,
+      "new_user_fraction_of_split_users": 0.0,
+      "new_video_count": 1337,
+      "new_video_fraction_of_split_videos": 0.25486084635913075
+    }
+  },
+  "small_matrix_audit": {
+    "rows": 4676570,
+    "users": 1411,
+    "videos": 3327,
+    "positive_count": 217175,
+    "positive_fraction": 0.04643894991414648,
+    "users_with_zero_positives": 0,
+    "users_with_zero_positives_fraction": 0.0,
+    "ground_truth_only": true,
+    "enters_training_or_history": false,
+    "observation_coverage": {
+      "users": 1411,
+      "catalog_videos": 3327,
+      "expected_complete_pairs": 4694397,
+      "observed_unique_pairs": 4676570,
+      "duplicate_rows": 0,
+      "missing_pairs": 17827,
+      "observed_pair_fraction": 0.9962024941648523,
+      "missing_pairs_per_user": {
+        "count": 1411,
+        "mean": 12.634301913536499,
+        "zero_count": 8,
+        "zero_fraction": 0.005669737774627924,
+        "quantiles": {
+          "p00": 0.0,
+          "p25": 7.0,
+          "p50": 12.0,
+          "p75": 18.0,
+          "p90": 23.0,
+          "p95": 26.0,
+          "p99": 29.0,
+          "p100": 32.0
+        }
+      },
+      "primary_ranking_catalog_size": 3327,
+      "missing_feedback_policy": "retain all catalog items; an unobserved pair is unjudged and never a training negative; primary binary metrics use only observed strong-positive items as the relevance set"
+    }
+  },
+  "locks": {
+    "temporal_final_locked": true,
+    "small_matrix_audit_locked": true,
+    "ordinary_baseline_scripts_may_run_final": false,
+    "unlock_requires_separate_explicit_final_command": true
+  }
+}

@@ -1,0 +1,20 @@
+contract_id: kuairec-two-tower-cold-start-v1
+status: design_only_not_implemented_in_phase_0
+id_warm_item_definition: >-
+  A video with at least one interaction in the immutable train split. Validation
+  interactions never make an ID warm because model parameters are frozen.
+id_cold_item_definition: >-
+  A video with zero interactions in the immutable train split. Query-time
+  availability is a separate condition: because upload_dt has date precision,
+  upload_date plus one local midnight must be <= query_time.
+warm_item_path:
+  id_embedding: learned_only_from_training_interactions
+  content_features: [caption, topic_tag, hierarchical_category, static_video_features]
+cold_item_path:
+  independent_untrained_id_embedding: forbidden
+  id_input: masked_zero_vector
+  fallback: content_only_video_tower
+reporting:
+  required_segments: [warm_items, cold_items]
+  required_metrics: [Recall@20, Recall@50, Recall@100, NDCG@10, NDCG@20]
+  overall_result_without_segment_results: forbidden
