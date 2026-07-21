@@ -1,9 +1,10 @@
 contract_id: kuairec-temporal-next-strong-positive-v2
-protocol_revision: protocol-v2
+protocol_revision: protocol-v2.1
 status: active_protocol_only_no_model_or_baseline_executed
 purpose: selection_and_locked_future_recommendation_evaluation
 
 source: big_matrix.csv
+event_canonicalization: contracts/event_canonicalization_v1.yaml
 label:
   expression: watch_ratio > 2.0
   boundary_value_2_is_positive: false
@@ -11,7 +12,7 @@ label:
 query:
   unit: user_next_strong_positive_timestamp_group
   query_key: [user_id, timestamp]
-  history_rule: all user events with timestamp strictly less than target timestamp
+  history_rule: all canonical user events with timestamp strictly less than target timestamp
   history_truncation: none_in_evaluation_contract
   same_timestamp_rule: >-
     Canonical strong-positive videos sharing a timestamp form one multi-target

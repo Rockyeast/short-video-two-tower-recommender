@@ -1,11 +1,24 @@
 contract_id: kuairec-ranking-metrics-v1
-protocol_revision: protocol-v2
+protocol_revision: protocol-v2.1
 status: active_protocol_only_no_metric_evaluation_executed
 
 relevance:
   type: binary
-  expression: watch_ratio > 2.0
-  target_source: canonical eligible target table
+  temporal:
+    expression: watch_ratio > 2.0
+    target_source: canonical eligible temporal target table
+    scope: query-time causal NORMAL-only candidate task
+  small_matrix_primary:
+    expression: watch_ratio > 2.0
+    target_source: physically observed Small Matrix pairs
+    scope: per-user observed NORMAL pairs after blocked_or_missing exclusion
+  small_matrix_ad_diagnostic:
+    expression: watch_ratio > 2.0
+    target_source: physically observed Small Matrix AD pairs
+    aggregation: separate_from_primary
+  blocked_or_missing_pairs:
+    relevance: undefined
+    allowed_use: exclusion_mask_and_secondary_safety_metrics_only
 
 ranking:
   primary_sort:

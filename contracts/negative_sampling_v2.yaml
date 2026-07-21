@@ -1,10 +1,11 @@
 contract_id: kuairec-mixed-negative-sampling-v2
-protocol_revision: protocol-v2
+protocol_revision: protocol-v2.1
 status: active_design_only_two_tower_not_implemented
 
 fit_contexts: contracts/fit_contexts_v1.yaml
 candidate_catalog: contracts/candidate_catalog_v1.yaml
 target_contract: contracts/target_deduplication_v1.yaml
+event_contract: contracts/event_canonicalization_v1.yaml
 
 session:
   sort: [user_id, timestamp]
@@ -12,7 +13,7 @@ session:
   equal_timestamps_are_one_atomic_event_group: true
 
 candidate_hard_negatives:
-  source: quick_skip_events
+  source: nonconflicting_canonical_quick_skip_events
   quick_skip_expression: play_duration < min(3000, video_duration)
   terminology: same_session_future_window_observed_negative
   not_same_impression: true
@@ -23,7 +24,7 @@ candidate_hard_negatives:
     a final refit may not inspect temporal_final.
   requirements:
     - item_is_in_query_time_candidate_catalog
-    - item_is_unseen_at_query_time
+    - item_is_unseen_under_canonical_events_strictly_before_query_time
     - item_is_not_in_current_positive_target_set
     - no_binary_label_conflict_at_negative_event_key
 
@@ -110,6 +111,11 @@ pre_two_tower_audit_gate:
       - later_strong_positive_within_1_day
       - later_strong_positive_within_7_days
       - later_strong_positive_before_current_fit_cutoff
+    universal_later_positive_time_rule: >-
+      Every later-positive diagnostic requires query_timestamp <
+      later_timestamp < current_fit_context_end_exclusive.
+    remaining_session_upper_bound: >-
+      min(session_end_exclusive, current_fit_context_end_exclusive)
     query_level_any_risk:
       denominator: training_queries_with_at_least_one_hard_negative_pair
       metrics:
@@ -124,4 +130,5 @@ pre_two_tower_audit_gate:
     may_change_sampler_or_mixture: false
     may_select_hyperparameters: false
     may_enter_training_features_or_loss: false
+    same_event_key_positive_and_quick_skip_conflict: exclude_from_hard_pool
   validation_or_final_lookup_for_training_decisions: forbidden

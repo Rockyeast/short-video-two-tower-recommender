@@ -1,19 +1,27 @@
 contract_id: kuairec-fit-contexts-v1
-protocol_revision: protocol-v2
+protocol_revision: protocol-v2.1
 status: active_protocol_only_no_model_or_baseline_executed
 
 common:
   source: big_matrix.csv
+  event_contract: contracts/event_canonicalization_v1.yaml
   split_manifest: manifests/split_manifest.json
   label: watch_ratio > 2.0
   target_contract: contracts/target_deduplication_v1.yaml
   learned_parameter_definition: >-
-    Model weights, ID embeddings, fitted similarities, popularity counts, decay
-    hyperparameters, and every other statistic persisted from the fit data.
+    Model weights, ID embeddings, fitted similarities, frozen fit-initial
+    popularity counts, decay hyperparameters, and every other statistic
+    persisted from the fit data.
   runtime_history_definition: >-
-    A user's causally available events strictly before the query timestamp.
+    A user's causally available canonical events strictly before the query
+    timestamp. Any last-50 truncation counts canonical events, never raw rows.
     Runtime history may advance after a query is scored, but it may never update
     learned parameters during evaluation.
+  causal_runtime_state_definition: >-
+    A registered causal-streaming baseline may ingest canonical positive events
+    only after an equal-timestamp query group is scored. That replay state is
+    transient runtime state, not a learned parameter or hyperparameter, and it
+    may never be used to retune the method during evaluation.
 
 contexts:
   selection:
@@ -27,6 +35,7 @@ contexts:
     query_history:
       initial_source: [train]
       prior_validation_events_may_enter_user_history_after_scoring: true
+      prior_validation_positive_events_may_update_causal_runtime_state_after_scoring: true
       validation_events_may_update_learned_parameters: false
     cold_reference:
       source_splits: [train]
@@ -50,6 +59,7 @@ contexts:
     query_history:
       initial_source: [train, validation]
       prior_temporal_final_events_may_enter_user_history_after_scoring: true
+      prior_final_positive_events_may_update_causal_runtime_state_after_scoring: true
       temporal_final_events_may_update_learned_parameters: false
     cold_reference:
       source_splits: [train, validation]

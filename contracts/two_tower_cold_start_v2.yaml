@@ -1,5 +1,5 @@
 contract_id: kuairec-two-tower-cold-start-v2
-protocol_revision: protocol-v2
+protocol_revision: protocol-v2.1
 status: active_design_only_two_tower_not_implemented
 
 definitions:

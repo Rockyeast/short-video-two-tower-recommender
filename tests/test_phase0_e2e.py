@@ -10,6 +10,8 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+import scripts.audit_phase0 as audit_phase0
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -179,7 +181,35 @@ def test_synthetic_generate_then_temp_recompute_verify(tmp_path):
 
     payload = json.loads(manifest.read_text())
     assert payload["schema_version"] == 2
-    assert payload["protocol_revision"] == "protocol-v2"
+    assert payload["protocol_revision"] == "protocol-v2.1"
+    assert payload["split_algorithm"]["fraction_validation"] == {
+        "keys": [
+            "train_fraction",
+            "validation_fraction",
+            "temporal_final_fraction",
+        ],
+        "each_fraction_strictly_between_zero_and_one": True,
+        "required_sum": 1.0,
+        "absolute_tolerance": 1.0e-12,
+    }
+    for split in ("train", "validation", "temporal_final"):
+        assert len(payload["splits"][split]["canonical_target_sha256"]) == 64
+        assert len(payload["splits"][split]["candidate_membership_sha256"]) == 64
+    rebuilt = audit_phase0.recompute_protocol_derived_hashes(
+        config_path=config,
+        data_root=data_root,
+        manifest=payload,
+    )
+    assert rebuilt == {
+        "canonical_targets": {
+            split: payload["splits"][split]["canonical_target_sha256"]
+            for split in ("train", "validation", "temporal_final")
+        },
+        "candidate_membership": {
+            split: payload["splits"][split]["candidate_membership_sha256"]
+            for split in ("train", "validation", "temporal_final")
+        },
+    }
     assert payload["locks"]["ordinary_baseline_scripts_may_run_final"] is False
     audit = json.loads((report_dir / "audit.json").read_text())
     assert audit["model_or_baseline_executed"] is False
@@ -206,4 +236,5 @@ def test_synthetic_generate_then_temp_recompute_verify(tmp_path):
         check=False,
     )
     assert verify.returncode == 0, verify.stderr
+    assert "protocol-v2.1 bundle" in verify.stdout
     assert "match byte-for-byte" in verify.stdout

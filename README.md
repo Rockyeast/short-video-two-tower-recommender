@@ -1,11 +1,11 @@
 # Short-Video Recommendation on KuaiRec
 
-This repository is currently limited to **Phase 0 / protocol-v2: data,
+This repository is currently limited to **Phase 0 / protocol-v2.1: data,
 candidate-catalog, and evaluation audit**.
 
 No Two-Tower model, ranking model, FAISS index, serving API, or online-feedback
 component is implemented at this stage. The five baselines are specified but
-remain unimplemented and unexecuted until protocol-v2 is reviewed.
+remain unimplemented and unexecuted until protocol-v2.1 is reviewed.
 
 ## Locked label
 
@@ -19,7 +19,7 @@ The threshold must not be changed in response to holdout results.
 
 ## Phase 0 outputs
 
-The committed protocol-v2 audit bundle contains:
+The committed protocol-v2.1 audit bundle contains:
 
 - field and missing-value inventory;
 - metadata coverage and time ranges;
@@ -38,10 +38,12 @@ Key aggregate findings (not model metrics):
   and the 29 `AD` videos are excluded;
 - every one of the 497,117 train, 99,248 validation, and 83,661 temporal-final
   formal targets remains inside its query-time available/unseen candidate set;
-- 40.48% of train queries have at least one eligible same-session future
-  quick-skip hard-negative item. The post-hoc false-negative risk before the
-  train cutoff is 0.91% of deduplicated hard `(query, item)` pairs; this future
-  label diagnostic is forbidden from changing sampling or model selection.
+- protocol-v2.1 preserves the already frozen and disclosed protocol-v2 time
+  cutoffs, then assigns canonical events to them. Histories, seen filters,
+  last-50 sequences, quick-skip pools, and popularity statistics use one event
+  per `(user_id, video_id, timestamp)`, never duplicated raw rows. The audit
+  separately reports how recomputing cutoffs after deduplication would change
+  membership; it does not redefine the holdout.
 
 ## Fit and evaluation contexts
 
@@ -86,21 +88,38 @@ the same user timestamp remain one atomic multi-target query.
 
 The [official KuaiRec documentation](https://github.com/chongminggao/KuaiRec)
 explains that the 0.4% missing Small Matrix pairs arise because users blocked
-videos or their authors. Protocol-v2 therefore uses two deliberately separate
+videos or their authors. Protocol-v2.1 therefore uses deliberately separate
 evaluations:
 
 1. **Primary quality audit:** remove each user's blocked/missing pairs, rank only
-   physically observed pairs, and treat `watch_ratio > 2.0` as relevant.
+   physically observed `NORMAL` pairs, and treat `watch_ratio > 2.0` as
+   relevant. This matches the temporal task's `NORMAL`-only catalog.
 2. **Secondary safety audit:** rank all 3,327 catalog videos and report
    `Blocked@K`, the fraction of Top-K results belonging to that user's inferred
    blocked set, plus the fraction of users receiving at least one blocked item.
+3. **AD diagnostic:** report quality on physically observed `AD` pairs
+   separately; never pool it into the primary quality metrics.
 
 Blocked/missing information is an evaluation-time availability mask only. It
 must never enter training, user history, feature construction, hyperparameter
 selection, or negative sampling.
 
-## Active protocol-v2 contracts
+## Locked baseline scope
 
+Random, Global Popularity, Causal Time-Decayed Popularity, ItemCF, and BPR are
+specified but not yet implemented or run. Time-decayed popularity must compare
+fit-frozen and causal-streaming variants on validation; the stronger registered
+variant becomes the baseline in the frozen final bundle. BPR uses the causal
+candidate catalog at each positive event time and falls back to the selected
+time-decayed popularity policy for users absent from fit data.
+
+Planning scale uses `497,117` canonical train targets. Ten BPR epochs therefore
+represent approximately `4,971,170` positive updates before batching. These are
+cost estimates, not executed results.
+
+## Active protocol-v2.1 contracts
+
+- `contracts/event_canonicalization_v1.yaml`
 - `contracts/temporal_evaluation_v2.yaml`
 - `contracts/fully_observed_audit_v2.yaml`
 - `contracts/fit_contexts_v1.yaml`

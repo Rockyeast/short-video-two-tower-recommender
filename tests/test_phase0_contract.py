@@ -56,8 +56,12 @@ def test_contracts_lock_final_and_group_equal_timestamps():
         "forbidden"
     )
     assert "user_history" in fully_observed["blocked_pairs"]["forbidden_use"]
-    assert fully_observed["primary_evaluation"]["candidate_set"] == "catalog minus B_u"
-    assert fully_observed["primary_evaluation"]["equivalent_candidate_set"] == "O_u"
+    assert fully_observed["primary_evaluation"]["candidate_set"] == (
+        "(catalog minus B_u) intersect C_NORMAL"
+    )
+    assert fully_observed["primary_evaluation"]["equivalent_candidate_set"] == (
+        "O_u intersect C_NORMAL"
+    )
     assert fully_observed["secondary_safety_audit"][
         "model_quality_claim_from_secondary_audit"
     ] == "forbidden"
@@ -72,6 +76,71 @@ def test_contracts_lock_final_and_group_equal_timestamps():
     assert "excluding current targets" in negative[
         "candidate_hard_negative_distribution"
     ]["pool"]
+
+
+def test_protocol_v21_contract_scope_is_canonical_and_task_aligned():
+    config = yaml.safe_load(Path("configs/phase0.yaml").read_text())
+    event = yaml.safe_load(
+        Path("contracts/event_canonicalization_v1.yaml").read_text()
+    )
+    metrics = yaml.safe_load(Path("contracts/metrics_v1.yaml").read_text())
+    small = yaml.safe_load(
+        Path("contracts/fully_observed_audit_v2.yaml").read_text()
+    )
+    baselines = yaml.safe_load(Path("contracts/baselines_v1.yaml").read_text())
+
+    assert config["protocol"]["revision"] == "protocol-v2.1"
+    split = config["split"]
+    fraction_keys = split["fraction_validation"]["keys"]
+    fractions = [split[key] for key in fraction_keys]
+    assert all(0.0 < value < 1.0 for value in fractions)
+    assert abs(sum(fractions) - 1.0) <= split["fraction_validation"][
+        "absolute_tolerance"
+    ]
+
+    for path in config["protocol"]["active_contracts"].values():
+        contract = yaml.safe_load(Path(path).read_text())
+        assert contract["protocol_revision"] == "protocol-v2.1"
+
+    consumers = event["required_consumers"]
+    assert "frozen protocol-v2" in consumers["split_assignment"]
+    assert "canonical events" in consumers["last_50_history"]
+    assert consumers["raw_rows_for_any_consumer_above"] == "forbidden"
+
+    relevance = metrics["relevance"]
+    assert relevance["temporal"]["target_source"] == (
+        "canonical eligible temporal target table"
+    )
+    assert relevance["small_matrix_primary"]["target_source"] == (
+        "physically observed Small Matrix pairs"
+    )
+    assert relevance["blocked_or_missing_pairs"]["relevance"] == "undefined"
+
+    assert "C_NORMAL" in small["primary_evaluation"]["candidate_set"]
+    assert small["separate_ad_quality_diagnostic"][
+        "combine_with_primary_quality_metrics"
+    ] == "forbidden"
+
+    decayed = baselines["baselines"]["time_decayed_popularity"]
+    assert set(decayed["variants"]) == {"fit_frozen", "causal_streaming"}
+    assert "stronger" in decayed["baseline_selection"]
+    fit_contexts = yaml.safe_load(
+        Path("contracts/fit_contexts_v1.yaml").read_text()
+    )
+    assert "transient runtime state" in fit_contexts["common"][
+        "causal_runtime_state_definition"
+    ]
+    bpr = baselines["baselines"]["bpr_mf"]
+    assert "time t" in bpr["negative_catalog_time_basis"]
+    assert bpr["untrained_user_fallback"]["method"] == (
+        "selected_time_decayed_popularity_from_same_fit_context"
+    )
+    assert baselines["planning_scale"] == {
+        "canonical_train_targets": 497117,
+        "bpr_reference_epochs": 10,
+        "bpr_positive_updates_before_batching": 4971170,
+        "disclaimer": "planning_only_no_baseline_executed",
+    }
 
 
 def test_causal_catalog_uses_prior_day_visibility_and_excludes_ads(tmp_path):

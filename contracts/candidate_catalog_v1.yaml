@@ -1,9 +1,10 @@
 contract_id: kuairec-causal-candidate-catalog-v1
-protocol_revision: protocol-v2
+protocol_revision: protocol-v2.1
 status: active_protocol_only_no_model_or_baseline_executed
 
 sources:
   interactions: big_matrix.csv
+  canonical_events: contracts/event_canonicalization_v1.yaml
   item_snapshots: item_daily_features.csv
   timezone: Asia/Shanghai
 
@@ -13,7 +14,7 @@ inventory_scope:
     NORMAL: include_when_all_other_rules_pass
     AD: exclude_from_primary_targets_training_candidates_and_negative_sampling
   ad_reporting: report_rows_videos_and_interactions_separately
-  inconsistent_video_type_policy: exclude_video_and_report
+  inconsistent_video_type_policy: fail_closed_generation_with_counts_in_error
 
 upload_availability:
   precision: calendar_date_only
@@ -22,7 +23,7 @@ upload_availability:
   missing_upload_dt_policy: exclude_and_report
   per_video_consistency:
     requirement: every nonmissing upload_dt for a video must be identical
-    inconsistent_policy: exclude_video_and_report_all_values
+    inconsistent_policy: fail_closed_generation_with_counts_in_error
     required_audit:
       - videos_with_one_upload_dt
       - videos_with_multiple_upload_dt
@@ -45,7 +46,7 @@ temporal_candidate_set:
   available_set: >-
     NORMAL videos with consistent upload metadata, available under the
     date-only rule, and public in the latest causal visibility snapshot.
-  seen_definition: any raw interaction by the user at timestamp strictly less than query time
+  seen_definition: any canonical event by the user at timestamp strictly less than query time
   unseen_set: available_set minus seen_video_ids
   target_set_removal: false
   target_must_be_in_unseen_set: true
@@ -53,7 +54,8 @@ temporal_candidate_set:
 
 small_matrix_candidate_set:
   temporal_availability_claim: false
-  primary: observed pairs for each user after blocked/missing-pair exclusion
+  primary: observed NORMAL pairs for each user after blocked/missing-pair exclusion
+  ad_quality_diagnostic: observed AD pairs reported separately and never pooled with primary quality metrics
   secondary: all 3327 Small Matrix catalog videos for safety audit only
   contract: contracts/fully_observed_audit_v2.yaml
 

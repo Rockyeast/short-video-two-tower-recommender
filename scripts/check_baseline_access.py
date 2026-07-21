@@ -12,17 +12,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from kuairec_protocol.access import ProtocolAccessError, authorize_baseline_selection
+from kuairec_protocol.access import (
+    ProtocolAccessError,
+    authorize_baseline_selection,
+)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fit-split", action="append", default=None)
     parser.add_argument("--evaluation-split", default="validation")
-    parser.add_argument("--manifest", type=Path, default=ROOT / "manifests/split_manifest.json")
-    parser.add_argument(
-        "--lock", type=Path, default=ROOT / "manifests/FINAL_HOLDOUT_LOCKED.json"
-    )
     return parser.parse_args()
 
 
@@ -30,11 +29,13 @@ def main() -> int:
     args = parse_args()
     fit_splits = tuple(args.fit_split or ["train"])
     try:
+        # This full verifier runs before any future baseline loader. It first
+        # authenticates the generator, then dynamically loads its independent
+        # target/catalog hash rebuilder.
         verification = authorize_baseline_selection(
             fit_splits=fit_splits,
             evaluation_split=args.evaluation_split,
-            manifest_path=args.manifest,
-            lock_path=args.lock,
+            repo_root=ROOT,
         )
     except ProtocolAccessError as exc:
         print(f"ACCESS DENIED: {exc}", file=sys.stderr)

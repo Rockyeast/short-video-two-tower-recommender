@@ -1,8 +1,9 @@
 contract_id: kuairec-canonical-target-deduplication-v1
-protocol_revision: protocol-v2
+protocol_revision: protocol-v2.1
 status: active_protocol_only_no_model_or_baseline_executed
 
 source: big_matrix.csv
+event_canonicalization_contract: contracts/event_canonicalization_v1.yaml
 label_expression: watch_ratio > 2.0
 event_key: [user_id, video_id, timestamp]
 query_key: [user_id, timestamp]
@@ -27,7 +28,9 @@ canonicalization:
   target_uniqueness: exactly_one_row_per_user_id_video_id_timestamp
 
 history_semantics:
-  conflicting_or_duplicate_rows_still_mark_item_seen_after_timestamp: true
+  source: canonical behavior events only
+  conflicting_or_duplicate_raw_rows_may_occupy_multiple_history_positions: false
+  canonical_event_still_marks_item_seen_after_timestamp: true
   equal_timestamp_events_are_atomic: true
   no_event_at_timestamp_may_enter_history_for_another_event_at_same_timestamp: true
 

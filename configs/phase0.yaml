@@ -13,13 +13,14 @@ dataset:
     - kuairec_caption_category.csv
 
 protocol:
-  revision: protocol-v2
+  revision: protocol-v2.1
   status: phase_0_protocol_audit_only
   lineage:
-    parent_commit: 97a0f52a2cde8eecb186242f3f2e075a16e4c0c5
-    parent_manifest_sha256: 8d84d2b20f9e93352e8e09f7c0fdcb5704d82b209da245bd9a542b2b66adaaf1
-    revision_reason: blocked-pair semantics, causal catalog, fit contexts, target deduplication, metrics, and execution locks
+    parent_commit: c41a0717b4ed1e57b0cb9bb994d1b934fc03d574
+    parent_manifest_sha256: 2223ad95548a67d03055fa4db0fbf74f1e6329907d9d2f864cf497683542db8e
+    revision_reason: canonical behavior events, verifiable candidate membership, and bundle-level execution locks
   active_contracts:
+    event_canonicalization: contracts/event_canonicalization_v1.yaml
     temporal_evaluation: contracts/temporal_evaluation_v2.yaml
     small_matrix_audit: contracts/fully_observed_audit_v2.yaml
     fit_contexts: contracts/fit_contexts_v1.yaml
@@ -51,6 +52,11 @@ split:
   train_fraction: 0.70
   validation_fraction: 0.15
   temporal_final_fraction: 0.15
+  fraction_validation:
+    keys: [train_fraction, validation_fraction, temporal_final_fraction]
+    each_fraction_strictly_between_zero_and_one: true
+    required_sum: 1.0
+    absolute_tolerance: 1.0e-12
   final_locked: true
   small_matrix_audit_locked: true
 
@@ -88,8 +94,8 @@ candidate_catalog:
   allowed_visible_status: [public]
   excluded_visible_status: [private, only friends]
   visibility_snapshot: latest_row_strictly_before_query_local_date
-  inconsistent_upload_dt_policy: exclude_and_report
-  inconsistent_video_type_policy: exclude_and_report
+  inconsistent_upload_dt_policy: fail_closed_generation
+  inconsistent_video_type_policy: fail_closed_generation
 
 target_canonicalization:
   key: [user_id, video_id, timestamp]
@@ -97,6 +103,18 @@ target_canonicalization:
   binary_label_conflict_policy: exclude_entire_key_and_report
   same_positive_label_policy: coalesce_to_one_target_and_report
   training_source: canonical_eligible_target_table_only
+
+event_canonicalization:
+  contract: contracts/event_canonicalization_v1.yaml
+  event_key: [user_id, video_id, timestamp]
+  required_consumers:
+    - split_membership_under_frozen_protocol_v2_boundaries
+    - temporal_history
+    - last_50_history
+    - seen_filter
+    - quick_skip_pool
+    - popularity
+  raw_rows_for_required_consumers: forbidden
 
 negative_sampling:
   session_gap_minutes: 30
