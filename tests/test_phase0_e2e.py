@@ -1,0 +1,209 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+
+import pandas as pd
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _write_synthetic_kuairec(root: Path) -> tuple[Path, Path]:
+    data_root = root / "data"
+    extracted = data_root / "synthetic"
+    extracted.mkdir(parents=True)
+    archive = data_root / "KuaiRec.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("README.txt", "synthetic protocol fixture only\n")
+
+    base = pd.Timestamp("2020-07-07 12:00:00", tz="Asia/Shanghai").timestamp()
+    big_rows = []
+    for offset in range(10):
+        timestamp = base + offset * 86400
+        local = pd.Timestamp(timestamp, unit="s", tz="UTC").tz_convert(
+            "Asia/Shanghai"
+        )
+        big_rows.append(
+            [
+                0,
+                offset + 1,
+                4000,
+                1000,
+                local.strftime("%Y-%m-%d %H:%M:%S"),
+                int(local.strftime("%Y%m%d")),
+                timestamp,
+                4.0,
+            ]
+        )
+    pd.DataFrame(
+        big_rows,
+        columns=[
+            "user_id",
+            "video_id",
+            "play_duration",
+            "video_duration",
+            "time",
+            "date",
+            "timestamp",
+            "watch_ratio",
+        ],
+    ).to_csv(extracted / "big_matrix.csv", index=False)
+
+    small_rows = []
+    for user_id in (0, 1):
+        for video_id in range(1, 6):
+            if (user_id, video_id) == (0, 5):
+                continue
+            timestamp = base + video_id
+            small_rows.append(
+                [
+                    user_id,
+                    video_id,
+                    3000,
+                    1000,
+                    "2020-07-07 12:00:00",
+                    20200707,
+                    timestamp,
+                    3.0 if video_id % 2 else 1.0,
+                ]
+            )
+    pd.DataFrame(
+        small_rows,
+        columns=[
+            "user_id",
+            "video_id",
+            "play_duration",
+            "video_duration",
+            "time",
+            "date",
+            "timestamp",
+            "watch_ratio",
+        ],
+    ).to_csv(extracted / "small_matrix.csv", index=False)
+
+    pd.DataFrame(
+        {"video_id": range(1, 11), "feat": ["[1]"] * 10}
+    ).to_csv(extracted / "item_categories.csv", index=False)
+    pd.DataFrame(
+        {
+            "video_id": range(1, 11),
+            "caption": [f"video {value}" for value in range(1, 11)],
+            "manual_cover_text": ["cover"] * 10,
+            "topic_tag": ["topic"] * 10,
+            "first_level_category_id": [1] * 10,
+            "second_level_category_id": [2] * 10,
+            "third_level_category_id": [3] * 10,
+        }
+    ).to_csv(extracted / "kuairec_caption_category.csv", index=False)
+
+    daily_rows = []
+    for date in pd.date_range("2020-07-05", "2020-07-17", freq="D"):
+        for video_id in range(1, 11):
+            daily_rows.append(
+                [
+                    video_id,
+                    int(date.strftime("%Y%m%d")),
+                    video_id,
+                    "NORMAL",
+                    "2020-07-04",
+                    "synthetic",
+                    "public",
+                    1000,
+                ]
+            )
+    pd.DataFrame(
+        daily_rows,
+        columns=[
+            "video_id",
+            "date",
+            "author_id",
+            "video_type",
+            "upload_dt",
+            "upload_type",
+            "visible_status",
+            "video_duration",
+        ],
+    ).to_csv(extracted / "item_daily_features.csv", index=False)
+    pd.DataFrame({"user_id": [0, 1], "feature": [1, 2]}).to_csv(
+        extracted / "user_features.csv", index=False
+    )
+    pd.DataFrame({"user_id": [0, 1], "friend_id": [1, 0]}).to_csv(
+        extracted / "social_network.csv", index=False
+    )
+
+    config = yaml.safe_load((ROOT / "configs/phase0.yaml").read_text())
+    config["dataset"]["archive_md5"] = hashlib.md5(
+        archive.read_bytes(), usedforsecurity=False
+    ).hexdigest()
+    config["split"].update(
+        {
+            "train_fraction": 0.6,
+            "validation_fraction": 0.2,
+            "temporal_final_fraction": 0.2,
+        }
+    )
+    config_path = root / "phase0.yaml"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    return data_root, config_path
+
+
+def test_synthetic_generate_then_temp_recompute_verify(tmp_path):
+    data_root, config = _write_synthetic_kuairec(tmp_path)
+    report_dir = tmp_path / "reports" / "phase0"
+    manifest = tmp_path / "manifests" / "split_manifest.json"
+    generate = subprocess.run(
+        [
+            sys.executable,
+            "scripts/audit_phase0.py",
+            "--config",
+            str(config),
+            "--data-root",
+            str(data_root),
+            "--report-dir",
+            str(report_dir),
+            "--manifest",
+            str(manifest),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert generate.returncode == 0, generate.stderr
+
+    payload = json.loads(manifest.read_text())
+    assert payload["schema_version"] == 2
+    assert payload["protocol_revision"] == "protocol-v2"
+    assert payload["locks"]["ordinary_baseline_scripts_may_run_final"] is False
+    audit = json.loads((report_dir / "audit.json").read_text())
+    assert audit["model_or_baseline_executed"] is False
+    assert audit["final_ranking_evaluation_executed"] is False
+
+    verify = subprocess.run(
+        [
+            sys.executable,
+            "scripts/audit_phase0.py",
+            "--mode",
+            "verify",
+            "--config",
+            str(config),
+            "--data-root",
+            str(data_root),
+            "--reference-report-dir",
+            str(report_dir),
+            "--reference-manifest",
+            str(manifest),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert verify.returncode == 0, verify.stderr
+    assert "match byte-for-byte" in verify.stdout

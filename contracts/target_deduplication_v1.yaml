@@ -1,0 +1,77 @@
+contract_id: kuairec-canonical-target-deduplication-v1
+protocol_revision: protocol-v2
+status: active_protocol_only_no_model_or_baseline_executed
+
+source: big_matrix.csv
+label_expression: watch_ratio > 2.0
+event_key: [user_id, video_id, timestamp]
+query_key: [user_id, timestamp]
+
+definitions:
+  exact_duplicate: all source columns are equal
+  binary_label_conflict: >-
+    Rows sharing event_key contain both watch_ratio > 2.0 and
+    watch_ratio <= 2.0.
+  nonidentical_same_label_duplicate: >-
+    Rows share event_key and binary label but differ in one or more other
+    source columns.
+
+canonicalization:
+  exact_duplicates: retain_one_canonical_row_and_count_removed_rows
+  binary_label_conflict: exclude_entire_event_key_from_targets_and_report
+  nonidentical_same_positive_label: coalesce_to_one_positive_target_and_report
+  nonidentical_same_nonpositive_label: coalesce_for_audit_but_create_no_target
+  canonical_row_tie_break: >-
+    Lexicographically smallest serialization of all source columns after
+    normalized null and numeric formatting. CSV chunk order is not a tie-break.
+  target_uniqueness: exactly_one_row_per_user_id_video_id_timestamp
+
+history_semantics:
+  conflicting_or_duplicate_rows_still_mark_item_seen_after_timestamp: true
+  equal_timestamp_events_are_atomic: true
+  no_event_at_timestamp_may_enter_history_for_another_event_at_same_timestamp: true
+
+target_eligibility_order:
+  mutually_exclusive_reason_assignment: true
+  order:
+    - invalid_identity_or_timestamp
+    - binary_label_conflict
+    - nonpositive_label
+    - non_primary_video_type
+    - missing_or_inconsistent_upload_metadata
+    - not_yet_causally_available
+    - not_causally_public
+    - previously_seen_before_timestamp
+    - eligible
+  catalog_contract: contracts/candidate_catalog_v1.yaml
+
+query_targets:
+  construction: group canonical eligible targets by query_key
+  target_set: unique video_ids in the group
+  multiple_different_videos_at_same_timestamp: one_multi_target_query
+  no_eligible_targets_after_filtering: omit_query_and_report
+
+formal_training_target:
+  source: canonical eligible target table only
+  direct_use_of_raw_positive_rows: forbidden
+  artifact_required: true
+  artifact_primary_key: [user_id, video_id, timestamp]
+  artifact_hash_required: true
+
+required_audit:
+  stages:
+    - raw_positive_rows
+    - exact_duplicate_positive_rows_removed
+    - exact_duplicate_event_key_count
+    - conflicting_label_event_key_count
+    - positive_rows_in_conflicting_groups
+    - nonidentical_same_positive_label_event_key_count
+    - positive_rows_coalesced_by_event_key
+    - canonical_positive_events
+    - eligible_canonical_targets
+  distribution_for_each_duplicate_or_conflict_class:
+    - per_user
+    - per_asia_shanghai_calendar_date
+  reconciliation: >-
+    All mutually exclusive removals plus eligible canonical targets must
+    reconcile from raw rows to the final target-table row count.

@@ -1,6 +1,6 @@
 # KuaiRec Phase 0 Audit
 
-Generated: `2026-07-21T17:17:46.276639+00:00`
+Generated: `2026-07-21T08:53:10.933286+00:00`
 
 > No model or baseline was trained or evaluated in Phase 0.
 
@@ -83,18 +83,10 @@ with the localized timestamp on 15,530 Big Matrix rows.
 
 ## Evaluation contracts
 
-- Temporal: `contracts/temporal_evaluation_v2.yaml`
-- Small Matrix: `contracts/fully_observed_audit_v2.yaml`
-- Fit contexts: `contracts/fit_contexts_v1.yaml`
-- Candidate catalog: `contracts/candidate_catalog_v1.yaml`
-- Target deduplication: `contracts/target_deduplication_v1.yaml`
-- Metrics: `contracts/metrics_v1.yaml`
-- Baselines: `contracts/baselines_v1.yaml`
-- Negative sampling: `contracts/negative_sampling_v2.yaml`
-- Cold-item fallback: `contracts/two_tower_cold_start_v2.yaml`
-
-The temporal final split is not claimed to be untouched. It is frozen
-after this Phase 0 aggregate audit; no ranking metric was computed.
+- Temporal: `contracts/temporal_evaluation_v1.yaml`
+- Fully observed: `contracts/fully_observed_audit_v1.yaml`
+- Negative sampling: `contracts/negative_sampling_v1.yaml`
+- Cold-item fallback: `contracts/two_tower_cold_start_v1.yaml`
 
 Equal-timestamp strong positives are one multi-target query with shared
 history ending strictly before that timestamp.
@@ -102,76 +94,27 @@ history ending strictly before that timestamp.
 A target must also be unseen before its query timestamp and certainly uploaded.
 Because `upload_dt` has date precision only, an item becomes eligible at the
 next Asia/Shanghai midnight; same-day events are excluded as unverifiable.
-The following exclusion counts are event-level. Formal targets then use
-the locked 8-field duplicate/conflict rule shown below.
+The following exclusion counts are event-level; unique target videos are
+deduplicated inside each `(user_id, timestamp)` query group.
 
-| split | raw positives | eligible rows | canonical targets | before date | same-day unknown | no prior status | AD | not public | previously seen |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `train` | 658,907 | 533,835 | 497,117 | 212 | 65,995 | 16,473 | 91 | 20 | 42,281 |
-| `validation` | 136,711 | 99,274 | 99,248 | 1 | 16,154 | 16 | 8 | 6 | 21,252 |
-| `temporal_final` | 140,772 | 99,566 | 83,661 | 3 | 23,557 | 25 | 13 | 40 | 17,568 |
-
-### Pre-catalog duplicate anomaly reconciliation
-
-This reproduces the original upload/unseen eligible-event stage before
-the new NORMAL/public catalog filter, including the reported final gap.
-
-| split | eligible positive rows | exact duplicate extras | same-key nonexact extras | binary-conflict keys | canonical keys |
-|---|---:|---:|---:|---:|---:|
-| `train` | 549,976 | 36,603 | 131 | 0 | 513,242 |
-  - `train`: 5,119 affected users; extras/user p50/p90/p99/max=4/17/44/132; largest date `2020-08-05`=36,568.
-| `validation` | 99,296 | 1 | 25 | 0 | 99,270 |
-  - `validation`: 7 affected users; extras/user p50/p90/p99/max=1/9/18/19; largest date `2020-08-27`=22.
-| `temporal_final` | 99,637 | 15,910 | 26 | 0 | 83,701 |
-  - `temporal_final`: 4,161 affected users; extras/user p50/p90/p99/max=2/8/22/73; largest date `2020-08-31`=15,913.
-
-### Formal catalog-eligible target reconciliation
-
-| split | eligible positive rows | exact duplicate extras | same-key nonexact extras | binary-conflict keys | positives excluded by conflict | canonical targets |
-|---|---:|---:|---:|---:|---:|---:|
-| `train` | 533,835 | 36,593 | 125 | 0 | 0 | 497,117 |
-  - `train` duplicate/conflict extras affect 5,119 users; extras/user p50/p90/p99/max=4/17/44/132; largest date is `2020-08-05` with 36,558. Full user/date counts are in audit.json.
-| `validation` | 99,274 | 1 | 25 | 0 | 0 | 99,248 |
-  - `validation` duplicate/conflict extras affect 7 users; extras/user p50/p90/p99/max=1/9/18/19; largest date is `2020-08-27` with 22. Full user/date counts are in audit.json.
-| `temporal_final` | 99,566 | 15,879 | 26 | 0 | 0 | 83,661 |
-  - `temporal_final` duplicate/conflict extras affect 4,160 users; extras/user p50/p90/p99/max=2/8/22/73; largest date is `2020-08-31` with 15,882. Full user/date counts are in audit.json.
+| split | raw positives | eligible events | unique targets | before declared date | same-day time unknown | missing upload | previously seen |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `train` | 658,907 | 549,976 | 513,242 | 212 | 65,995 | 0 | 42,724 |
+| `validation` | 136,711 | 99,296 | 99,270 | 1 | 16,154 | 0 | 21,260 |
+| `temporal_final` | 140,772 | 99,637 | 83,701 | 3 | 23,557 | 0 | 17,575 |
 
 | split | temporal queries | multi-target queries | fraction | max targets |
 |---|---:|---:|---:|---:|
-| `train` | 497,117 | 0 | 0.000000% | 1 |
-| `validation` | 99,248 | 0 | 0.000000% | 1 |
-| `temporal_final` | 83,661 | 0 | 0.000000% | 1 |
+| `train` | 513,242 | 0 | 0.000000% | 1 |
+| `validation` | 99,270 | 0 | 0.000000% | 1 |
+| `temporal_final` | 83,701 | 0 | 0.000000% | 1 |
 
 ### Small Matrix observation coverage
 
 - Full ranking catalog: 3,327 videos for each of 1,411 users (4,694,397 scored pairs).
-- Observed feedback pairs: 4,676,570 (99.6202%); blocked/missing pairs: 17,827.
+- Observed feedback pairs: 4,676,570 (99.6202%); missing/unjudged pairs: 17,827.
 - Missing pairs per user p50/p90/p99/max: 12/23/29/32.
-- Officially, missing pairs represent videos/authors blocked by that user.
-- Primary audit removes each user's blocked/missing pairs. Full 3,327-item ranking is secondary only and must report `Blocked@K` and user hit rate.
-- Blocked information never enters training, history, features, negative sampling, or hyperparameter selection.
-
-## Causal candidate catalog audit
-
-- Primary type: `NORMAL`; excluded `AD` videos: 29.
-- Visibility at query date D uses the latest snapshot with `date < D`; same-day or missing status is not treated as visible.
-- Per-video inconsistent `upload_dt`: 0; inconsistent `video_type`: 0.
-- Visible-status transitions: `{"only friends->private": 3, "only friends->public": 1, "private->only friends": 3, "private->public": 190, "public->only friends": 4, "public->private": 926}`.
-
-### Per-query candidate-size distributions
-
-| split | queries | available p50/p90/p99 | unseen p50/p90/p99 | uniform pool p50/p90/p99 | missing targets |
-|---|---:|---:|---:|---:|---:|
-| `train` | 497,117 | 5471/6718/7166 | 4828/5667/6379 | 4827/5666/6378 | 0 |
-| `validation` | 99,248 | 8248/8633/8633 | 6713/7641/8270 | 6712/7640/8269 | 0 |
-| `temporal_final` | 83,661 | 9198/9808/9808 | 7609/8664/9446 | 7608/8663/9445 | 0 |
-
-### Train hard-negative pool audit
-
-- Nonempty-pool query coverage: 40.4778% (201,222/497,117).
-- Deduplicated hard `(query,item)` pairs: 686,008; pool p50/p90/p99: 0/4/15.
-- Future positive labels are used only for aggregate false-negative risk diagnostics; they do not filter samples or tune the sampler.
-- Pair-level risk fractions: `{"before_fit_cutoff": 0.009126715723431796, "remaining_session": 0.006564063392846731, "within_1d": 0.006687968653426782, "within_7d": 0.007081550069386946}`.
+- Missing pairs remain in the 3,327-item ranking catalog but are unjudged, never sampled as training negatives, and never added to the positive set.
 
 ## Data quality findings
 
@@ -182,7 +125,7 @@ the new NORMAL/public catalog filter, including the reported final gap.
 - Big Matrix is verified user-major and timestamp-monotonic within each user; this permits exact first-view target filtering without reordering equal timestamps.
 - `upload_dt` has day precision only. Candidate availability is conservatively the following local midnight, so same-day targets with unverifiable upload times are excluded: train=65,995, validation=16,154, temporal_final=23,557.
 - Strong positives timestamped before even the declared upload date are also excluded as metadata inconsistencies: train=212, validation=1, temporal_final=3.
-- Small Matrix is 99.6202% observed, not literally complete; 17,827 pairs are treated as blocked/missing for the primary audit.
+- Small Matrix is 99.6202% observed, not literally complete; 17,827 pairs are unjudged.
 
 ## Baseline scale and estimated cost
 
@@ -190,11 +133,11 @@ the new NORMAL/public catalog filter, including the reported final gap.
 
 | baseline | fit scale | evaluation scale | planning estimate |
 |---|---|---|---|
-| `random` | none | up to 1,064,732,544 candidate pairs | under 5 CPU minutes with direct seeded top-K sampling |
+| `random` | none | up to 1,064,968,560 candidate pairs | under 5 CPU minutes with direct seeded top-K sampling |
 | `global_popularity` | one pass over 8,771,564 train interactions | one shared ranking plus per-user seen filtering | roughly 1-5 CPU minutes |
 | `time_decayed_popularity` | one chronological pass over 8,771,564 interactions | state update plus shared ranking at query times | roughly 3-15 CPU minutes |
 | `itemcf` | sparse co-occurrence from 658,907 strong positives over at most 10,728 videos | history-neighbor aggregation for every temporal query | roughly 10-60 CPU minutes and 1-4 GB working memory |
-| `bpr_mf` | pre-registered 10 epochs = about 6,589,070 positive-pair updates before batching | up to 1,064,732,544 dot products | roughly 30-120 CPU minutes or 5-20 GPU minutes |
+| `bpr_mf` | pre-registered 10 epochs = about 6,589,070 positive-pair updates before batching | up to 1,064,968,560 dot products | roughly 30-120 CPU minutes or 5-20 GPU minutes |
 
 ## Complete schema and missingness
 

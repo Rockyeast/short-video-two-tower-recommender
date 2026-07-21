@@ -1,0 +1,73 @@
+contract_id: kuairec-causal-candidate-catalog-v1
+protocol_revision: protocol-v2
+status: active_protocol_only_no_model_or_baseline_executed
+
+sources:
+  interactions: big_matrix.csv
+  item_snapshots: item_daily_features.csv
+  timezone: Asia/Shanghai
+
+inventory_scope:
+  primary_video_type: NORMAL
+  video_type_policy:
+    NORMAL: include_when_all_other_rules_pass
+    AD: exclude_from_primary_targets_training_candidates_and_negative_sampling
+  ad_reporting: report_rows_videos_and_interactions_separately
+  inconsistent_video_type_policy: exclude_video_and_report
+
+upload_availability:
+  precision: calendar_date_only
+  rule: upload_date_plus_one_local_midnight <= query_timestamp
+  reason: exact upload time is unavailable, so same-day availability is not assumed
+  missing_upload_dt_policy: exclude_and_report
+  per_video_consistency:
+    requirement: every nonmissing upload_dt for a video must be identical
+    inconsistent_policy: exclude_video_and_report_all_values
+    required_audit:
+      - videos_with_one_upload_dt
+      - videos_with_multiple_upload_dt
+      - videos_with_missing_upload_dt
+
+causal_visibility:
+  snapshot_rule: >-
+    Use the latest item_daily_features row whose date is strictly earlier than
+    the query's Asia/Shanghai calendar date. Query-day status is not used
+    because the snapshot production time is unknown.
+  allowed_visible_status: [public]
+  excluded_visible_status: [private, only friends]
+  missing_prior_snapshot_policy: exclude_and_report
+  rationale: >-
+    User-specific friendship permission is unavailable, so only-friends items
+    cannot be safely treated as globally recommendable.
+  no_future_snapshot_lookup: true
+
+temporal_candidate_set:
+  available_set: >-
+    NORMAL videos with consistent upload metadata, available under the
+    date-only rule, and public in the latest causal visibility snapshot.
+  seen_definition: any raw interaction by the user at timestamp strictly less than query time
+  unseen_set: available_set minus seen_video_ids
+  target_set_removal: false
+  target_must_be_in_unseen_set: true
+  ranking_set: unseen_set
+
+small_matrix_candidate_set:
+  temporal_availability_claim: false
+  primary: observed pairs for each user after blocked/missing-pair exclusion
+  secondary: all 3327 Small Matrix catalog videos for safety audit only
+  contract: contracts/fully_observed_audit_v2.yaml
+
+required_query_level_audit:
+  group_by: [train, validation, temporal_final]
+  counts_per_query:
+    - available_before_seen_filter
+    - seen_items_removed
+    - unseen_candidate_count
+    - target_count
+  distributions:
+    quantiles: [p00, p01, p05, p25, p50, p75, p90, p95, p99, p100]
+    also_report: [count, mean, zero_count, zero_fraction]
+  invariants:
+    - every_target_is_in_ranking_set
+    - unseen_candidate_count_is_at_least_target_count
+  membership_artifact_hash_required: true

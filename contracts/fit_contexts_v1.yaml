@@ -1,0 +1,78 @@
+contract_id: kuairec-fit-contexts-v1
+protocol_revision: protocol-v2
+status: active_protocol_only_no_model_or_baseline_executed
+
+common:
+  source: big_matrix.csv
+  split_manifest: manifests/split_manifest.json
+  label: watch_ratio > 2.0
+  target_contract: contracts/target_deduplication_v1.yaml
+  learned_parameter_definition: >-
+    Model weights, ID embeddings, fitted similarities, popularity counts, decay
+    hyperparameters, and every other statistic persisted from the fit data.
+  runtime_history_definition: >-
+    A user's causally available events strictly before the query timestamp.
+    Runtime history may advance after a query is scored, but it may never update
+    learned parameters during evaluation.
+
+contexts:
+  selection:
+    purpose: fit_on_train_and_select_on_validation
+    initialize_from_scratch: true
+    parameter_fit_splits: [train]
+    hyperparameter_selection_split: validation
+    evaluation_split: validation
+    learned_parameters_may_read: [train]
+    learned_parameters_may_not_read: [validation, temporal_final, small_matrix]
+    query_history:
+      initial_source: [train]
+      prior_validation_events_may_enter_user_history_after_scoring: true
+      validation_events_may_update_learned_parameters: false
+    cold_reference:
+      source_splits: [train]
+      cutoff: train_end_exclusive
+
+  final:
+    purpose: frozen_refit_then_one_time_temporal_final_evaluation
+    preconditions:
+      method_frozen: true
+      feature_schema_frozen: true
+      hyperparameters_frozen: true
+      random_seeds_frozen: true
+      selection_receipt_required: true
+    initialize_from_scratch: true
+    selection_checkpoint_reuse: forbidden
+    parameter_fit_splits: [train, validation]
+    evaluation_split: temporal_final
+    evaluation_count: exactly_once
+    learned_parameters_may_read: [train, validation]
+    learned_parameters_may_not_read: [temporal_final, small_matrix]
+    query_history:
+      initial_source: [train, validation]
+      prior_temporal_final_events_may_enter_user_history_after_scoring: true
+      temporal_final_events_may_update_learned_parameters: false
+    cold_reference:
+      source_splits: [train, validation]
+      cutoff: validation_end_exclusive
+
+  small_matrix_audit:
+    purpose: locked_static_nearly_fully_observed_audit
+    model_artifact: frozen_final_fit_artifact
+    parameter_fit_splits: [train, validation]
+    evaluation_source: small_matrix
+    user_representation:
+      source_splits: [train, validation]
+      cutoff: validation_end_exclusive
+      small_matrix_feedback_may_enter_history: false
+    cold_reference:
+      source_splits: [train, validation]
+      cutoff: validation_end_exclusive
+    small_matrix_may_update_learned_parameters: false
+
+guards:
+  ordinary_baseline_contexts: [selection]
+  ordinary_baseline_final_access: forbidden
+  ordinary_baseline_small_matrix_access: forbidden
+  explicit_final_entrypoint_required: true
+  final_receipt_required: true
+  final_receipt_overwrite: forbidden

@@ -1,7 +1,13 @@
 {
-  "schema_version": 1,
-  "created_at_utc": "2026-07-21T08:53:10.933286+00:00",
+  "schema_version": 2,
+  "protocol_revision": "protocol-v2",
+  "created_at_utc": "2026-07-21T17:17:46.276639+00:00",
   "immutable": true,
+  "lineage": {
+    "parent_commit": "97a0f52a2cde8eecb186242f3f2e075a16e4c0c5",
+    "parent_manifest_sha256": "8d84d2b20f9e93352e8e09f7c0fdcb5704d82b209da245bd9a542b2b66adaaf1",
+    "revision_reason": "blocked-pair semantics, causal catalog, fit contexts, target deduplication, metrics, and execution locks"
+  },
   "dataset": {
     "name": "KuaiRec",
     "zenodo_record": "18164998",
@@ -46,16 +52,48 @@
       }
     }
   },
-  "config_sha256": "82e3a681a06c0190e44911168a1e7d4f43728b936d8282fb82100ad8cf85ab66",
-  "contract_sha256": {
-    "contracts/fully_observed_audit_v1.yaml": "1804b6e60940e965a947704496827391ccf68679e54c7e16a8ed1104a7081cd4",
-    "contracts/negative_sampling_v1.yaml": "35a878a08de20f2de797d976f0eb158217003fdf88748277d1552233dc7610a4",
-    "contracts/temporal_evaluation_v1.yaml": "e1a4c191528337285a055c671726001197506bbce15aea029bbd7170a8a1778b",
-    "contracts/two_tower_cold_start_v1.yaml": "3a7870714d12b523a8f31f07ac7930aaa0555358c800365d6a463f9f34193818"
+  "config_sha256": "473a0aaf717ee6aeb603efb67bb41f247f77bc149588196bcbf1dc3c090c1f6c",
+  "active_contracts": {
+    "temporal_evaluation": {
+      "path": "contracts/temporal_evaluation_v2.yaml",
+      "sha256": "93da4471f7522ffd6d80148576813338c5088aeb1734f22d12df4acaff475c3a"
+    },
+    "small_matrix_audit": {
+      "path": "contracts/fully_observed_audit_v2.yaml",
+      "sha256": "28e431016be3f747a86f85851dce8da21d264e182c23506fa87be22bdbaa3574"
+    },
+    "fit_contexts": {
+      "path": "contracts/fit_contexts_v1.yaml",
+      "sha256": "acb8f467ad796121ea402b81daa43d3d711eaa426267603422e4ba59f769bfb4"
+    },
+    "candidate_catalog": {
+      "path": "contracts/candidate_catalog_v1.yaml",
+      "sha256": "729ac2c4e34bc10e60e9462fe27155ea67370f3fef99f97a78698ee094dbce19"
+    },
+    "target_deduplication": {
+      "path": "contracts/target_deduplication_v1.yaml",
+      "sha256": "c40794768d4ceb1fac3ab67c5f46204939ad88e1307f59e32f70d28272c53b22"
+    },
+    "cold_start": {
+      "path": "contracts/two_tower_cold_start_v2.yaml",
+      "sha256": "f7896205360471d4067132007d5eed4ad49082db2ea2654552783ca0eeee0428"
+    },
+    "metrics": {
+      "path": "contracts/metrics_v1.yaml",
+      "sha256": "7b5a6eac31a30b5a831cdc40ef5b61065e33b9fe38ceffb0be069ae59f6e20f1"
+    },
+    "baselines": {
+      "path": "contracts/baselines_v1.yaml",
+      "sha256": "993f824c1cb918ae018ad4eb681f98f75d92442eb4c03a1012cd831c28646180"
+    },
+    "negative_sampling": {
+      "path": "contracts/negative_sampling_v2.yaml",
+      "sha256": "452e8820002e1d23562c044728b1f6df75368ee3f4cccc28eefcdeaa2d31ceba"
+    }
   },
   "generation_code": {
     "path": "scripts/audit_phase0.py",
-    "sha256": "a2557238389c7127a3295545f220d98ee156e255f8a52951921274004174b2b7"
+    "sha256": "0e0a9ea87f62f5f6476acf86d5cf6d4451b949bb4967dcc28d1e87f7a81c1e62"
   },
   "label": {
     "expression": "watch_ratio > 2.0",
@@ -89,20 +127,289 @@
       "users": 7174,
       "videos": 7896,
       "positive_count": 658907,
-      "eligible_positive_count": 549976,
+      "eligible_positive_count": 533835,
       "interaction_before_declared_upload_date_count": 1025,
       "interaction_same_day_upload_time_unverifiable_count": 699059,
       "positive_before_declared_upload_date_count": 212,
       "positive_same_day_upload_time_unverifiable_count": 65995,
       "positive_missing_upload_count": 0,
-      "positive_previously_seen_count": 42724,
-      "unique_eligible_target_count": 513242,
+      "positive_previously_seen_count": 42281,
+      "positive_missing_catalog_metadata_count": 0,
+      "positive_without_prior_status_count": 16473,
+      "positive_ad_video_count": 91,
+      "positive_not_public_count": 20,
+      "unique_eligible_target_count": 497117,
+      "target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 533835,
+        "exact_duplicate_positive_rows_removed": 36593,
+        "exact_duplicate_positive_key_count": 36593,
+        "same_key_nonexact_positive_rows_removed": 125,
+        "same_key_nonexact_positive_key_count": 124,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 1,
+        "canonical_target_count": 497117,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 5119,
+          "extras_per_affected_user": {
+            "count": 5119,
+            "mean": 7.172885329165853,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 2.0,
+              "p50": 4.0,
+              "p75": 9.0,
+              "p90": 17.0,
+              "p95": 23.0,
+              "p99": 44.0,
+              "p100": 132.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 2814,
+              "extra_count": 132
+            },
+            {
+              "user_id": 1424,
+              "extra_count": 130
+            },
+            {
+              "user_id": 1916,
+              "extra_count": 111
+            },
+            {
+              "user_id": 952,
+              "extra_count": 86
+            },
+            {
+              "user_id": 2963,
+              "extra_count": 86
+            },
+            {
+              "user_id": 3878,
+              "extra_count": 85
+            },
+            {
+              "user_id": 1476,
+              "extra_count": 82
+            },
+            {
+              "user_id": 4613,
+              "extra_count": 75
+            },
+            {
+              "user_id": 2298,
+              "extra_count": 71
+            },
+            {
+              "user_id": 3200,
+              "extra_count": 68
+            },
+            {
+              "user_id": 6916,
+              "extra_count": 65
+            },
+            {
+              "user_id": 4696,
+              "extra_count": 64
+            },
+            {
+              "user_id": 3421,
+              "extra_count": 62
+            },
+            {
+              "user_id": 4200,
+              "extra_count": 62
+            },
+            {
+              "user_id": 2465,
+              "extra_count": 60
+            },
+            {
+              "user_id": 5126,
+              "extra_count": 60
+            },
+            {
+              "user_id": 5848,
+              "extra_count": 59
+            },
+            {
+              "user_id": 1313,
+              "extra_count": 58
+            },
+            {
+              "user_id": 2679,
+              "extra_count": 58
+            },
+            {
+              "user_id": 2825,
+              "extra_count": 58
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-07-06": 3,
+            "2020-07-07": 4,
+            "2020-07-08": 4,
+            "2020-07-09": 1,
+            "2020-07-10": 4,
+            "2020-07-11": 10,
+            "2020-07-31": 2,
+            "2020-08-01": 4,
+            "2020-08-02": 3,
+            "2020-08-03": 21,
+            "2020-08-04": 31,
+            "2020-08-05": 36558,
+            "2020-08-06": 37,
+            "2020-08-07": 8,
+            "2020-08-08": 27,
+            "2020-08-09": 1
+          }
+        }
+      },
+      "pre_catalog_target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 549976,
+        "exact_duplicate_positive_rows_removed": 36603,
+        "exact_duplicate_positive_key_count": 36603,
+        "same_key_nonexact_positive_rows_removed": 131,
+        "same_key_nonexact_positive_key_count": 129,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 1,
+        "canonical_target_count": 513242,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 5119,
+          "extras_per_affected_user": {
+            "count": 5119,
+            "mean": 7.176010939636647,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 2.0,
+              "p50": 4.0,
+              "p75": 9.0,
+              "p90": 17.0,
+              "p95": 23.0,
+              "p99": 44.0,
+              "p100": 132.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 2814,
+              "extra_count": 132
+            },
+            {
+              "user_id": 1424,
+              "extra_count": 130
+            },
+            {
+              "user_id": 1916,
+              "extra_count": 111
+            },
+            {
+              "user_id": 952,
+              "extra_count": 86
+            },
+            {
+              "user_id": 2963,
+              "extra_count": 86
+            },
+            {
+              "user_id": 3878,
+              "extra_count": 85
+            },
+            {
+              "user_id": 1476,
+              "extra_count": 82
+            },
+            {
+              "user_id": 4613,
+              "extra_count": 75
+            },
+            {
+              "user_id": 2298,
+              "extra_count": 71
+            },
+            {
+              "user_id": 3200,
+              "extra_count": 68
+            },
+            {
+              "user_id": 6916,
+              "extra_count": 65
+            },
+            {
+              "user_id": 4696,
+              "extra_count": 64
+            },
+            {
+              "user_id": 3421,
+              "extra_count": 62
+            },
+            {
+              "user_id": 4200,
+              "extra_count": 62
+            },
+            {
+              "user_id": 2465,
+              "extra_count": 60
+            },
+            {
+              "user_id": 5126,
+              "extra_count": 60
+            },
+            {
+              "user_id": 5848,
+              "extra_count": 59
+            },
+            {
+              "user_id": 1313,
+              "extra_count": 58
+            },
+            {
+              "user_id": 2679,
+              "extra_count": 58
+            },
+            {
+              "user_id": 2825,
+              "extra_count": 58
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-07-05": 6,
+            "2020-07-06": 3,
+            "2020-07-07": 4,
+            "2020-07-08": 4,
+            "2020-07-09": 1,
+            "2020-07-10": 4,
+            "2020-07-11": 10,
+            "2020-07-31": 2,
+            "2020-08-01": 4,
+            "2020-08-02": 3,
+            "2020-08-03": 21,
+            "2020-08-04": 31,
+            "2020-08-05": 36568,
+            "2020-08-06": 37,
+            "2020-08-07": 8,
+            "2020-08-08": 27,
+            "2020-08-09": 1
+          }
+        }
+      },
       "positive_fraction": 0.07511853074320611,
-      "temporal_query_count": 513242,
+      "temporal_query_count": 497117,
       "multi_target_query_count": 0,
       "multi_target_query_fraction": 0.0,
       "targets_per_query": {
-        "count": 513242,
+        "count": 497117,
         "mean": 1.0,
         "zero_count": 0,
         "zero_fraction": 0.0,
@@ -152,7 +459,8 @@
       "new_user_count": null,
       "new_user_fraction_of_split_users": null,
       "new_video_count": null,
-      "new_video_fraction_of_split_videos": null
+      "new_video_fraction_of_split_videos": null,
+      "canonical_target_sha256": "589958281de7ef518c64f43bd9984ec8c55fa4c24b16c2d07d73f7d23ee9f518"
     },
     "validation": {
       "timestamp_start_inclusive": 1597015523.563,
@@ -163,20 +471,160 @@
       "users": 7094,
       "videos": 5431,
       "positive_count": 136711,
-      "eligible_positive_count": 99296,
+      "eligible_positive_count": 99274,
       "interaction_before_declared_upload_date_count": 8,
       "interaction_same_day_upload_time_unverifiable_count": 153560,
       "positive_before_declared_upload_date_count": 1,
       "positive_same_day_upload_time_unverifiable_count": 16154,
       "positive_missing_upload_count": 0,
-      "positive_previously_seen_count": 21260,
-      "unique_eligible_target_count": 99270,
+      "positive_previously_seen_count": 21252,
+      "positive_missing_catalog_metadata_count": 0,
+      "positive_without_prior_status_count": 16,
+      "positive_ad_video_count": 8,
+      "positive_not_public_count": 6,
+      "unique_eligible_target_count": 99248,
+      "target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 99274,
+        "exact_duplicate_positive_rows_removed": 1,
+        "exact_duplicate_positive_key_count": 1,
+        "same_key_nonexact_positive_rows_removed": 25,
+        "same_key_nonexact_positive_key_count": 25,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 0,
+        "canonical_target_count": 99248,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 7,
+          "extras_per_affected_user": {
+            "count": 7,
+            "mean": 3.7142857142857144,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 1.0,
+              "p50": 1.0,
+              "p75": 1.5,
+              "p90": 8.800000000000006,
+              "p95": 13.899999999999988,
+              "p99": 17.97999999999999,
+              "p100": 19.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 2783,
+              "extra_count": 19
+            },
+            {
+              "user_id": 6359,
+              "extra_count": 2
+            },
+            {
+              "user_id": 684,
+              "extra_count": 1
+            },
+            {
+              "user_id": 2033,
+              "extra_count": 1
+            },
+            {
+              "user_id": 2809,
+              "extra_count": 1
+            },
+            {
+              "user_id": 3376,
+              "extra_count": 1
+            },
+            {
+              "user_id": 5642,
+              "extra_count": 1
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-08-27": 22,
+            "2020-08-28": 1,
+            "2020-08-29": 2,
+            "2020-08-30": 1
+          }
+        }
+      },
+      "pre_catalog_target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 99296,
+        "exact_duplicate_positive_rows_removed": 1,
+        "exact_duplicate_positive_key_count": 1,
+        "same_key_nonexact_positive_rows_removed": 25,
+        "same_key_nonexact_positive_key_count": 25,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 0,
+        "canonical_target_count": 99270,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 7,
+          "extras_per_affected_user": {
+            "count": 7,
+            "mean": 3.7142857142857144,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 1.0,
+              "p50": 1.0,
+              "p75": 1.5,
+              "p90": 8.800000000000006,
+              "p95": 13.899999999999988,
+              "p99": 17.97999999999999,
+              "p100": 19.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 2783,
+              "extra_count": 19
+            },
+            {
+              "user_id": 6359,
+              "extra_count": 2
+            },
+            {
+              "user_id": 684,
+              "extra_count": 1
+            },
+            {
+              "user_id": 2033,
+              "extra_count": 1
+            },
+            {
+              "user_id": 2809,
+              "extra_count": 1
+            },
+            {
+              "user_id": 3376,
+              "extra_count": 1
+            },
+            {
+              "user_id": 5642,
+              "extra_count": 1
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-08-27": 22,
+            "2020-08-28": 1,
+            "2020-08-29": 2,
+            "2020-08-30": 1
+          }
+        }
+      },
       "positive_fraction": 0.07273327974096906,
-      "temporal_query_count": 99270,
+      "temporal_query_count": 99248,
       "multi_target_query_count": 0,
       "multi_target_query_fraction": 0.0,
       "targets_per_query": {
-        "count": 99270,
+        "count": 99248,
         "mean": 1.0,
         "zero_count": 0,
         "zero_fraction": 0.0,
@@ -226,7 +674,8 @@
       "new_user_count": 2,
       "new_user_fraction_of_split_users": 0.000281928390188892,
       "new_video_count": 1495,
-      "new_video_fraction_of_split_videos": 0.27527158902596205
+      "new_video_fraction_of_split_videos": 0.27527158902596205,
+      "canonical_target_sha256": "bfaebff96baf58626fc14074cd955e110fce8cb8f4feb2d072c778901f9145de"
     },
     "temporal_final": {
       "timestamp_start_inclusive": 1598783760.238,
@@ -237,20 +686,268 @@
       "users": 6911,
       "videos": 5246,
       "positive_count": 140772,
-      "eligible_positive_count": 99637,
+      "eligible_positive_count": 99566,
       "interaction_before_declared_upload_date_count": 13,
       "interaction_same_day_upload_time_unverifiable_count": 192873,
       "positive_before_declared_upload_date_count": 3,
       "positive_same_day_upload_time_unverifiable_count": 23557,
       "positive_missing_upload_count": 0,
-      "positive_previously_seen_count": 17575,
-      "unique_eligible_target_count": 83701,
+      "positive_previously_seen_count": 17568,
+      "positive_missing_catalog_metadata_count": 0,
+      "positive_without_prior_status_count": 25,
+      "positive_ad_video_count": 13,
+      "positive_not_public_count": 40,
+      "unique_eligible_target_count": 83661,
+      "target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 99566,
+        "exact_duplicate_positive_rows_removed": 15879,
+        "exact_duplicate_positive_key_count": 15879,
+        "same_key_nonexact_positive_rows_removed": 26,
+        "same_key_nonexact_positive_key_count": 26,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 0,
+        "canonical_target_count": 83661,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 4160,
+          "extras_per_affected_user": {
+            "count": 4160,
+            "mean": 3.8233173076923075,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 1.0,
+              "p50": 2.0,
+              "p75": 5.0,
+              "p90": 8.0,
+              "p95": 12.0,
+              "p99": 22.0,
+              "p100": 73.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 762,
+              "extra_count": 73
+            },
+            {
+              "user_id": 6161,
+              "extra_count": 69
+            },
+            {
+              "user_id": 3444,
+              "extra_count": 48
+            },
+            {
+              "user_id": 2989,
+              "extra_count": 38
+            },
+            {
+              "user_id": 5530,
+              "extra_count": 37
+            },
+            {
+              "user_id": 6620,
+              "extra_count": 37
+            },
+            {
+              "user_id": 4118,
+              "extra_count": 36
+            },
+            {
+              "user_id": 5206,
+              "extra_count": 36
+            },
+            {
+              "user_id": 6966,
+              "extra_count": 36
+            },
+            {
+              "user_id": 1441,
+              "extra_count": 35
+            },
+            {
+              "user_id": 6452,
+              "extra_count": 35
+            },
+            {
+              "user_id": 4185,
+              "extra_count": 34
+            },
+            {
+              "user_id": 2783,
+              "extra_count": 33
+            },
+            {
+              "user_id": 2512,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3493,
+              "extra_count": 31
+            },
+            {
+              "user_id": 5199,
+              "extra_count": 31
+            },
+            {
+              "user_id": 6961,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3412,
+              "extra_count": 30
+            },
+            {
+              "user_id": 3986,
+              "extra_count": 29
+            },
+            {
+              "user_id": 190,
+              "extra_count": 28
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-08-30": 12,
+            "2020-08-31": 15882,
+            "2020-09-01": 2,
+            "2020-09-02": 5,
+            "2020-09-03": 3,
+            "2020-09-04": 1
+          }
+        }
+      },
+      "pre_catalog_target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 99637,
+        "exact_duplicate_positive_rows_removed": 15910,
+        "exact_duplicate_positive_key_count": 15910,
+        "same_key_nonexact_positive_rows_removed": 26,
+        "same_key_nonexact_positive_key_count": 26,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 0,
+        "canonical_target_count": 83701,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 4161,
+          "extras_per_affected_user": {
+            "count": 4161,
+            "mean": 3.8298485940879594,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 1.0,
+              "p50": 2.0,
+              "p75": 5.0,
+              "p90": 8.0,
+              "p95": 12.0,
+              "p99": 22.0,
+              "p100": 73.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 762,
+              "extra_count": 73
+            },
+            {
+              "user_id": 6161,
+              "extra_count": 69
+            },
+            {
+              "user_id": 3444,
+              "extra_count": 48
+            },
+            {
+              "user_id": 2989,
+              "extra_count": 38
+            },
+            {
+              "user_id": 5530,
+              "extra_count": 37
+            },
+            {
+              "user_id": 6620,
+              "extra_count": 37
+            },
+            {
+              "user_id": 4118,
+              "extra_count": 36
+            },
+            {
+              "user_id": 5206,
+              "extra_count": 36
+            },
+            {
+              "user_id": 6966,
+              "extra_count": 36
+            },
+            {
+              "user_id": 1441,
+              "extra_count": 35
+            },
+            {
+              "user_id": 6452,
+              "extra_count": 35
+            },
+            {
+              "user_id": 4185,
+              "extra_count": 34
+            },
+            {
+              "user_id": 2783,
+              "extra_count": 33
+            },
+            {
+              "user_id": 2512,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3412,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3493,
+              "extra_count": 31
+            },
+            {
+              "user_id": 5199,
+              "extra_count": 31
+            },
+            {
+              "user_id": 6961,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3986,
+              "extra_count": 29
+            },
+            {
+              "user_id": 190,
+              "extra_count": 28
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-08-30": 12,
+            "2020-08-31": 15913,
+            "2020-09-01": 2,
+            "2020-09-02": 5,
+            "2020-09-03": 3,
+            "2020-09-04": 1
+          }
+        }
+      },
       "positive_fraction": 0.0748938216800089,
-      "temporal_query_count": 83701,
+      "temporal_query_count": 83661,
       "multi_target_query_count": 0,
       "multi_target_query_fraction": 0.0,
       "targets_per_query": {
-        "count": 83701,
+        "count": 83661,
         "mean": 1.0,
         "zero_count": 0,
         "zero_fraction": 0.0,
@@ -300,7 +997,440 @@
       "new_user_count": 0,
       "new_user_fraction_of_split_users": 0.0,
       "new_video_count": 1337,
-      "new_video_fraction_of_split_videos": 0.25486084635913075
+      "new_video_fraction_of_split_videos": 0.25486084635913075,
+      "canonical_target_sha256": "aceea8d36db174f33aab89188cf870cdfd4ec389e55837f895d5808164291f08"
+    }
+  },
+  "fit_contexts": {
+    "selection": {
+      "fit_splits": [
+        "train"
+      ],
+      "evaluation_split": "validation",
+      "cold_reference_splits": [
+        "train"
+      ]
+    },
+    "final": {
+      "fit_splits": [
+        "train",
+        "validation"
+      ],
+      "initialize_from_scratch": true,
+      "evaluation_split": "temporal_final",
+      "cold_reference_splits": [
+        "train",
+        "validation"
+      ],
+      "evaluation_count": "exactly_once"
+    },
+    "small_matrix_audit": {
+      "fit_artifact": "frozen_final_fit_artifact",
+      "history_splits": [
+        "train",
+        "validation"
+      ],
+      "cold_reference_splits": [
+        "train",
+        "validation"
+      ]
+    }
+  },
+  "candidate_catalog": {
+    "policy": {
+      "policy_id": "normal-public-prior-day-status-v1",
+      "query_timezone": "Asia/Shanghai",
+      "snapshot_rule": "latest item_daily_features row with date < query local date",
+      "upload_rule": "upload_dt local date < query local date",
+      "primary_video_type": "NORMAL",
+      "advertisement_policy": "exclude AD from the primary recommendation task",
+      "unknown_or_no_prior_snapshot_policy": "exclude",
+      "video_count": 10728,
+      "snapshot_rows": 343341,
+      "snapshot_date_min": 20200705,
+      "snapshot_date_max": 20200905,
+      "duplicate_video_date_rows": 0,
+      "per_video_inconsistent_fields": {
+        "upload_dt": 0,
+        "video_type": 0
+      },
+      "video_type_video_counts": {
+        "NORMAL": 10699,
+        "AD": 29
+      },
+      "visible_status_row_counts": {
+        "public": 340782,
+        "private": 2515,
+        "only friends": 44
+      },
+      "videos_by_distinct_visible_status_count": {
+        "1": 9886,
+        "2": 838,
+        "3": 4
+      },
+      "visible_status_transition_counts": {
+        "only friends->private": 3,
+        "only friends->public": 1,
+        "private->only friends": 3,
+        "private->public": 190,
+        "public->only friends": 4,
+        "public->private": 926
+      },
+      "daily_primary_catalog_size": {
+        "20200623": 0,
+        "20200624": 0,
+        "20200625": 0,
+        "20200626": 0,
+        "20200627": 0,
+        "20200628": 0,
+        "20200629": 0,
+        "20200630": 0,
+        "20200701": 0,
+        "20200702": 0,
+        "20200703": 0,
+        "20200704": 0,
+        "20200705": 0,
+        "20200706": 1364,
+        "20200707": 1631,
+        "20200708": 1897,
+        "20200709": 2113,
+        "20200710": 2344,
+        "20200711": 2529,
+        "20200712": 2735,
+        "20200713": 2877,
+        "20200714": 2964,
+        "20200715": 3042,
+        "20200716": 3146,
+        "20200717": 3232,
+        "20200718": 3316,
+        "20200719": 3412,
+        "20200720": 3500,
+        "20200721": 3587,
+        "20200722": 3679,
+        "20200723": 3766,
+        "20200724": 3846,
+        "20200725": 3942,
+        "20200726": 4030,
+        "20200727": 4127,
+        "20200728": 4252,
+        "20200729": 4370,
+        "20200730": 4480,
+        "20200731": 4642,
+        "20200801": 4907,
+        "20200802": 5208,
+        "20200803": 5471,
+        "20200804": 5744,
+        "20200805": 5990,
+        "20200806": 6206,
+        "20200807": 6442,
+        "20200808": 6718,
+        "20200809": 6930,
+        "20200810": 7166,
+        "20200811": 7303,
+        "20200812": 7364,
+        "20200813": 7413,
+        "20200814": 7458,
+        "20200815": 7484,
+        "20200816": 7518,
+        "20200817": 7567,
+        "20200818": 7614,
+        "20200819": 7635,
+        "20200820": 7677,
+        "20200821": 7727,
+        "20200822": 7755,
+        "20200823": 7795,
+        "20200824": 7837,
+        "20200825": 7865,
+        "20200826": 7896,
+        "20200827": 8037,
+        "20200828": 8248,
+        "20200829": 8453,
+        "20200830": 8633,
+        "20200831": 8800,
+        "20200901": 9008,
+        "20200902": 9198,
+        "20200903": 9388,
+        "20200904": 9590,
+        "20200905": 9808,
+        "20200906": 9905,
+        "20200907": 9905,
+        "20200908": 9905,
+        "20200909": 9905,
+        "20200910": 9905
+      }
+    },
+    "per_query_sizes": {
+      "rule": "per-query causal NORMAL/public/uploaded catalog; remove all items observed strictly before query; score before consuming equal timestamp",
+      "per_split": {
+        "train": {
+          "available_candidate_size": {
+            "count": 497117,
+            "mean": 4838.364193942271,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1364.0,
+              "p01": 1364.0,
+              "p05": 1631.0,
+              "p10": 1897.0,
+              "p50": 5471.0,
+              "p90": 6718.0,
+              "p95": 6930.0,
+              "p99": 7166.0,
+              "p100": 7166.0
+            }
+          },
+          "available_unseen_candidate_size": {
+            "count": 497117,
+            "mean": 4206.620278525981,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1195.0,
+              "p01": 1310.0,
+              "p05": 1550.0,
+              "p10": 1806.0,
+              "p50": 4828.0,
+              "p90": 5667.0,
+              "p95": 5896.0,
+              "p99": 6379.0,
+              "p100": 7090.0
+            }
+          },
+          "uniform_pool_excluding_targets_size": {
+            "count": 497117,
+            "mean": 4205.620278525981,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1194.0,
+              "p01": 1309.0,
+              "p05": 1549.0,
+              "p10": 1805.0,
+              "p50": 4827.0,
+              "p90": 5666.0,
+              "p95": 5895.0,
+              "p99": 6378.0,
+              "p100": 7089.0
+            }
+          },
+          "target_missing_from_candidate_count": 0
+        },
+        "validation": {
+          "available_candidate_size": {
+            "count": 99248,
+            "mean": 8045.95705706916,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 7166.0,
+              "p01": 7166.0,
+              "p05": 7166.0,
+              "p10": 7166.0,
+              "p50": 8248.0,
+              "p90": 8633.0,
+              "p95": 8633.0,
+              "p99": 8633.0,
+              "p100": 8633.0
+            }
+          },
+          "available_unseen_candidate_size": {
+            "count": 99248,
+            "mean": 6693.534559890376,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 4580.0,
+              "p01": 5170.0,
+              "p05": 5500.0,
+              "p10": 5690.0,
+              "p50": 6713.0,
+              "p90": 7641.0,
+              "p95": 7876.0,
+              "p99": 8270.0,
+              "p100": 8543.0
+            }
+          },
+          "uniform_pool_excluding_targets_size": {
+            "count": 99248,
+            "mean": 6692.534559890376,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 4579.0,
+              "p01": 5169.0,
+              "p05": 5499.0,
+              "p10": 5689.0,
+              "p50": 6712.0,
+              "p90": 7640.0,
+              "p95": 7875.0,
+              "p99": 8269.0,
+              "p100": 8542.0
+            }
+          },
+          "target_missing_from_candidate_count": 0
+        },
+        "temporal_final": {
+          "available_candidate_size": {
+            "count": 83661,
+            "mean": 9233.849631249925,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 8633.0,
+              "p01": 8633.0,
+              "p05": 8800.0,
+              "p10": 8800.0,
+              "p50": 9198.0,
+              "p90": 9808.0,
+              "p95": 9808.0,
+              "p99": 9808.0,
+              "p100": 9905.0
+            }
+          },
+          "available_unseen_candidate_size": {
+            "count": 83661,
+            "mean": 7702.948494519549,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 5858.0,
+              "p01": 6449.6,
+              "p05": 6769.0,
+              "p10": 6931.0,
+              "p50": 7609.0,
+              "p90": 8664.0,
+              "p95": 9032.0,
+              "p99": 9446.0,
+              "p100": 9738.0
+            }
+          },
+          "uniform_pool_excluding_targets_size": {
+            "count": 83661,
+            "mean": 7701.948494519549,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 5857.0,
+              "p01": 6448.6,
+              "p05": 6768.0,
+              "p10": 6930.0,
+              "p50": 7608.0,
+              "p90": 8663.0,
+              "p95": 9031.0,
+              "p99": 9445.0,
+              "p100": 9737.0
+            }
+          },
+          "target_missing_from_candidate_count": 0
+        }
+      }
+    }
+  },
+  "cold_start_contexts": {
+    "validation": {
+      "reference_splits": [
+        "train"
+      ],
+      "reference_item_count": 7896,
+      "reference_membership_sha256": "765a33ca4362ef7f008fa80ef57ee70707bea7b1331880d0858b8d5afbbec8b6",
+      "target_item_count": 3904,
+      "warm_target_item_count": 2881,
+      "cold_target_item_count": 1023,
+      "cold_target_membership_sha256": "e008f627a96409c856d4d9e258c5e7caf193c78f7d72c4f36746118504af382e",
+      "data_warm_definition": "at least one Big Matrix interaction in the context reference",
+      "id_embedding_actually_trained_is_separate": true
+    },
+    "temporal_final": {
+      "reference_splits": [
+        "train",
+        "validation"
+      ],
+      "reference_item_count": 9391,
+      "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
+      "target_item_count": 2694,
+      "warm_target_item_count": 1889,
+      "cold_target_item_count": 805,
+      "cold_target_membership_sha256": "94285130e4228282ede296a226be765070d664f2120571d0434bdda28ea42c7d",
+      "data_warm_definition": "at least one Big Matrix interaction in the context reference",
+      "id_embedding_actually_trained_is_separate": true
+    },
+    "small_matrix": {
+      "reference_splits": [
+        "train",
+        "validation"
+      ],
+      "reference_item_count": 9391,
+      "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
+      "target_item_count": 3327,
+      "warm_target_item_count": 3326,
+      "cold_target_item_count": 1,
+      "cold_target_membership_sha256": "bbdbf2d46750dd8d042a84228deb69440f58e16192916415a6af722d697b343f",
+      "data_warm_definition": "at least one Big Matrix interaction in the context reference",
+      "id_embedding_actually_trained_is_separate": true
+    },
+    "untrained_id_policy": "an ID embedding may be used only if optimization actually touched it; otherwise use the content-only/UNK fallback"
+  },
+  "hard_negative_pool_audit": {
+    "status": "aggregate_pool_audit_only_no_sampler_or_model_executed",
+    "fit_context": "selection_train_only",
+    "future_window": "query_time < event_time <= query_time+30m and event_time < train_end; same session; never reads validation for a train query",
+    "query_count": 497117,
+    "queries_with_nonempty_pool": 201222,
+    "query_pool_coverage": 0.40477794965772645,
+    "same_session_window_quick_skip_event_count_before_candidate_filters": 877178,
+    "unique_hard_query_item_pairs": 686008,
+    "pool_size_per_query": {
+      "count": 497117,
+      "mean": 1.3799729238790868,
+      "zero_count": 295895,
+      "zero_fraction": 0.5952220503422736,
+      "quantiles": {
+        "p00": 0.0,
+        "p01": 0.0,
+        "p05": 0.0,
+        "p10": 0.0,
+        "p50": 0.0,
+        "p90": 4.0,
+        "p95": 6.0,
+        "p99": 15.0,
+        "p100": 152.0
+      }
+    },
+    "filter_counts": {
+      "not_candidate_at_query": 39538,
+      "not_quick_skip": 4049248,
+      "outside_same_session": 0,
+      "seen_at_query": 59748
+    },
+    "false_negative_risk": {
+      "diagnostic_only_not_used_to_filter_or_tune": true,
+      "pair_denominator": 686008,
+      "query_denominator": 201222,
+      "pair_counts": {
+        "remaining_session": 4503,
+        "within_1d": 4588,
+        "within_7d": 4858,
+        "before_fit_cutoff": 6261
+      },
+      "pair_fractions": {
+        "remaining_session": 0.006564063392846731,
+        "within_1d": 0.006687968653426782,
+        "within_7d": 0.007081550069386946,
+        "before_fit_cutoff": 0.009126715723431796
+      },
+      "query_any_risk_counts": {
+        "remaining_session": 3851,
+        "within_1d": 3923,
+        "within_7d": 4159,
+        "before_fit_cutoff": 5454
+      },
+      "query_any_risk_fractions": {
+        "remaining_session": 0.019138066414209183,
+        "within_1d": 0.019495880172148174,
+        "within_7d": 0.020668714156503763,
+        "before_fit_cutoff": 0.0271043921638787
+      }
     }
   },
   "small_matrix_audit": {
@@ -313,6 +1443,9 @@
     "users_with_zero_positives_fraction": 0.0,
     "ground_truth_only": true,
     "enters_training_or_history": false,
+    "blocked_information_enters_negative_sampling": false,
+    "primary_candidate_policy": "exclude blocked/missing pairs per user",
+    "secondary_candidate_policy": "rank all 3327 only for Blocked@K safety audit",
     "observation_coverage": {
       "users": 1411,
       "catalog_videos": 3327,
@@ -320,6 +1453,7 @@
       "observed_unique_pairs": 4676570,
       "duplicate_rows": 0,
       "missing_pairs": 17827,
+      "blocked_or_missing_pairs": 17827,
       "observed_pair_fraction": 0.9962024941648523,
       "missing_pairs_per_user": {
         "count": 1411,
@@ -337,9 +1471,39 @@
           "p100": 32.0
         }
       },
-      "primary_ranking_catalog_size": 3327,
-      "missing_feedback_policy": "retain all catalog items; an unobserved pair is unjudged and never a training negative; primary binary metrics use only observed strong-positive items as the relevance set"
+      "primary_candidate_size_per_user": {
+        "count": 1411,
+        "mean": 3314.3656980864635,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 3295.0,
+          "p25": 3309.0,
+          "p50": 3315.0,
+          "p75": 3320.0,
+          "p90": 3323.0,
+          "p95": 3324.0,
+          "p99": 3326.0,
+          "p100": 3327.0
+        }
+      },
+      "secondary_full_catalog_size": 3327,
+      "official_missing_pair_semantics": "user blocked the video or its author; inferred only at pair level",
+      "primary_policy": "exclude each user's blocked/missing pairs; rank only physically observed pairs, including observed nonpositive pairs",
+      "secondary_safety_policy": "rank all 3327 videos only to report Blocked@K and BlockedUserHitRate@K; never claim it as primary model quality",
+      "blocked_information_forbidden_uses": [
+        "training",
+        "features",
+        "user_history",
+        "negative_sampling",
+        "hyperparameter_selection"
+      ]
     }
+  },
+  "holdout_disclosure": {
+    "aggregate_label_query_and_quality_statistics_already_published": true,
+    "untouched_claim": false,
+    "claim": "frozen after Phase 0 aggregate audit"
   },
   "locks": {
     "temporal_final_locked": true,

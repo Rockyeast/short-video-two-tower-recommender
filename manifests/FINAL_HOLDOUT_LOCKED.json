@@ -1,10 +1,13 @@
 {
   "locked": true,
+  "protocol_revision": "protocol-v2",
   "manifest": "manifests/split_manifest.json",
-  "manifest_sha256": "8d84d2b20f9e93352e8e09f7c0fdcb5704d82b209da245bd9a542b2b66adaaf1",
+  "manifest_sha256": "2223ad95548a67d03055fa4db0fbf74f1e6329907d9d2f864cf497683542db8e",
   "protected": [
     "temporal_final",
     "small_matrix_audit"
   ],
-  "ordinary_baseline_access": false
+  "ordinary_baseline_access": false,
+  "final_entrypoint": "scripts/final_evaluation.py",
+  "final_receipt_overwrite": false
 }

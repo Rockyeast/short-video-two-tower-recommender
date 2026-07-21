@@ -1,0 +1,65 @@
+contract_id: kuairec-two-tower-cold-start-v2
+protocol_revision: protocol-v2
+status: active_design_only_two_tower_not_implemented
+
+definitions:
+  data_warm_item: >-
+    A video with at least one Big Matrix interaction in the context-specific
+    cold-reference window, independent of the interaction label.
+  data_cold_item: >-
+    A video with zero Big Matrix interactions in the context-specific
+    cold-reference window.
+  model_id_trained_item: >-
+    A video whose ID embedding was actually touched by an optimization update
+    during the current fit run.
+
+references:
+  validation_selection:
+    fit_context: selection
+    source_splits: [train]
+    cutoff: train_end_exclusive
+  temporal_final:
+    fit_context: final
+    source_splits: [train, validation]
+    cutoff: validation_end_exclusive
+  small_matrix_audit:
+    fit_context: small_matrix_audit
+    source_splits: [train, validation]
+    cutoff: validation_end_exclusive
+
+warm_item_path:
+  id_embedding_use_requires:
+    - item_is_data_warm_in_current_context
+    - id_embedding_was_actually_updated_in_current_fit_run
+  content_features:
+    - caption
+    - topic_tag
+    - hierarchical_category
+    - static_video_features
+
+cold_or_untouched_item_path:
+  applies_to:
+    - data_cold_item
+    - data_warm_but_model_id_untouched_item
+  independent_untrained_id_embedding: forbidden
+  id_input: masked_zero_vector
+  fallback: content_only_video_tower
+
+reporting:
+  required_segments:
+    - overall
+    - warm_target
+    - cold_target
+    - data_warm_but_model_id_untouched_target
+  required_metrics:
+    - Recall@20
+    - Recall@50
+    - Recall@100
+    - NDCG@10
+    - NDCG@20
+  required_membership_artifacts:
+    - warm_item_count
+    - cold_item_count
+    - model_id_trained_item_count
+    - membership_hash
+  overall_without_segment_results: forbidden

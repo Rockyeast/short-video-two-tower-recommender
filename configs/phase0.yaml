@@ -12,6 +12,30 @@ dataset:
     - social_network.csv
     - kuairec_caption_category.csv
 
+protocol:
+  revision: protocol-v2
+  status: phase_0_protocol_audit_only
+  lineage:
+    parent_commit: 97a0f52a2cde8eecb186242f3f2e075a16e4c0c5
+    parent_manifest_sha256: 8d84d2b20f9e93352e8e09f7c0fdcb5704d82b209da245bd9a542b2b66adaaf1
+    revision_reason: blocked-pair semantics, causal catalog, fit contexts, target deduplication, metrics, and execution locks
+  active_contracts:
+    temporal_evaluation: contracts/temporal_evaluation_v2.yaml
+    small_matrix_audit: contracts/fully_observed_audit_v2.yaml
+    fit_contexts: contracts/fit_contexts_v1.yaml
+    candidate_catalog: contracts/candidate_catalog_v1.yaml
+    target_deduplication: contracts/target_deduplication_v1.yaml
+    cold_start: contracts/two_tower_cold_start_v2.yaml
+    metrics: contracts/metrics_v1.yaml
+    baselines: contracts/baselines_v1.yaml
+    negative_sampling: contracts/negative_sampling_v2.yaml
+  inactive_legacy_contracts:
+    - contracts/temporal_evaluation_v1.yaml
+    - contracts/fully_observed_audit_v1.yaml
+    - contracts/two_tower_cold_start_v1.yaml
+    - contracts/negative_sampling_v1.yaml
+  model_or_baseline_executed: false
+
 label:
   field: watch_ratio
   operator: ">"
@@ -30,17 +54,57 @@ split:
   final_locked: true
   small_matrix_audit_locked: true
 
+fit_contexts:
+  selection:
+    fit_splits: [train]
+    evaluation_split: validation
+    cold_reference_splits: [train]
+  final:
+    fit_splits: [train, validation]
+    initialize_from_scratch: true
+    evaluation_split: temporal_final
+    cold_reference_splits: [train, validation]
+    evaluation_count: exactly_once
+  small_matrix_audit:
+    fit_artifact: frozen_final_fit_artifact
+    history_splits: [train, validation]
+    cold_reference_splits: [train, validation]
+
 evaluation:
   history_scope: all_events_strictly_before_query_timestamp
   upload_availability: next_asia_shanghai_midnight_after_upload_date
   simultaneous_timestamp_policy: group_targets_shared_pre_group_history
   filter_seen_items: true
   small_matrix_history_source: big_matrix_train_plus_validation_only
+  temporal_candidate_catalog: causal_normal_public_only
+  small_matrix_primary_candidates: observed_pairs_excluding_blocked_or_missing
+  small_matrix_secondary_candidates: all_3327_for_blocked_safety_audit
+  temporal_final_status: phase_0_aggregate_audited_then_frozen
+  temporal_final_untouched_claim: false
+
+candidate_catalog:
+  primary_video_type: NORMAL
+  excluded_video_types: [AD]
+  allowed_visible_status: [public]
+  excluded_visible_status: [private, only friends]
+  visibility_snapshot: latest_row_strictly_before_query_local_date
+  inconsistent_upload_dt_policy: exclude_and_report
+  inconsistent_video_type_policy: exclude_and_report
+
+target_canonicalization:
+  key: [user_id, video_id, timestamp]
+  exact_duplicate_policy: retain_one_and_report
+  binary_label_conflict_policy: exclude_entire_key_and_report
+  same_positive_label_policy: coalesce_to_one_target_and_report
+  training_source: canonical_eligible_target_table_only
 
 negative_sampling:
   session_gap_minutes: 30
   local_window_minutes: 30
   candidate_hard_negative_direction: future_from_query_time
+  future_window_may_cross_fit_cutoff: false
   seen_quick_skips_are_context_only: true
   random_unexposed_correction: sampled_softmax_log_expected_sampling_count
   correction_probability: full_source_mixture_probability
+  uniform_denominator: actual_eligible_pool_after_positive_target_removal
+  hard_negative_audit_required_before_two_tower: true
