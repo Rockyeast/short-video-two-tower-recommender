@@ -109,19 +109,24 @@ def _rank_random_range(
     catalog = artifacts["catalog"]
     queries = artifacts["queries"]
     bits = artifacts["candidate_bits"]
-    item_count = len(catalog["video_ids"])
+    video_ids = catalog["video_ids"]
+    query_user_ids = queries["user_ids"]
+    query_timestamps = queries["timestamp"]
+    item_count = len(video_ids)
     output = np.empty((end - begin, 100), dtype=np.int32)
     for output_row, query in enumerate(range(begin, end)):
         candidates = candidate_positions(bits[query], item_count)
-        query_id = f"{int(queries['user_ids'][query])}|{float(queries['timestamp'][query]):.6f}"
+        query_id = (
+            f"{int(query_user_ids[query])}|{float(query_timestamps[query]):.6f}"
+        )
         ranked = heapq.nlargest(
             min(100, len(candidates)),
             (int(item) for item in candidates),
             key=lambda item: (
                 hashlib.sha256(
-                    f"{seed}|{query_id}|{int(catalog['video_ids'][item])}".encode()
+                    f"{seed}|{query_id}|{int(video_ids[item])}".encode()
                 ).digest(),
-                -int(catalog["video_ids"][item]),
+                -int(video_ids[item]),
             ),
         )
         output[output_row].fill(-1)
@@ -181,19 +186,23 @@ def rank_causal_streaming_decayed(
     queries = artifacts["queries"]
     bits = artifacts["candidate_bits"]
     video_ids = catalog["video_ids"]
+    query_timestamps = queries["timestamp"]
+    target_indices = queries["target_indices"]
+    target_indptr = queries["target_indptr"]
     scores = _fit_decayed_scores(artifacts, half_life_days)
     order = popularity_order(scores, video_ids).astype(int).tolist()
     scale = math.log(2.0) / (half_life_days * 86400.0)
     reference = float(catalog["train_end"][0])
     output = np.empty((len(queries["user"]), 100), dtype=np.int32)
-    chronological = np.argsort(queries["timestamp"], kind="mergesort")
+    chronological = np.argsort(query_timestamps, kind="mergesort")
     cursor = 0
     while cursor < len(chronological):
-        query_time = float(queries["timestamp"][chronological[cursor]])
+        query_time = float(query_timestamps[chronological[cursor]])
         end = cursor + 1
-        while end < len(chronological) and float(
-            queries["timestamp"][chronological[end]]
-        ) == query_time:
+        while (
+            end < len(chronological)
+            and float(query_timestamps[chronological[end]]) == query_time
+        ):
             end += 1
         decay = math.exp(-scale * (query_time - reference))
         scores *= decay
@@ -203,9 +212,7 @@ def rank_causal_streaming_decayed(
             output[query] = topk_from_order(order, bits[query])
         updates: Counter[int] = Counter()
         for query in group:
-            targets = queries["target_indices"][
-                queries["target_indptr"][query] : queries["target_indptr"][query + 1]
-            ]
+            targets = target_indices[target_indptr[query] : target_indptr[query + 1]]
             updates.update(int(item) for item in targets)
         for item, count in updates.items():
             scores[item] += count
@@ -291,15 +298,21 @@ def rank_itemcf(
     )
     output = np.empty((len(queries["user"]), 100), dtype=np.int32)
     query_by_user: dict[int, list[int]] = defaultdict(list)
-    for query, user in enumerate(queries["user"]):
+    query_users = queries["user"]
+    query_timestamps = queries["timestamp"]
+    event_indptr = events["user_indptr"]
+    event_timestamps = events["timestamp"]
+    event_items = events["item"]
+    event_strong = events["strong"]
+    for query, user in enumerate(query_users):
         query_by_user[int(user)].append(query)
     train_end = float(catalog["train_end"][0])
     for user, user_queries in query_by_user.items():
-        start = int(events["user_indptr"][user])
-        end = int(events["user_indptr"][user + 1])
-        times = events["timestamp"][start:end]
-        items = events["item"][start:end]
-        strong = events["strong"][start:end]
+        start = int(event_indptr[user])
+        end = int(event_indptr[user + 1])
+        times = event_timestamps[start:end]
+        items = event_items[start:end]
+        strong = event_strong[start:end]
         score = np.zeros(len(video_ids), dtype=np.float32)
         history: set[int] = set()
         initial = np.flatnonzero(strong & (times < train_end))
@@ -307,7 +320,7 @@ def rank_itemcf(
             _add_history_item(score, int(items[position]), history, neighbors, weights)
         cursor = int(np.searchsorted(times, train_end, side="left"))
         for query in user_queries:
-            query_time = float(queries["timestamp"][query])
+            query_time = float(query_timestamps[query])
             left = int(np.searchsorted(times, query_time, side="left"))
             for position in range(cursor, left):
                 if strong[position]:
@@ -355,6 +368,8 @@ def train_bpr_checkpoints(
     checkpoints: tuple[int, ...] = (5, 10, 20),
 ) -> dict[int, tuple[np.ndarray, np.ndarray]]:
     train = artifacts["train"]
+    train_users = train["user"]
+    train_items = train["item"]
     negatives = artifacts["bpr_negatives"][f"seed_{seed}"]
     user_count = artifacts["user_item"].shape[0]
     item_count = artifacts["user_item"].shape[1]
@@ -368,13 +383,13 @@ def train_bpr_checkpoints(
     batch_size = 4096
     step = 0
     output: dict[int, tuple[np.ndarray, np.ndarray]] = {}
-    order = np.arange(len(train["user"]), dtype=np.int64)
+    order = np.arange(len(train_users), dtype=np.int64)
     for epoch in range(1, max(checkpoints) + 1):
         rng.shuffle(order)
         for begin in range(0, len(order), batch_size):
             batch = order[begin : begin + batch_size]
-            user_idx = train["user"][batch]
-            positive_idx = train["item"][batch]
+            user_idx = train_users[batch]
+            positive_idx = train_items[batch]
             negative_idx = negatives[batch]
             user_vec = users[user_idx]
             positive_vec = items[positive_idx]
@@ -428,9 +443,10 @@ def rank_bpr(
     video_ids = catalog["video_ids"]
     trained_users = np.asarray(artifacts["user_item"].sum(axis=1)).ravel() > 0
     trained_items = np.asarray(artifacts["user_item"].sum(axis=0)).ravel() > 0
-    output = np.empty((len(queries["user"]), 100), dtype=np.int32)
+    query_users = queries["user"]
+    output = np.empty((len(query_users), 100), dtype=np.int32)
     query_by_user: dict[int, list[int]] = defaultdict(list)
-    for query, user in enumerate(queries["user"]):
+    for query, user in enumerate(query_users):
         query_by_user[int(user)].append(query)
     fallback_queries = 0
     fallback_users = 0
