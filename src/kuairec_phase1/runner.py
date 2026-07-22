@@ -368,10 +368,20 @@ def _write_markdown(path: Path, result: Mapping[str, Any], bundle: Mapping[str, 
         "",
         "This report uses train-fit / validation-only selection. Temporal final and Small Matrix were not opened by the experiment runner.",
         "",
+        "## Run summary",
+        "",
+        f"- Completed selection rows: **{len(result['rows'])}**",
+        f"- Orchestrator runtime: **{result['run']['seconds']:.2f} seconds**",
+        f"- Peak resident memory: **{result['run']['peak_memory_mb']:.2f} MB**",
+        f"- Processed artifact cache hit: **{str(result['run']['processed_cache_hit']).lower()}**",
+        f"- Full protocol verifications during this run: **{result['run']['full_protocol_verification_count_this_run']}**",
+        "",
         "## Selected configurations",
         "",
-        "| Method | Hyperparameters | Recall@100 | NDCG@20 | Coverage@100 |",
-        "|---|---|---:|---:|---:|",
+        "Metrics for stochastic methods are means across their frozen seeds.",
+        "",
+        "| Method | Hyperparameters | Recall@100 | NDCG@20 | Coverage@100 | WarmRecall@100 | TailRecall@100 | ColdRecall@100 |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for method in METHODS:
         chosen = selected[method]
@@ -382,13 +392,50 @@ def _write_markdown(path: Path, result: Mapping[str, Any], bundle: Mapping[str, 
         ]
         means = {
             metric: sum(row["metrics"][metric] for row in rows) / len(rows)
-            for metric in ("Recall@100", "NDCG@20", "Coverage@100")
+            for metric in (
+                "Recall@100",
+                "NDCG@20",
+                "Coverage@100",
+                "WarmRecall@100",
+                "TailRecall@100",
+                "ColdRecall@100",
+            )
         }
         lines.append(
             f"| {method} | `{canonical_json(chosen['hyperparameters'])}` | "
             f"{means['Recall@100']:.6f} | {means['NDCG@20']:.6f} | "
-            f"{means['Coverage@100']:.6f} |"
+            f"{means['Coverage@100']:.6f} | {means['WarmRecall@100']:.6f} | "
+            f"{means['TailRecall@100']:.6f} | {means['ColdRecall@100']:.6f} |"
         )
+    lines.extend(
+        [
+            "",
+            "## Selected configuration confidence intervals",
+            "",
+            "Intervals are paired user-cluster bootstrap intervals for the primary query-macro estimator. WarmRecall is reported above as a point estimate; the frozen metrics contract requires intervals for overall, tail, and cold metrics.",
+            "",
+            "| Method | Seed | Recall@100 | 95% CI | NDCG@20 | 95% CI | TailRecall@100 95% CI | ColdRecall@100 95% CI |",
+            "|---|---:|---:|---|---:|---|---|---|",
+        ]
+    )
+    for method in METHODS:
+        chosen = selected[method]
+        for row in result["rows"]:
+            if row["method"] != method or row["config_id"] != chosen["config_id"]:
+                continue
+            intervals = row["bootstrap_95_percent_intervals"]
+            recall_ci = intervals["Recall@100"]
+            ndcg_ci = intervals["NDCG@20"]
+            tail_ci = intervals["TailRecall@100"]
+            cold_ci = intervals["ColdRecall@100"]
+            lines.append(
+                f"| {method} | {row['seed']} | {row['metrics']['Recall@100']:.6f} | "
+                f"[{recall_ci[0]:.6f}, {recall_ci[1]:.6f}] | "
+                f"{row['metrics']['NDCG@20']:.6f} | "
+                f"[{ndcg_ci[0]:.6f}, {ndcg_ci[1]:.6f}] | "
+                f"[{tail_ci[0]:.6f}, {tail_ci[1]:.6f}] | "
+                f"[{cold_ci[0]:.6f}, {cold_ci[1]:.6f}] |"
+            )
     lines.extend(
         [
             "",
