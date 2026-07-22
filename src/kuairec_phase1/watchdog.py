@@ -133,6 +133,7 @@ def run_supervised(
             returncode = process.poll()
             now = time.monotonic()
             if returncode is not None:
+                cleanup_nested()
                 return int(returncode)
             if now - started >= timeout_seconds:
                 cleanup_nested()

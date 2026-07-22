@@ -250,7 +250,14 @@ def _prepare_execution(
             fallback_file=fallback_file,
         )
         _validate_ranking_manifest_structure(ranking_input_manifest, plan.rows)
-        _verify_ranking_manifest_files(root, ranking_input_manifest, row_index=None)
+        _verify_ranking_manifest_files(
+            root,
+            ranking_input_manifest,
+            artifact_dir=artifact_dir,
+            plan_rows=plan.rows,
+            fallback_file=fallback_file,
+            row_index=None,
+        )
         ranking_manifest_sha = _json_file_sha256(ranking_input_manifest)
     else:
         cache_dir = _cache_directory(artifact_dir, expected_cache_key)
@@ -263,7 +270,12 @@ def _prepare_execution(
         if row_index is None or row_index < 0 or row_index >= len(plan.rows):
             raise GateError("Row-specific ranking-input verification requires a valid row")
         _verify_ranking_manifest_files(
-            root, ranking_input_manifest, row_index=row_index
+            root,
+            ranking_input_manifest,
+            artifact_dir=artifact_dir,
+            plan_rows=plan.rows,
+            fallback_file=fallback_file,
+            row_index=row_index,
         )
         ranking_manifest_sha = sha256_file(ranking_manifest_path)
     binding = _cache_binding(
@@ -382,10 +394,16 @@ def _bpr_model_path(
 
 
 def _relative_hashed_file(root: Path, path: Path) -> dict[str, str]:
+    root = root.resolve()
+    path = path.resolve()
+    try:
+        relative = path.relative_to(root)
+    except ValueError as exc:
+        raise GateError("Ranking input path is outside the repository") from exc
     if not path.is_file():
         raise ArtifactError(f"Ranking input is missing: {path}")
     return {
-        "path": str(path.relative_to(root)),
+        "path": str(relative),
         "sha256": sha256_file(path),
     }
 
@@ -462,8 +480,23 @@ def _validate_ranking_manifest_structure(
             raise GateError("Ranking-input manifest file coverage changed")
 
 
-def _verify_hashed_input(root: Path, entry: Mapping[str, Any]) -> None:
-    path = root / str(entry.get("path"))
+def _verify_hashed_input(
+    root: Path, entry: Mapping[str, Any], *, expected_path: Path
+) -> None:
+    root = root.resolve()
+    expected_path = expected_path.resolve()
+    try:
+        expected_relative = expected_path.relative_to(root)
+    except ValueError as exc:
+        raise GateError("Expected ranking input path is outside the repository") from exc
+    entry_path = entry.get("path")
+    if not isinstance(entry_path, str) or entry_path != str(expected_relative):
+        raise GateError("Ranking input path differs from its expected repository path")
+    path = (root / entry_path).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise GateError("Ranking input path is outside the repository") from exc
     if not path.is_file() or sha256_file(path) != entry.get("sha256"):
         raise ArtifactError(f"Ranking input hash mismatch: {path}")
 
@@ -472,14 +505,38 @@ def _verify_ranking_manifest_files(
     root: Path,
     manifest: Mapping[str, Any],
     *,
+    artifact_dir: Path,
+    plan_rows: tuple[dict[str, Any], ...],
+    fallback_file: Path,
     row_index: int | None,
 ) -> None:
-    _verify_hashed_input(root, manifest["processed_artifact_manifest"])
-    _verify_hashed_input(root, manifest["candidate_membership"])
+    _verify_hashed_input(
+        root,
+        manifest["processed_artifact_manifest"],
+        expected_path=artifact_dir / "manifest.json",
+    )
+    _verify_hashed_input(
+        root,
+        manifest["candidate_membership"],
+        expected_path=artifact_dir / "candidate_bits_validation.npy",
+    )
+    bpr_prefix = sha256_file(fallback_file)[:8]
     entries = manifest["rows"] if row_index is None else [manifest["rows"][row_index]]
     for entry in entries:
-        for file_entry in entry["files"]:
-            _verify_hashed_input(root, file_entry)
+        planned = plan_rows[entry["row_index"]]
+        expected_paths: list[Path] = []
+        if planned["method"] == "time_decayed_popularity":
+            expected_paths.append(
+                artifact_dir / "topk" / f"{planned['config_id']}.npz"
+            )
+        elif planned["method"] == "bpr_mf":
+            expected_paths.extend(
+                (_bpr_model_path(artifact_dir, planned, bpr_prefix), fallback_file)
+            )
+        for file_entry, expected_path in zip(
+            entry["files"], expected_paths, strict=True
+        ):
+            _verify_hashed_input(root, file_entry, expected_path=expected_path)
 
 
 def _cache_binding(
@@ -591,9 +648,17 @@ def _validate_topk_candidates(topk: np.ndarray, artifacts: Mapping[str, Any]) ->
     if np.any(topk < -1) or np.any(topk >= item_count):
         raise GateError("Top-K checkpoint contains an out-of-range item")
     candidate_bits = artifacts["candidate_bits"]
+    candidate_counts = np.asarray(artifacts["queries"]["candidate_count"])
+    if candidate_counts.shape != (query_count,):
+        raise GateError("Candidate-count artifact shape differs from query count")
     for begin in range(0, query_count, 2048):
         block = topk[begin : begin + 2048]
         valid = block >= 0
+        expected_counts = np.minimum(100, candidate_counts[begin : begin + len(block)])
+        if not np.array_equal(valid.sum(axis=1), expected_counts):
+            raise GateError(
+                "Top-K checkpoint valid result count differs from min(100, candidate_count)"
+            )
         padding_seen = np.maximum.accumulate(~valid, axis=1)
         if np.any(padding_seen & valid):
             raise GateError("Top-K checkpoint has a non-padding item after -1")

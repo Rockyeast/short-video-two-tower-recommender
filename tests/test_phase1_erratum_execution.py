@@ -52,7 +52,10 @@ def _row_fixture() -> tuple[dict[str, object], dict[str, object], dict[str, obje
 
 def _artifact_fixture() -> dict[str, object]:
     return {
-        "queries": {"user": np.asarray([0, 1], dtype=np.int32)},
+        "queries": {
+            "user": np.asarray([0, 1], dtype=np.int32),
+            "candidate_count": np.asarray([2, 2], dtype=np.int32),
+        },
         "catalog": {"video_ids": np.asarray([10, 11, 12, 13], dtype=np.int32)},
         "candidate_bits": np.asarray([[0b0011], [0b1100]], dtype=np.uint8),
     }
@@ -234,6 +237,35 @@ def test_topk_only_checkpoint_rejects_invalid_array(
         )
 
 
+@pytest.mark.parametrize(
+    "valid_prefix",
+    [[], [0]],
+    ids=["all-padding", "early-padding"],
+)
+def test_topk_only_checkpoint_rejects_incomplete_result_count(
+    tmp_path: Path, valid_prefix: list[int]
+):
+    planned, original, _ = _row_fixture()
+    artifacts = _artifact_fixture()
+    metadata = _metadata(planned, artifacts)
+    invalid = _valid_topk()
+    invalid[0] = -1
+    invalid[0, : len(valid_prefix)] = valid_prefix
+    topk_path, _ = _row_paths(tmp_path, 0, planned)
+    _atomic_write_topk(topk_path, invalid, metadata)
+
+    with pytest.raises(GateError, match="valid result count"):
+        _load_cached_row(
+            cache_dir=tmp_path,
+            index=0,
+            planned=planned,
+            original=original,
+            cache_key="bound-cache",
+            topk_metadata=metadata,
+            artifacts=artifacts,
+        )
+
+
 def test_supervisor_emits_real_liveness_pulses(tmp_path: Path):
     pulses = []
     returncode = run_supervised(
@@ -316,6 +348,45 @@ def test_outer_timeout_cleans_independent_row_process_group(tmp_path: Path):
         pytest.fail("independent row process group survived the outer timeout")
 
 
+def test_nonzero_orchestrator_exit_cleans_row_group_after_leader_exit(tmp_path: Path):
+    row_group_file = tmp_path / "row_group.txt"
+    child_pid_file = tmp_path / "row_child.txt"
+    row_program = (
+        "import pathlib,subprocess; "
+        "child=subprocess.Popen(['sleep','30']); "
+        f"pathlib.Path({str(child_pid_file)!r}).write_text(str(child.pid))"
+    )
+    orchestrator_program = (
+        "import os,pathlib,subprocess,sys; "
+        f"row=subprocess.Popen([sys.executable,'-c',{row_program!r}], start_new_session=True); "
+        f"pathlib.Path({str(row_group_file)!r}).write_text(str(row.pid)); "
+        "row.wait(); os._exit(7)"
+    )
+
+    def cleanup(_orchestrator_pid: int) -> None:
+        terminate_process_group_id(int(row_group_file.read_text()), grace_seconds=0.1)
+
+    returncode = run_supervised(
+        [sys.executable, "-c", orchestrator_program],
+        cwd=tmp_path,
+        timeout_seconds=2.0,
+        liveness_interval_seconds=0.05,
+        before_terminate=cleanup,
+        poll_seconds=0.01,
+    )
+
+    assert returncode == 7
+    child_pid = int(child_pid_file.read_text())
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        stat = Path(f"/proc/{child_pid}/stat")
+        if not stat.exists() or stat.read_text().split(")", 1)[1].strip().startswith("Z"):
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail("row descendant survived nonzero orchestrator exit")
+
+
 def test_ranking_input_manifest_binds_historical_topk_and_bpr(tmp_path: Path):
     artifact_dir = tmp_path / "artifacts"
     (artifact_dir / "topk").mkdir(parents=True)
@@ -360,14 +431,61 @@ def test_ranking_input_manifest_binds_historical_topk_and_bpr(tmp_path: Path):
         fallback_file=fallback,
     )
     _validate_ranking_manifest_structure(manifest, rows)
-    _verify_ranking_manifest_files(tmp_path, manifest, row_index=None)
+    _verify_ranking_manifest_files(
+        tmp_path,
+        manifest,
+        artifact_dir=artifact_dir,
+        plan_rows=rows,
+        fallback_file=fallback,
+        row_index=None,
+    )
 
     assert len(manifest["rows"][0]["files"]) == 1
     assert len(manifest["rows"][1]["files"]) == 2
     assert manifest["rows"][2]["files"] == []
     model.write_text("tampered")
     with pytest.raises(ArtifactError, match="Ranking input hash mismatch"):
-        _verify_ranking_manifest_files(tmp_path, manifest, row_index=1)
+        _verify_ranking_manifest_files(
+            tmp_path,
+            manifest,
+            artifact_dir=artifact_dir,
+            plan_rows=rows,
+            fallback_file=fallback,
+            row_index=1,
+        )
+
+
+def test_ranking_manifest_rejects_unexpected_path_before_hashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "manifest.json").write_text("manifest")
+    (artifact_dir / "candidate_bits_validation.npy").write_text("candidates")
+    fallback = artifact_dir / "fallback.npz"
+    fallback.write_text("fallback")
+    rows: tuple[dict[str, object], ...] = ()
+    manifest = _build_ranking_input_manifest(
+        root=tmp_path,
+        artifact_dir=artifact_dir,
+        plan_rows=rows,
+        fallback_file=fallback,
+    )
+    manifest["processed_artifact_manifest"]["path"] = "reports/final.json"
+
+    def unexpected_hash(_path: Path) -> str:
+        raise AssertionError("hashing happened before expected-path validation")
+
+    monkeypatch.setattr("kuairec_phase1.erratum.sha256_file", unexpected_hash)
+    with pytest.raises(GateError, match="expected repository path"):
+        _verify_ranking_manifest_files(
+            tmp_path,
+            manifest,
+            artifact_dir=artifact_dir,
+            plan_rows=rows,
+            fallback_file=fallback,
+            row_index=None,
+        )
 
 
 def test_formal_execution_deadlines_are_locked():
