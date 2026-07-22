@@ -136,3 +136,31 @@ def test_all_five_baseline_paths_share_candidates_and_metrics(tmp_path):
         )
         assert evaluated["denominators"]["query_count"] == 2
         assert 0 <= evaluated["metrics"]["Recall@100"] <= 1
+
+
+def test_user_cluster_bootstrap_preserves_query_macro_estimator():
+    # User 0 contributes three misses and user 1 contributes one hit.  The
+    # contract's primary query-macro Recall is therefore 1/4; an incorrect
+    # unweighted mean of the two per-user means would be 1/2.
+    topk = np.full((4, 100), -1, dtype=np.int32)
+    topk[3, 0] = 3
+    evaluated = evaluate_topk(
+        topk=topk,
+        query_users=np.asarray([0, 0, 0, 1], dtype=np.int32),
+        target_indptr=np.asarray([0, 1, 2, 3, 4], dtype=np.int64),
+        target_indices=np.asarray([0, 1, 2, 3], dtype=np.int32),
+        candidate_union_count=4,
+        candidate_score_count=16,
+        warm_mask=np.ones(4, dtype=bool),
+        tail_mask=np.zeros(4, dtype=bool),
+        cold_mask=np.zeros(4, dtype=bool),
+        bootstrap_users=np.asarray([0, 1], dtype=np.int32),
+        bootstrap_indices=np.tile(
+            np.asarray([[0, 1]], dtype=np.int32), (20, 1)
+        ),
+    )
+    assert evaluated["metrics"]["Recall@100"] == 0.25
+    assert evaluated["bootstrap_95_percent_intervals"]["Recall@100"] == [
+        0.25,
+        0.25,
+    ]

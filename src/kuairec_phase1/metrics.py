@@ -13,9 +13,9 @@ from .gates import CI_METRICS, METRICS
 KS = (10, 20, 50, 100)
 
 
-def _per_user_means(
+def _per_user_components(
     values: np.ndarray, users: np.ndarray, eligible: np.ndarray | None = None
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     unique_users, inverse = np.unique(users, return_inverse=True)
     if eligible is None:
         eligible = np.ones(len(values), dtype=bool)
@@ -26,19 +26,26 @@ def _per_user_means(
     means = np.full(len(unique_users), np.nan, dtype=np.float64)
     present = counts > 0
     means[present] = sums[present] / counts[present]
-    return unique_users, means
+    return unique_users, sums, counts, means
 
 
 def _bootstrap_ci(
-    per_user: np.ndarray,
+    per_user_sums: np.ndarray,
+    per_user_counts: np.ndarray,
     sample_indices: np.ndarray,
 ) -> list[float]:
-    valid = np.isfinite(per_user)
+    valid = per_user_counts > 0
     if not valid.any():
         return [0.0, 0.0]
-    sampled = per_user[sample_indices]
-    with np.errstate(invalid="ignore"):
-        means = np.nanmean(sampled, axis=1)
+    # Resample whole user clusters, then recompute the contract's primary
+    # query-macro estimator over every query carried by those clusters.  Taking
+    # an unweighted mean of per-user means would instead bootstrap the separate
+    # secondary user-macro metric and can produce an interval far from the
+    # reported primary point estimate when history lengths are imbalanced.
+    sampled_sums = per_user_sums[sample_indices].sum(axis=1)
+    sampled_counts = per_user_counts[sample_indices].sum(axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        means = sampled_sums / sampled_counts
     means = means[np.isfinite(means)]
     if means.size == 0:
         return [0.0, 0.0]
@@ -114,14 +121,19 @@ def evaluate_topk(
 
     metrics: dict[str, float] = {}
     per_user_metric: dict[str, np.ndarray] = {}
+    bootstrap_components: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for k, values in recall_values.items():
         name = f"Recall@{k}"
         metrics[name] = float(values.mean())
-        _, per_user_metric[name] = _per_user_means(values, query_users)
+        _, sums, counts, means = _per_user_components(values, query_users)
+        per_user_metric[name] = means
+        bootstrap_components[name] = (sums, counts)
     for k, values in ndcg_values.items():
         name = f"NDCG@{k}"
         metrics[name] = float(values.mean())
-        _, per_user_metric[name] = _per_user_means(values, query_users)
+        _, sums, counts, means = _per_user_components(values, query_users)
+        per_user_metric[name] = means
+        bootstrap_components[name] = (sums, counts)
     recommended_by_k = {
         k: np.unique(topk[:, :k][topk[:, :k] >= 0]) for k in (20, 50, 100)
     }
@@ -132,9 +144,11 @@ def evaluate_topk(
         for k, values in segment_values[name].items():
             metric_name = f"{name}Recall@{k}"
             metrics[metric_name] = float(values[eligible].mean()) if eligible.any() else 0.0
-            _, per_user_metric[metric_name] = _per_user_means(
+            _, sums, counts, means = _per_user_components(
                 values, query_users, eligible
             )
+            per_user_metric[metric_name] = means
+            bootstrap_components[metric_name] = (sums, counts)
     if set(metrics) != set(METRICS):
         raise RuntimeError("Metric implementation does not match the execution gate")
 
@@ -142,7 +156,7 @@ def evaluate_topk(
     if not np.array_equal(unique_query_users, bootstrap_users):
         raise RuntimeError("Bootstrap users differ from evaluated users")
     intervals = {
-        name: _bootstrap_ci(per_user_metric[name], bootstrap_indices)
+        name: _bootstrap_ci(*bootstrap_components[name], bootstrap_indices)
         for name in CI_METRICS
     }
     denominators: dict[str, int] = {
