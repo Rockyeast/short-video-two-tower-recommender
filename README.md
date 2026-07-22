@@ -123,8 +123,8 @@ KuaiRec `data/` directory. This worktree does not copy or modify raw data.
 - Exact retrieval comes first. FAISS, serving, reranking and sequence models
   are outside this phase.
 - The gate compares Two-Tower with the stronger of Popularity and BPR using
-  numeric Recall/Coverage thresholds plus a 0.01 absolute NDCG@20 protection,
-  not a presumed BPR winner.
+  a frozen 0.002 absolute direct Recall@100 gain, numeric Recall/Coverage
+  tradeoffs and a 0.01 absolute NDCG@20 protection, not a presumed BPR winner.
 
 > The remaining sections preserve the legacy protocol-v2.1.1 record. They are
 > not the evaluation contract for the new primary route.

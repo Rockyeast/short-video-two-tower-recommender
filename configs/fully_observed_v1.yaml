@@ -97,7 +97,7 @@ retrieval:
   faiss: gated_after_model_effectiveness
 selection_gate:
   comparison_baseline: max_recall_at_100_of_global_popularity_and_bpr
-  direct_recall_improvement: strictly_greater
+  minimum_direct_recall_gain_absolute: 0.002
   ndcg_at_20_protection:
     comparison: strongest_recall_baseline_ndcg_at_20
     maximum_drop_absolute: 0.01
