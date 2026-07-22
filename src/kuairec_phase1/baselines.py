@@ -90,7 +90,16 @@ def _rank_random_worker(
     task: tuple[str, int, int, int]
 ) -> tuple[int, np.ndarray]:
     directory, seed, begin, end = task
-    artifacts = load_artifacts(directory)
+    root = Path(directory)
+    # Keep workers lightweight: Random does not need the event log, ItemCF
+    # matrices, or BPR negatives loaded by the general artifact loader.
+    artifacts = {
+        "catalog": np.load(root / "catalog.npz"),
+        "queries": np.load(root / "queries_validation.npz"),
+        "candidate_bits": np.load(
+            root / "candidate_bits_validation.npy", mmap_mode="r"
+        ),
+    }
     return begin, _rank_random_range(artifacts, seed, begin, end)
 
 
