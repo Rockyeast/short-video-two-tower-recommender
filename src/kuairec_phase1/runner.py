@@ -17,6 +17,8 @@ from .artifacts import (
     ArtifactError,
     build_processed_artifacts,
     fast_verify_processed_artifacts,
+    load_full_verification_receipt,
+    write_full_verification_receipt,
 )
 from .baselines import (
     load_artifacts,
@@ -368,9 +370,13 @@ def run_selection(repo_root: str | Path) -> dict[str, Any]:
         artifact_manifest = fast_verify_processed_artifacts(root)
         artifact_cache_hit = True
     else:
-        verification = authorize_baseline_selection(
-            fit_splits=("train",), evaluation_split="validation", repo_root=root
-        )
+        try:
+            verification = load_full_verification_receipt(root)
+        except ArtifactError:
+            verification = authorize_baseline_selection(
+                fit_splits=("train",), evaluation_split="validation", repo_root=root
+            )
+            write_full_verification_receipt(root, verification)
         artifact_manifest, artifact_cache_hit = build_processed_artifacts(
             root, verification
         )

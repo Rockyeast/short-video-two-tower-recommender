@@ -8,6 +8,7 @@ import os
 import resource
 import shutil
 import subprocess
+from dataclasses import asdict
 from collections import defaultdict
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -18,7 +19,11 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
-from kuairec_protocol.access import ProtocolBundleVerification, sha256_file
+from kuairec_protocol.access import (
+    ProtocolBundleVerification,
+    sha256_file,
+    verify_manifest_lock,
+)
 
 
 ARTIFACT_SCHEMA_VERSION = 1
@@ -81,8 +86,92 @@ def _artifact_root(root: Path, manifest_sha: str) -> Path:
     return root / "artifacts" / "phase1" / manifest_sha
 
 
+def _full_verification_receipt(root: Path, manifest_sha: str) -> Path:
+    return (
+        root
+        / "artifacts"
+        / "phase1"
+        / f"FULL_PROTOCOL_VERIFICATION_{manifest_sha}.json"
+    )
+
+
 def _write_json(path: Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+def write_full_verification_receipt(
+    repo_root: str | Path, verification: ProtocolBundleVerification
+) -> Path:
+    """Persist proof immediately after the sole expensive verifier returns."""
+
+    root = Path(repo_root).resolve()
+    path = _full_verification_receipt(root, verification.manifest_sha256)
+    payload = {
+        "schema_version": 1,
+        "status": "full_protocol_verified",
+        "verified_at_utc": datetime.now(timezone.utc).isoformat(),
+        "verification": asdict(verification),
+    }
+    if path.exists():
+        existing = json.loads(path.read_text())
+        if existing.get("verification") != payload["verification"]:
+            raise ArtifactError("Full-verification receipt already exists and differs")
+        return path
+    _write_json(path, payload)
+    os.chmod(path, 0o444)
+    return path
+
+
+def load_full_verification_receipt(
+    repo_root: str | Path,
+) -> ProtocolBundleVerification:
+    """Fast-resume a completed verifier while rechecking every static input."""
+
+    root = Path(repo_root).resolve()
+    manifest_path = root / "manifests/split_manifest.json"
+    manifest_sha = sha256_file(manifest_path)
+    path = _full_verification_receipt(root, manifest_sha)
+    if not path.is_file() or path.stat().st_mode & 0o222:
+        raise ArtifactError("Missing or writable full-protocol verification receipt")
+    payload = json.loads(path.read_text())
+    if payload.get("schema_version") != 1 or payload.get("status") != "full_protocol_verified":
+        raise ArtifactError("Full-protocol verification receipt is invalid")
+    value = payload.get("verification")
+    if not isinstance(value, dict):
+        raise ArtifactError("Full-protocol verification payload is missing")
+    lock = verify_manifest_lock(
+        manifest_path, root / "manifests/FINAL_HOLDOUT_LOCKED.json"
+    )
+    if value.get("manifest_sha256") != lock.manifest_sha256:
+        raise ArtifactError("Verification receipt manifest binding changed")
+    if value.get("lock_sha256") != lock.lock_sha256:
+        raise ArtifactError("Verification receipt lock binding changed")
+    if value.get("config_sha256") != sha256_file(root / "configs/phase0.yaml"):
+        raise ArtifactError("Verification receipt config binding changed")
+    manifest = json.loads(manifest_path.read_text())
+    contracts = {name: digest for name, digest in value["contract_sha256"]}
+    for name, entry in manifest["active_contracts"].items():
+        if contracts.get(name) != sha256_file(root / entry["path"]):
+            raise ArtifactError(f"Verification receipt contract changed: {name}")
+    sources = {name: digest for name, digest in value["source_file_sha256"]}
+    for name, entry in manifest["dataset"]["source_files"].items():
+        source = root / "data/raw" / entry["relative_path"]
+        if sources.get(name) != sha256_file(source):
+            raise ArtifactError(f"Verification receipt source changed: {name}")
+    generation = manifest["generation_code"]
+    if value.get("generation_code_sha256") != sha256_file(root / generation["path"]):
+        raise ArtifactError("Verification receipt generation code changed")
+    fields = dict(value)
+    for name in (
+        "protected_scopes",
+        "contract_sha256",
+        "source_file_sha256",
+        "canonical_target_sha256",
+        "candidate_membership_sha256",
+    ):
+        fields[name] = tuple(tuple(item) if isinstance(item, list) else item for item in fields[name])
+    return ProtocolBundleVerification(**fields)
 
 
 def _load_phase0_module(root: Path):
@@ -126,7 +215,7 @@ def _canonical_inputs(
 ) -> dict[str, Any]:
     phase0 = _load_phase0_module(root)
     manifest = json.loads((root / "manifests/split_manifest.json").read_text())
-    boundaries = manifest["split_boundaries"]
+    boundaries = manifest["split_algorithm"]
     train_end = float(boundaries["train_end_exclusive"])
     validation_end = float(boundaries["validation_end_exclusive"])
     big_path = _data_file(root, "big_matrix.csv")
