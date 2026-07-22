@@ -70,6 +70,15 @@ REQUIRED_CONTRACTS = (
     "negative_sampling",
 )
 FIXED_FINAL_EVALUATOR = "scripts/evaluate_temporal_final.py"
+ERRATUM_SELECTION_EVALUATOR = "scripts/correct_phase1_segment_metrics.py"
+SEGMENT_METRICS = tuple(
+    metric
+    for metric in METRICS
+    if metric.startswith(("WarmRecall@", "TailRecall@", "ColdRecall@"))
+)
+UNCHANGED_ERRATUM_METRICS = tuple(
+    metric for metric in METRICS if metric not in SEGMENT_METRICS
+)
 
 
 class GateError(RuntimeError):
@@ -335,9 +344,37 @@ def validate_selection_result(
     if not isinstance(evaluator, Mapping):
         raise GateError("Selection result must bind the evaluator")
     evaluator_path = evaluator.get("path")
-    if evaluator_path != "scripts/run_phase1_baselines.py":
+    erratum = result.get("erratum")
+    expected_evaluator = (
+        ERRATUM_SELECTION_EVALUATOR
+        if isinstance(erratum, Mapping)
+        else "scripts/run_phase1_baselines.py"
+    )
+    if evaluator_path != expected_evaluator:
         raise GateError("Selection evaluator path is not the registered entrypoint")
     _require_hash(evaluator.get("sha256"), "selection evaluator hash")
+    if isinstance(erratum, Mapping):
+        if erratum.get("id") != "ERRATUM-001":
+            raise GateError("Selection erratum ID is invalid")
+        if not isinstance(erratum.get("reason"), str) or not erratum["reason"].strip():
+            raise GateError("Selection erratum reason must be non-empty")
+        segment = hashes.get("segment_membership")
+        if not isinstance(segment, Mapping):
+            raise GateError("Corrected selection result must bind segment membership")
+        reference = _load_json(
+            root / "manifests/split_manifest.json", "split manifest"
+        )["cold_start_contexts"]["validation"]
+        if segment.get("data_warm_item_count") != reference["reference_item_count"]:
+            raise GateError("Corrected data-warm item count differs from Phase 0")
+        if (
+            segment.get("data_warm_membership_sha256")
+            != reference["reference_membership_sha256"]
+        ):
+            raise GateError("Corrected data-warm membership hash differs from Phase 0")
+        _require_hash(
+            segment.get("data_warm_membership_sha256"),
+            "corrected data-warm membership hash",
+        )
     if verify_bindings:
         _verify_selection_bindings(root, result, hashes)
     rows = result.get("rows")
@@ -415,6 +452,54 @@ def validate_selection_result(
     if len(actual_rows) != len(expected_rows):
         raise GateError("Selection result coverage differs from the selection plan")
     return result
+
+
+def validate_selection_erratum_invariants(
+    original_result: Mapping[str, Any],
+    corrected_result: Mapping[str, Any],
+    original_bundle: Mapping[str, Any],
+    corrected_bundle: Mapping[str, Any],
+) -> None:
+    """Reject a segment-only correction that changes ranking or selection."""
+
+    original_rows = {
+        _row_key(row): row for row in original_result.get("rows", [])
+    }
+    corrected_rows = {
+        _row_key(row): row for row in corrected_result.get("rows", [])
+    }
+    if original_rows.keys() != corrected_rows.keys() or len(original_rows) != 97:
+        raise GateError("Erratum must preserve all 97 method/config/seed rows")
+    for key, original in original_rows.items():
+        corrected = corrected_rows[key]
+        if canonical_json(original.get("hyperparameters")) != canonical_json(
+            corrected.get("hyperparameters")
+        ):
+            raise GateError(f"Erratum changed hyperparameters for {key}")
+        for metric in UNCHANGED_ERRATUM_METRICS:
+            if original["metrics"][metric] != corrected["metrics"][metric]:
+                raise GateError(f"Erratum changed protected overall metric {metric} for {key}")
+        for name in (
+            "query_count",
+            "user_count",
+            "target_count",
+            "candidate_union_count",
+            "candidate_score_count",
+        ):
+            if original["denominators"][name] != corrected["denominators"][name]:
+                raise GateError(f"Erratum changed protected denominator {name} for {key}")
+        if original.get("coverage") != corrected.get("coverage"):
+            raise GateError(f"Erratum changed coverage evidence for {key}")
+    original_methods = [
+        (row["name"], row["config_id"], row["hyperparameters"], row["seeds"])
+        for row in original_bundle.get("methods", [])
+    ]
+    corrected_methods = [
+        (row["name"], row["config_id"], row["hyperparameters"], row["seeds"])
+        for row in corrected_bundle.get("methods", [])
+    ]
+    if canonical_json(original_methods) != canonical_json(corrected_methods):
+        raise GateError("Erratum changed a selected configuration or seed")
 
 
 def _complexity(method: str, hyperparameters: Mapping[str, Any]) -> tuple[Any, ...]:
@@ -642,3 +727,150 @@ def write_selection_receipt(
     }
     _write_exclusive(receipt, payload)
     return receipt
+
+
+def _write_bytes_exclusive(path: Path, encoded: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o444)
+        try:
+            os.link(temporary, path)
+        except FileExistsError as exc:
+            raise GateError(f"Refusing to overwrite archived receipt: {path}") from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def archive_and_replace_selection_receipt(
+    *,
+    receipt_path: str | Path,
+    new_payload: Mapping[str, Any],
+    expected_old_receipt_sha256: str,
+    expected_old_selection_result_sha256: str,
+    expected_old_final_bundle_sha256: str,
+    erratum_id: str,
+    reason: str,
+) -> Path:
+    """Explicitly archive one known receipt, then atomically replace it."""
+
+    if not isinstance(erratum_id, str) or not erratum_id.strip():
+        raise GateError("Erratum ID must be non-empty")
+    if not isinstance(reason, str) or not reason.strip():
+        raise GateError("Erratum reason must be non-empty")
+    receipt = Path(receipt_path)
+    if not receipt.is_file():
+        raise GateError("Canonical selection receipt is missing")
+    old_bytes = receipt.read_bytes()
+    old_receipt_sha = hashlib.sha256(old_bytes).hexdigest()
+    if old_receipt_sha != expected_old_receipt_sha256:
+        raise GateError("Canonical receipt hash does not match the known superseded receipt")
+    try:
+        old_payload = json.loads(old_bytes)
+    except json.JSONDecodeError as exc:
+        raise GateError("Canonical selection receipt is invalid JSON") from exc
+    if (
+        old_payload.get("selection_result_sha256")
+        != expected_old_selection_result_sha256
+        or old_payload.get("final_method_bundle_sha256")
+        != expected_old_final_bundle_sha256
+    ):
+        raise GateError("Canonical receipt does not bind the known old result and bundle")
+    if new_payload.get("erratum_id") != erratum_id:
+        raise GateError("Replacement receipt is not bound to the requested erratum")
+    if new_payload.get("erratum_reason") != reason:
+        raise GateError("Replacement receipt reason differs from the requested reason")
+    if new_payload.get("supersedes_selection_receipt_sha256") != old_receipt_sha:
+        raise GateError("Replacement receipt does not identify the superseded receipt")
+
+    archive = (
+        receipt.parent
+        / "superseded"
+        / expected_old_selection_result_sha256
+        / receipt.name
+    )
+    _write_bytes_exclusive(archive, old_bytes)
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != old_receipt_sha:
+        raise GateError("Archived receipt bytes differ from the canonical old receipt")
+
+    encoded = (json.dumps(new_payload, indent=2, sort_keys=True) + "\n").encode()
+    temporary = receipt.parent / f".{receipt.name}.{uuid.uuid4().hex}.tmp"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o444)
+        os.replace(temporary, receipt)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return archive
+
+
+def supersede_selection_receipt(
+    repo_root: str | Path,
+    result_path: str | Path,
+    final_bundle_path: str | Path,
+    *,
+    expected_old_receipt_sha256: str,
+    expected_old_selection_result_sha256: str,
+    expected_old_final_bundle_sha256: str,
+    erratum_id: str,
+    reason: str,
+    selected_at_utc: str | None = None,
+) -> tuple[Path, Path]:
+    """Validate corrected artifacts and replace only the known old receipt."""
+
+    root = Path(repo_root).resolve()
+    plan = load_and_validate_selection_plan(root)
+    result = validate_selection_result(root, result_path, plan=plan)
+    bundle = validate_final_method_bundle(root, final_bundle_path)
+    result_file = Path(result_path)
+    if not result_file.is_absolute():
+        result_file = root / result_file
+    bundle_file = Path(final_bundle_path)
+    if not bundle_file.is_absolute():
+        bundle_file = root / bundle_file
+    if bundle.get("selection_result_sha256") != sha256_file(result_file):
+        raise GateError("Corrected bundle is not bound to the corrected result")
+    if result.get("erratum", {}).get("id") != erratum_id:
+        raise GateError("Corrected result does not identify the requested erratum")
+    manifest_sha = sha256_file(root / "manifests/split_manifest.json")
+    receipt = root / "receipts" / manifest_sha / "SELECTION_RECEIPT.json"
+    payload = {
+        "schema_version": 1,
+        "receipt_type": "selection",
+        "status": "completed",
+        "protocol_revision": plan.protocol_revision,
+        "split_manifest_sha256": manifest_sha,
+        "selection_plan_path": str(Path(plan.path).relative_to(root)),
+        "selection_plan_sha256": plan.sha256,
+        "selection_result_path": str(result_file.relative_to(root)),
+        "selection_result_sha256": sha256_file(result_file),
+        "final_method_bundle_path": str(bundle_file.relative_to(root)),
+        "final_method_bundle_sha256": sha256_file(bundle_file),
+        "code_commit": result["code_commit"],
+        "methods": list(METHODS),
+        "selected_at_utc": selected_at_utc or datetime.now(timezone.utc).isoformat(),
+        "erratum_id": erratum_id,
+        "erratum_reason": reason,
+        "supersedes_selection_receipt_sha256": expected_old_receipt_sha256,
+        "supersedes_selection_result_sha256": expected_old_selection_result_sha256,
+        "supersedes_final_method_bundle_sha256": expected_old_final_bundle_sha256,
+    }
+    archive = archive_and_replace_selection_receipt(
+        receipt_path=receipt,
+        new_payload=payload,
+        expected_old_receipt_sha256=expected_old_receipt_sha256,
+        expected_old_selection_result_sha256=expected_old_selection_result_sha256,
+        expected_old_final_bundle_sha256=expected_old_final_bundle_sha256,
+        erratum_id=erratum_id,
+        reason=reason,
+    )
+    return receipt, archive

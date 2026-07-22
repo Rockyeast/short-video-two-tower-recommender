@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import shutil
 import subprocess
@@ -12,11 +14,13 @@ from kuairec_phase1.gates import (
     CI_METRICS,
     METRICS,
     GateError,
+    archive_and_replace_selection_receipt,
     derive_final_method_bundle,
     load_and_validate_selection_plan,
     sha256_file,
     validate_final_method_bundle,
     validate_final_result_coverage,
+    validate_selection_erratum_invariants,
     validate_selection_result,
 )
 
@@ -185,3 +189,84 @@ def test_final_bundle_binds_tracked_evaluator_and_all_seeds(tmp_path):
     }
     with pytest.raises(GateError, match="exactly cover"):
         validate_final_result_coverage(bundle, missing_seed_result)
+
+
+def test_erratum_rejects_overall_or_selected_configuration_changes(tmp_path):
+    result_path, plan = _valid_result(tmp_path)
+    original = json.loads(result_path.read_text())
+    corrected = copy.deepcopy(original)
+    corrected["rows"][0]["metrics"]["ColdRecall@100"] = 0.2
+    methods = []
+    for method in ("random", "global_popularity", "time_decayed_popularity", "itemcf", "bpr_mf"):
+        row = next(value for value in plan.rows if value["method"] == method)
+        seeds = []
+        for value in plan.rows:
+            if value["method"] == method and value["config_id"] == row["config_id"]:
+                seeds.append(value["seed"])
+        methods.append(
+            {
+                "name": method,
+                "config_id": row["config_id"],
+                "hyperparameters": row["hyperparameters"],
+                "seeds": seeds,
+            }
+        )
+    bundle = {"methods": methods}
+    validate_selection_erratum_invariants(original, corrected, bundle, bundle)
+
+    changed_overall = copy.deepcopy(corrected)
+    changed_overall["rows"][0]["metrics"]["Recall@100"] = 0.2
+    with pytest.raises(GateError, match="protected overall metric"):
+        validate_selection_erratum_invariants(
+            original, changed_overall, bundle, bundle
+        )
+
+    changed_bundle = copy.deepcopy(bundle)
+    changed_bundle["methods"][0]["config_id"] = "changed"
+    with pytest.raises(GateError, match="selected configuration"):
+        validate_selection_erratum_invariants(
+            original, corrected, bundle, changed_bundle
+        )
+
+
+def test_receipt_supersession_archives_exact_old_bytes_and_rejects_wrong_hash(tmp_path):
+    receipt = tmp_path / "receipts" / "manifest" / "SELECTION_RECEIPT.json"
+    receipt.parent.mkdir(parents=True)
+    old_payload = {
+        "selection_result_sha256": "1" * 64,
+        "final_method_bundle_sha256": "2" * 64,
+    }
+    old_bytes = (json.dumps(old_payload, indent=2, sort_keys=True) + "\n").encode()
+    receipt.write_bytes(old_bytes)
+    old_receipt_sha = hashlib.sha256(old_bytes).hexdigest()
+    new_payload = {
+        "erratum_id": "ERRATUM-001",
+        "erratum_reason": "correct segment membership",
+        "supersedes_selection_receipt_sha256": old_receipt_sha,
+        "selection_result_sha256": "3" * 64,
+        "final_method_bundle_sha256": "4" * 64,
+    }
+
+    with pytest.raises(GateError, match="known superseded receipt"):
+        archive_and_replace_selection_receipt(
+            receipt_path=receipt,
+            new_payload=new_payload,
+            expected_old_receipt_sha256="0" * 64,
+            expected_old_selection_result_sha256="1" * 64,
+            expected_old_final_bundle_sha256="2" * 64,
+            erratum_id="ERRATUM-001",
+            reason="correct segment membership",
+        )
+    assert receipt.read_bytes() == old_bytes
+
+    archive = archive_and_replace_selection_receipt(
+        receipt_path=receipt,
+        new_payload=new_payload,
+        expected_old_receipt_sha256=old_receipt_sha,
+        expected_old_selection_result_sha256="1" * 64,
+        expected_old_final_bundle_sha256="2" * 64,
+        erratum_id="ERRATUM-001",
+        reason="correct segment membership",
+    )
+    assert archive.read_bytes() == old_bytes
+    assert json.loads(receipt.read_text()) == new_payload
