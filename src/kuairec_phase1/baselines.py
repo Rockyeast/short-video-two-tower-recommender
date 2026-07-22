@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import heapq
 import math
+import os
 from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -67,12 +69,40 @@ def rank_global_popularity(artifacts: dict[str, Any]) -> np.ndarray:
 
 
 def rank_random(artifacts: dict[str, Any], seed: int) -> np.ndarray:
+    query_count = len(artifacts["queries"]["user"])
+    if query_count < 1_000:
+        return _rank_random_range(artifacts, seed, 0, query_count)
+    directory = str(Path(artifacts["root"]).resolve())
+    chunk_size = 256
+    ranges = [
+        (directory, seed, begin, min(begin + chunk_size, query_count))
+        for begin in range(0, query_count, chunk_size)
+    ]
+    output = np.empty((query_count, 100), dtype=np.int32)
+    worker_count = min(8, os.cpu_count() or 1)
+    with ProcessPoolExecutor(max_workers=worker_count) as executor:
+        for begin, ranked in executor.map(_rank_random_worker, ranges):
+            output[begin : begin + len(ranked)] = ranked
+    return output
+
+
+def _rank_random_worker(
+    task: tuple[str, int, int, int]
+) -> tuple[int, np.ndarray]:
+    directory, seed, begin, end = task
+    artifacts = load_artifacts(directory)
+    return begin, _rank_random_range(artifacts, seed, begin, end)
+
+
+def _rank_random_range(
+    artifacts: dict[str, Any], seed: int, begin: int, end: int
+) -> np.ndarray:
     catalog = artifacts["catalog"]
     queries = artifacts["queries"]
     bits = artifacts["candidate_bits"]
     item_count = len(catalog["video_ids"])
-    output = np.empty((len(queries["user"]), 100), dtype=np.int32)
-    for query in range(len(output)):
+    output = np.empty((end - begin, 100), dtype=np.int32)
+    for output_row, query in enumerate(range(begin, end)):
         candidates = candidate_positions(bits[query], item_count)
         query_id = f"{int(queries['user_ids'][query])}|{float(queries['timestamp'][query]):.6f}"
         ranked = heapq.nlargest(
@@ -85,8 +115,8 @@ def rank_random(artifacts: dict[str, Any], seed: int) -> np.ndarray:
                 -int(catalog["video_ids"][item]),
             ),
         )
-        output[query].fill(-1)
-        output[query, : len(ranked)] = ranked
+        output[output_row].fill(-1)
+        output[output_row, : len(ranked)] = ranked
     return output
 
 

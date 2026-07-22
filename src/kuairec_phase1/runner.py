@@ -14,9 +14,9 @@ import numpy as np
 from kuairec_protocol.access import authorize_baseline_selection, sha256_file
 
 from .artifacts import (
+    ARTIFACT_FILES,
     ArtifactError,
     build_processed_artifacts,
-    fast_verify_processed_artifacts,
     load_full_verification_receipt,
     write_full_verification_receipt,
 )
@@ -62,6 +62,69 @@ def _git_head_clean(root: Path) -> str:
 
 def _artifact_directory(root: Path, manifest_sha: str) -> Path:
     return root / "artifacts" / "phase1" / manifest_sha
+
+
+def _verify_reusable_processed_artifacts(
+    root: Path, directory: Path
+) -> dict[str, Any]:
+    """Reuse data artifacts across baseline-only commits, fail closed otherwise.
+
+    The immutable cache is bound to its raw inputs, frozen contracts, Phase 0
+    configuration, manifest, and the three files which actually generated it.
+    A later change to ranking or reporting code is recorded separately as the
+    selection code commit and must not force the expensive data build to repeat.
+    """
+
+    manifest_path = directory / "manifest.json"
+    if not manifest_path.is_file():
+        raise ArtifactError("Processed artifact manifest is missing")
+    artifact_manifest = json.loads(manifest_path.read_text())
+    fingerprint = artifact_manifest.get("fingerprint")
+    if not isinstance(fingerprint, dict):
+        raise ArtifactError("Processed artifact fingerprint is missing")
+    phase0_manifest_path = root / "manifests/split_manifest.json"
+    phase0_manifest = json.loads(phase0_manifest_path.read_text())
+    if fingerprint.get("split_manifest_sha256") != sha256_file(
+        phase0_manifest_path
+    ):
+        raise ArtifactError("Processed artifact manifest binding changed")
+    if fingerprint.get("phase0_config_sha256") != sha256_file(
+        root / "configs/phase0.yaml"
+    ):
+        raise ArtifactError("Processed artifact Phase 0 config changed")
+    generation = phase0_manifest["generation_code"]
+    if fingerprint.get("phase0_generation_code_sha256") != sha256_file(
+        root / generation["path"]
+    ):
+        raise ArtifactError("Processed artifact Phase 0 generator changed")
+    expected_generators = fingerprint.get("generator_file_sha256")
+    if not isinstance(expected_generators, dict):
+        raise ArtifactError("Processed artifact generator hashes are missing")
+    for path, digest in expected_generators.items():
+        if sha256_file(root / path) != digest:
+            raise ArtifactError(f"Processed artifact generator changed: {path}")
+    current_contracts = {
+        name: sha256_file(root / entry["path"])
+        for name, entry in phase0_manifest["active_contracts"].items()
+    }
+    if current_contracts != fingerprint.get("contract_sha256"):
+        raise ArtifactError("Processed artifact contracts changed")
+    expected_sources = fingerprint.get("source_file_sha256")
+    if not isinstance(expected_sources, dict):
+        raise ArtifactError("Processed artifact raw-source hashes are missing")
+    for name, digest in expected_sources.items():
+        entry = phase0_manifest["dataset"]["source_files"].get(name)
+        if not isinstance(entry, dict):
+            raise ArtifactError(f"Processed artifact source disappeared: {name}")
+        if sha256_file(root / "data/raw" / entry["relative_path"]) != digest:
+            raise ArtifactError(f"Processed artifact raw source changed: {name}")
+    file_hashes = artifact_manifest.get("files")
+    if not isinstance(file_hashes, dict) or set(file_hashes) != set(ARTIFACT_FILES):
+        raise ArtifactError("Processed artifact file table is incomplete")
+    for name, digest in file_hashes.items():
+        if sha256_file(directory / name) != digest:
+            raise ArtifactError(f"Processed artifact changed: {name}")
+    return artifact_manifest
 
 
 def _row_path(checkpoint_dir: Path, row: Mapping[str, Any]) -> Path:
@@ -367,7 +430,7 @@ def run_selection(repo_root: str | Path) -> dict[str, Any]:
     manifest_sha = sha256_file(root / "manifests/split_manifest.json")
     artifact_dir = _artifact_directory(root, manifest_sha)
     if artifact_dir.exists():
-        artifact_manifest = fast_verify_processed_artifacts(root)
+        artifact_manifest = _verify_reusable_processed_artifacts(root, artifact_dir)
         artifact_cache_hit = True
     else:
         try:
