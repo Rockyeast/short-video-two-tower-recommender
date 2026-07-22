@@ -36,18 +36,19 @@ from .gates import (
     CI_METRICS,
     ERRATUM_SELECTION_EVALUATOR,
     GateError,
+    METHODS,
     SEGMENT_METRICS,
     canonical_json,
     derive_final_method_bundle,
     load_and_validate_selection_plan,
     sha256_file,
-    supersede_selection_receipt,
     validate_selection_erratum_invariants,
     validate_selection_result,
 )
 from .metrics import common_bootstrap_indices, evaluate_topk
+from .publish import publish_files_transactionally, recover_publish_transaction
 from .runner import _write_markdown
-from .watchdog import ProcessHeartbeat, WatchdogTimeout, run_supervised
+from .watchdog import ProcessLivenessPulse, WatchdogTimeout, run_supervised
 
 
 ERRATUM_ID = "ERRATUM-001"
@@ -67,7 +68,7 @@ ORIGINAL_RECEIPT_SHA256 = (
 )
 MAX_WALL_SECONDS = 3 * 60 * 60
 ROW_TIMEOUT_SECONDS = 10 * 60
-HEARTBEAT_SECONDS = 30
+LIVENESS_INTERVAL_SECONDS = 30
 
 
 def _git_head_clean(root: Path) -> str:
@@ -209,7 +210,11 @@ def _corrected_artifacts(
 
 
 def _prepare_execution(
-    root: Path, *, verify_selected_fallback: bool
+    root: Path,
+    *,
+    verify_selected_fallback: bool,
+    expected_cache_key: str | None = None,
+    row_index: int | None = None,
 ) -> dict[str, Any]:
     code_commit = _git_head_clean(root)
     original_result, original_bundle, receipt_path = _verify_original_state(root)
@@ -229,6 +234,7 @@ def _prepare_execution(
     if not fallback_file.is_file():
         raise ArtifactError("Historical selected fallback Top-K is missing")
     fallback_topk = np.load(fallback_file)["topk"]
+    _validate_topk_candidates(fallback_topk, artifacts)
     if verify_selected_fallback:
         fallback_hp = fallback_config["hyperparameters"]
         recomputed = rank_causal_streaming_decayed(
@@ -236,6 +242,30 @@ def _prepare_execution(
         )
         if not np.array_equal(recomputed, fallback_topk):
             raise GateError("Recomputed selected fallback ranking differs from cache")
+    if expected_cache_key is None:
+        ranking_input_manifest = _build_ranking_input_manifest(
+            root=root,
+            artifact_dir=artifact_dir,
+            plan_rows=plan.rows,
+            fallback_file=fallback_file,
+        )
+        _validate_ranking_manifest_structure(ranking_input_manifest, plan.rows)
+        _verify_ranking_manifest_files(root, ranking_input_manifest, row_index=None)
+        ranking_manifest_sha = _json_file_sha256(ranking_input_manifest)
+    else:
+        cache_dir = _cache_directory(artifact_dir, expected_cache_key)
+        ranking_manifest_path = cache_dir / "RANKING_INPUT_MANIFEST.json"
+        try:
+            ranking_input_manifest = json.loads(ranking_manifest_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise GateError("Ranking-input manifest is unavailable to row worker") from exc
+        _validate_ranking_manifest_structure(ranking_input_manifest, plan.rows)
+        if row_index is None or row_index < 0 or row_index >= len(plan.rows):
+            raise GateError("Row-specific ranking-input verification requires a valid row")
+        _verify_ranking_manifest_files(
+            root, ranking_input_manifest, row_index=row_index
+        )
+        ranking_manifest_sha = sha256_file(ranking_manifest_path)
     binding = _cache_binding(
         root=root,
         code_commit=code_commit,
@@ -243,9 +273,12 @@ def _prepare_execution(
         plan_sha256=plan.sha256,
         segments=segments,
         fallback_file=fallback_file,
+        ranking_input_manifest_sha256=ranking_manifest_sha,
     )
     cache_dir = _cache_directory(artifact_dir, binding["cache_key"])
-    _initialize_cache(cache_dir, binding)
+    if expected_cache_key is not None and binding["cache_key"] != expected_cache_key:
+        raise GateError("Row worker cache key differs from its ranking inputs")
+    _initialize_cache(cache_dir, binding, ranking_input_manifest)
     return {
         "code_commit": code_commit,
         "original_result": original_result,
@@ -260,6 +293,7 @@ def _prepare_execution(
         "fallback_file": fallback_file,
         "bpr_prefix": sha256_file(fallback_file)[:8],
         "binding": binding,
+        "ranking_input_manifest": ranking_input_manifest,
         "cache_dir": cache_dir,
     }
 
@@ -300,17 +334,152 @@ def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _atomic_write_topk(path: Path, topk: np.ndarray) -> None:
+def _json_file_sha256(value: Mapping[str, Any]) -> str:
+    encoded = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _atomic_write_topk(
+    path: Path, topk: np.ndarray, metadata: Mapping[str, Any]
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
     try:
         with temporary.open("wb") as handle:
-            np.savez_compressed(handle, topk=topk)
+            np.savez_compressed(
+                handle,
+                topk=topk,
+                metadata=np.asarray(canonical_json(metadata)),
+            )
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _bpr_model_path(
+    artifact_dir: Path, planned: Mapping[str, Any], bpr_prefix: str
+) -> Path:
+    hp = planned["hyperparameters"]
+    group = "_".join(
+        map(
+            str,
+            (
+                hp["embedding_dim"],
+                hp["learning_rate"],
+                hp["l2"],
+                planned["seed"],
+            ),
+        )
+    )
+    return (
+        artifact_dir
+        / "bpr_models"
+        / f"{bpr_prefix}_{group}"
+        / f"epoch_{hp['epoch']}.npz"
+    )
+
+
+def _relative_hashed_file(root: Path, path: Path) -> dict[str, str]:
+    if not path.is_file():
+        raise ArtifactError(f"Ranking input is missing: {path}")
+    return {
+        "path": str(path.relative_to(root)),
+        "sha256": sha256_file(path),
+    }
+
+
+def _build_ranking_input_manifest(
+    *,
+    root: Path,
+    artifact_dir: Path,
+    plan_rows: tuple[dict[str, Any], ...],
+    fallback_file: Path,
+) -> dict[str, Any]:
+    bpr_prefix = sha256_file(fallback_file)[:8]
+    entries: list[dict[str, Any]] = []
+    for index, planned in enumerate(plan_rows):
+        files: list[dict[str, str]] = []
+        if planned["method"] == "time_decayed_popularity":
+            files.append(
+                _relative_hashed_file(
+                    root,
+                    artifact_dir / "topk" / f"{planned['config_id']}.npz",
+                )
+            )
+        elif planned["method"] == "bpr_mf":
+            files.extend(
+                (
+                    _relative_hashed_file(
+                        root, _bpr_model_path(artifact_dir, planned, bpr_prefix)
+                    ),
+                    _relative_hashed_file(root, fallback_file),
+                )
+            )
+        entries.append(
+            {
+                "row_index": index,
+                "planned": dict(planned),
+                "files": files,
+            }
+        )
+    return {
+        "schema_version": 1,
+        "artifact_scope": "train_and_validation_only",
+        "processed_artifact_manifest": _relative_hashed_file(
+            root, artifact_dir / "manifest.json"
+        ),
+        "candidate_membership": _relative_hashed_file(
+            root, artifact_dir / "candidate_bits_validation.npy"
+        ),
+        "rows": entries,
+    }
+
+
+def _validate_ranking_manifest_structure(
+    manifest: Mapping[str, Any], plan_rows: tuple[dict[str, Any], ...]
+) -> None:
+    if manifest.get("schema_version") != 1:
+        raise GateError("Ranking-input manifest schema changed")
+    if manifest.get("artifact_scope") != "train_and_validation_only":
+        raise GateError("Ranking-input manifest scope changed")
+    rows = manifest.get("rows")
+    if not isinstance(rows, list) or len(rows) != len(plan_rows):
+        raise GateError("Ranking-input manifest row coverage changed")
+    for index, (entry, planned) in enumerate(zip(rows, plan_rows, strict=True)):
+        if not isinstance(entry, Mapping) or entry.get("row_index") != index:
+            raise GateError("Ranking-input manifest row order changed")
+        if canonical_json(entry.get("planned")) != canonical_json(planned):
+            raise GateError("Ranking-input manifest differs from selection plan")
+        files = entry.get("files")
+        if not isinstance(files, list):
+            raise GateError("Ranking-input manifest files must be a list")
+        expected_count = 1 if planned["method"] == "time_decayed_popularity" else 0
+        if planned["method"] == "bpr_mf":
+            expected_count = 2
+        if len(files) != expected_count:
+            raise GateError("Ranking-input manifest file coverage changed")
+
+
+def _verify_hashed_input(root: Path, entry: Mapping[str, Any]) -> None:
+    path = root / str(entry.get("path"))
+    if not path.is_file() or sha256_file(path) != entry.get("sha256"):
+        raise ArtifactError(f"Ranking input hash mismatch: {path}")
+
+
+def _verify_ranking_manifest_files(
+    root: Path,
+    manifest: Mapping[str, Any],
+    *,
+    row_index: int | None,
+) -> None:
+    _verify_hashed_input(root, manifest["processed_artifact_manifest"])
+    _verify_hashed_input(root, manifest["candidate_membership"])
+    entries = manifest["rows"] if row_index is None else [manifest["rows"][row_index]]
+    for entry in entries:
+        for file_entry in entry["files"]:
+            _verify_hashed_input(root, file_entry)
 
 
 def _cache_binding(
@@ -321,6 +490,7 @@ def _cache_binding(
     plan_sha256: str,
     segments: Mapping[str, Any],
     fallback_file: Path,
+    ranking_input_manifest_sha256: str,
 ) -> dict[str, Any]:
     binding = {
         "schema_version": 1,
@@ -336,6 +506,7 @@ def _cache_binding(
         "evaluator_sha256": sha256_file(root / ERRATUM_SELECTION_EVALUATOR),
         "data_warm_membership_sha256": segments["data_warm_sha256"],
         "selected_fallback_topk_sha256": sha256_file(fallback_file),
+        "ranking_input_manifest_sha256": ranking_input_manifest_sha256,
     }
     binding["cache_key"] = hashlib.sha256(
         canonical_json(binding).encode()
@@ -347,17 +518,26 @@ def _cache_directory(artifact_dir: Path, cache_key: str) -> Path:
     return artifact_dir / "errata" / ERRATUM_ID / cache_key
 
 
-def _initialize_cache(cache_dir: Path, binding: Mapping[str, Any]) -> None:
+def _initialize_cache(
+    cache_dir: Path,
+    binding: Mapping[str, Any],
+    ranking_input_manifest: Mapping[str, Any],
+) -> None:
     manifest = cache_dir / "CACHE_MANIFEST.json"
+    ranking_manifest_path = cache_dir / "RANKING_INPUT_MANIFEST.json"
     if manifest.is_file():
         try:
             existing = json.loads(manifest.read_text())
+            existing_ranking = json.loads(ranking_manifest_path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
             raise GateError("Erratum cache manifest is unreadable") from exc
         if canonical_json(existing) != canonical_json(binding):
             raise GateError("Erratum cache manifest binding changed")
+        if canonical_json(existing_ranking) != canonical_json(ranking_input_manifest):
+            raise GateError("Ranking-input manifest changed")
         return
     cache_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(ranking_manifest_path, ranking_input_manifest)
     _atomic_write_json(manifest, binding)
 
 
@@ -373,6 +553,95 @@ def _row_paths(
     return cache_dir / "topk" / f"{stem}.npz", cache_dir / "rows" / f"{stem}.json"
 
 
+def _topk_metadata(
+    *,
+    row_index: int,
+    planned: Mapping[str, Any],
+    binding: Mapping[str, Any],
+    ranking_input_manifest: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "cache_key": binding["cache_key"],
+        "row_index": row_index,
+        "planned": dict(planned),
+        "ranking_input_manifest_sha256": binding[
+            "ranking_input_manifest_sha256"
+        ],
+        "processed_artifact_manifest_sha256": binding[
+            "processed_artifact_manifest_sha256"
+        ],
+        "candidate_membership_sha256": ranking_input_manifest[
+            "candidate_membership"
+        ]["sha256"],
+        "shape": [len(artifacts["queries"]["user"]), 100],
+        "dtype": "int32",
+        "item_count": len(artifacts["catalog"]["video_ids"]),
+    }
+
+
+def _validate_topk_candidates(topk: np.ndarray, artifacts: Mapping[str, Any]) -> None:
+    query_count = len(artifacts["queries"]["user"])
+    item_count = len(artifacts["catalog"]["video_ids"])
+    if topk.shape != (query_count, 100):
+        raise GateError("Top-K checkpoint shape differs from the evaluation contract")
+    if topk.dtype != np.dtype(np.int32):
+        raise GateError("Top-K checkpoint dtype must be int32")
+    if np.any(topk < -1) or np.any(topk >= item_count):
+        raise GateError("Top-K checkpoint contains an out-of-range item")
+    candidate_bits = artifacts["candidate_bits"]
+    for begin in range(0, query_count, 2048):
+        block = topk[begin : begin + 2048]
+        valid = block >= 0
+        padding_seen = np.maximum.accumulate(~valid, axis=1)
+        if np.any(padding_seen & valid):
+            raise GateError("Top-K checkpoint has a non-padding item after -1")
+        comparable = np.where(valid, block, item_count)
+        ordered = np.sort(comparable, axis=1)
+        if np.any((ordered[:, 1:] == ordered[:, :-1]) & (ordered[:, :-1] < item_count)):
+            raise GateError("Top-K checkpoint contains a duplicate item")
+        if not valid.any():
+            continue
+        safe_items = np.where(valid, block, 0)
+        rows = np.arange(begin, begin + len(block), dtype=np.int64)[:, None]
+        byte_positions = safe_items >> 3
+        bit_masks = np.left_shift(1, safe_items & 7)
+        allowed = (
+            np.bitwise_and(candidate_bits[rows, byte_positions], bit_masks) != 0
+        )
+        if np.any(valid & ~allowed):
+            raise GateError("Top-K checkpoint contains an item outside query candidates")
+
+
+def _load_topk_checkpoint(
+    *,
+    path: Path,
+    expected_metadata: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+    validate_candidates: bool,
+) -> np.ndarray:
+    try:
+        with np.load(path, allow_pickle=False) as checkpoint:
+            if set(checkpoint.files) != {"topk", "metadata"}:
+                raise GateError("Top-K checkpoint fields are incomplete")
+            topk = np.asarray(checkpoint["topk"])
+            metadata = json.loads(str(checkpoint["metadata"].item()))
+    except GateError:
+        raise
+    except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
+        raise GateError("Top-K checkpoint is unreadable") from exc
+    if canonical_json(metadata) != canonical_json(expected_metadata):
+        raise GateError("Top-K checkpoint identity or input binding changed")
+    if list(topk.shape) != metadata.get("shape") or str(topk.dtype) != metadata.get(
+        "dtype"
+    ):
+        raise GateError("Top-K checkpoint array metadata changed")
+    if validate_candidates:
+        _validate_topk_candidates(topk, artifacts)
+    return topk
+
+
 def _validate_cached_corrected_row(
     *,
     payload: Mapping[str, Any],
@@ -380,6 +649,8 @@ def _validate_cached_corrected_row(
     original: Mapping[str, Any],
     cache_key: str,
     topk_path: Path,
+    topk_metadata: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
 ) -> dict[str, Any]:
     if payload.get("schema_version") != 1 or payload.get("cache_key") != cache_key:
         raise GateError("Corrected-row cache binding changed")
@@ -389,6 +660,19 @@ def _validate_cached_corrected_row(
         raise GateError("Corrected-row cache is missing its Top-K file")
     if payload.get("topk_sha256") != sha256_file(topk_path):
         raise GateError("Corrected-row Top-K hash mismatch")
+    _load_topk_checkpoint(
+        path=topk_path,
+        expected_metadata=topk_metadata,
+        artifacts=artifacts,
+        validate_candidates=False,
+    )
+    if payload.get("candidate_validation") != {
+        "status": "passed",
+        "candidate_membership_sha256": topk_metadata[
+            "candidate_membership_sha256"
+        ],
+    }:
+        raise GateError("Corrected-row candidate validation evidence changed")
     corrected = payload.get("corrected_row")
     if not isinstance(corrected, dict):
         raise GateError("Corrected-row cache payload is missing")
@@ -414,6 +698,8 @@ def _load_cached_row(
     planned: Mapping[str, Any],
     original: Mapping[str, Any],
     cache_key: str,
+    topk_metadata: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
 ) -> tuple[dict[str, Any] | None, np.ndarray | None]:
     topk_path, row_path = _row_paths(cache_dir, index, planned)
     if row_path.is_file():
@@ -428,15 +714,19 @@ def _load_cached_row(
                 original=original,
                 cache_key=cache_key,
                 topk_path=topk_path,
+                topk_metadata=topk_metadata,
+                artifacts=artifacts,
             ),
             None,
         )
     if not topk_path.is_file():
         return None, None
-    try:
-        topk = np.load(topk_path)["topk"]
-    except (OSError, KeyError, ValueError) as exc:
-        raise GateError("Partial Top-K checkpoint is unreadable") from exc
+    topk = _load_topk_checkpoint(
+        path=topk_path,
+        expected_metadata=topk_metadata,
+        artifacts=artifacts,
+        validate_candidates=True,
+    )
     return None, topk
 
 
@@ -448,15 +738,22 @@ def _write_row_checkpoint(
     corrected: Mapping[str, Any],
     topk: np.ndarray,
     cache_key: str,
+    topk_metadata: Mapping[str, Any],
 ) -> tuple[Path, Path]:
     topk_path, row_path = _row_paths(cache_dir, index, planned)
     if not topk_path.is_file():
-        _atomic_write_topk(topk_path, topk)
+        _atomic_write_topk(topk_path, topk, topk_metadata)
     payload = {
         "schema_version": 1,
         "cache_key": cache_key,
         "planned": dict(planned),
         "topk_sha256": sha256_file(topk_path),
+        "candidate_validation": {
+            "status": "passed",
+            "candidate_membership_sha256": topk_metadata[
+                "candidate_membership_sha256"
+            ],
+        },
         "corrected_row": dict(corrected),
     }
     _atomic_write_json(row_path, payload)
@@ -488,23 +785,7 @@ def _topk_for_row(
             shrinkage=hp["shrinkage"],
         )
     if method == "bpr_mf":
-        group = "_".join(
-            map(
-                str,
-                (
-                    hp["embedding_dim"],
-                    hp["learning_rate"],
-                    hp["l2"],
-                    planned["seed"],
-                ),
-            )
-        )
-        model_path = (
-            artifact_dir
-            / "bpr_models"
-            / f"{bpr_prefix}_{group}"
-            / f"epoch_{hp['epoch']}.npz"
-        )
+        model_path = _bpr_model_path(artifact_dir, planned, bpr_prefix)
         if not model_path.is_file():
             raise ArtifactError(f"Frozen BPR checkpoint is missing: {model_path}")
         model = np.load(model_path)
@@ -576,7 +857,12 @@ def run_segment_membership_erratum_row(
     """Compute or resume one row; never writes any formal report or receipt."""
 
     root = Path(repo_root).resolve()
-    context = _prepare_execution(root, verify_selected_fallback=False)
+    context = _prepare_execution(
+        root,
+        verify_selected_fallback=False,
+        expected_cache_key=expected_cache_key,
+        row_index=row_index,
+    )
     binding = context["binding"]
     if binding["cache_key"] != expected_cache_key:
         raise GateError("Row worker cache key differs from its supervisor")
@@ -584,6 +870,13 @@ def run_segment_membership_erratum_row(
     if row_index < 0 or row_index >= len(plan.rows):
         raise GateError("Row worker index is outside the frozen selection plan")
     planned = plan.rows[row_index]
+    topk_metadata = _topk_metadata(
+        row_index=row_index,
+        planned=planned,
+        binding=binding,
+        ranking_input_manifest=context["ranking_input_manifest"],
+        artifacts=context["artifacts"],
+    )
     key = (planned["method"], planned["config_id"], planned["seed"])
     original = context["original_rows"][key]
     cached, partial_topk = _load_cached_row(
@@ -592,6 +885,8 @@ def run_segment_membership_erratum_row(
         planned=planned,
         original=original,
         cache_key=expected_cache_key,
+        topk_metadata=topk_metadata,
+        artifacts=context["artifacts"],
     )
     if cached is not None:
         return {
@@ -620,7 +915,8 @@ def run_segment_membership_erratum_row(
     # than repeating model scoring.
     topk_path, _ = _row_paths(context["cache_dir"], row_index, planned)
     if not topk_path.is_file():
-        _atomic_write_topk(topk_path, topk)
+        _atomic_write_topk(topk_path, topk, topk_metadata)
+    _validate_topk_candidates(topk, context["artifacts"])
     bootstrap_users, bootstrap_indices = common_bootstrap_indices(
         context["artifacts"]["queries"]["user"]
     )
@@ -638,6 +934,7 @@ def run_segment_membership_erratum_row(
         corrected=corrected,
         topk=topk,
         cache_key=expected_cache_key,
+        topk_metadata=topk_metadata,
     )
     return {
         "row": row_index + 1,
@@ -650,17 +947,37 @@ def run_segment_membership_erratum_row(
     }
 
 
-def _heartbeat_callback(
+def _active_row_liveness_path(artifact_dir: Path) -> Path:
+    return artifact_dir / "errata" / ERRATUM_ID / "ACTIVE_ROW_LIVENESS.json"
+
+
+def _publish_journal_path(root: Path) -> Path:
+    manifest_sha = sha256_file(root / "manifests/split_manifest.json")
+    return (
+        root
+        / "artifacts"
+        / "phase1"
+        / manifest_sha
+        / "errata"
+        / ERRATUM_ID
+        / "PUBLISH_JOURNAL.json"
+    )
+
+
+def _liveness_callback(
     *,
     cache_dir: Path,
+    artifact_dir: Path,
     planned: Mapping[str, Any],
     row_index: int,
     total: int,
     overall_started: float,
-) -> Callable[[ProcessHeartbeat], None]:
-    def emit(sample: ProcessHeartbeat) -> None:
+) -> Callable[[ProcessLivenessPulse], None]:
+    def emit(sample: ProcessLivenessPulse) -> None:
         payload = {
             "schema_version": 1,
+            "pulse_type": "process_liveness_not_progress",
+            "status": "running",
             "stage": "exact_segment_metric_replay",
             "row": row_index + 1,
             "total": total,
@@ -669,6 +986,7 @@ def _heartbeat_callback(
             "seed": planned["seed"],
             "worker_pid": sample.pid,
             "worker_process_group_id": sample.process_group_id,
+            "orchestrator_pid": os.getpid(),
             "worker_elapsed_seconds": round(sample.elapsed_seconds, 2),
             "overall_elapsed_seconds": round(
                 time.perf_counter() - overall_started, 2
@@ -682,21 +1000,88 @@ def _heartbeat_callback(
             "process_state": sample.state,
             "emitted_at_utc": datetime.now(timezone.utc).isoformat(),
         }
-        _atomic_write_json(cache_dir / "HEARTBEAT.json", payload)
+        _atomic_write_json(cache_dir / "LIVENESS_PULSE.json", payload)
+        _atomic_write_json(_active_row_liveness_path(artifact_dir), payload)
         print(json.dumps(payload, sort_keys=True), flush=True)
 
     return emit
 
 
+def _mark_row_inactive(artifact_dir: Path) -> None:
+    _atomic_write_json(
+        _active_row_liveness_path(artifact_dir),
+        {
+            "schema_version": 1,
+            "pulse_type": "process_liveness_not_progress",
+            "status": "inactive",
+            "orchestrator_pid": os.getpid(),
+            "emitted_at_utc": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+def _build_replacement_receipt(
+    *,
+    root: Path,
+    result_path: Path,
+    bundle_path: Path,
+    code_commit: str,
+    plan: Any,
+    selected_at_utc: str,
+) -> tuple[Path, Path, bytes, dict[str, Any]]:
+    manifest_sha = sha256_file(root / "manifests/split_manifest.json")
+    receipt_path = root / "receipts" / manifest_sha / "SELECTION_RECEIPT.json"
+    if not receipt_path.is_file() or sha256_file(receipt_path) != ORIGINAL_RECEIPT_SHA256:
+        raise GateError("Known original selection receipt changed before publication")
+    old_bytes = receipt_path.read_bytes()
+    old_payload = json.loads(old_bytes)
+    if (
+        old_payload.get("selection_result_sha256") != ORIGINAL_RESULT_SHA256
+        or old_payload.get("final_method_bundle_sha256") != ORIGINAL_BUNDLE_SHA256
+    ):
+        raise GateError("Original receipt no longer binds the known formal artifacts")
+    payload = {
+        "schema_version": 1,
+        "receipt_type": "selection",
+        "status": "completed",
+        "protocol_revision": plan.protocol_revision,
+        "split_manifest_sha256": manifest_sha,
+        "selection_plan_path": str(Path(plan.path).relative_to(root)),
+        "selection_plan_sha256": plan.sha256,
+        "selection_result_path": "reports/phase1/validation_baselines.json",
+        "selection_result_sha256": sha256_file(result_path),
+        "final_method_bundle_path": "reports/phase1/final_method_bundle.json",
+        "final_method_bundle_sha256": sha256_file(bundle_path),
+        "code_commit": code_commit,
+        "methods": list(METHODS),
+        "selected_at_utc": selected_at_utc,
+        "erratum_id": ERRATUM_ID,
+        "erratum_reason": ERRATUM_REASON,
+        "supersedes_selection_receipt_sha256": ORIGINAL_RECEIPT_SHA256,
+        "supersedes_selection_result_sha256": ORIGINAL_RESULT_SHA256,
+        "supersedes_final_method_bundle_sha256": ORIGINAL_BUNDLE_SHA256,
+    }
+    archive_path = (
+        receipt_path.parent
+        / "superseded"
+        / ORIGINAL_RESULT_SHA256
+        / receipt_path.name
+    )
+    return receipt_path, archive_path, old_bytes, payload
+
+
 def _write_erratum(
     *,
+    repo_root: Path,
     path: Path,
     result: Mapping[str, Any],
     bundle: Mapping[str, Any],
-    receipt_path: Path,
     archive_path: Path,
     segments: Mapping[str, Any],
     runtime_seconds: float,
+    corrected_result_sha256: str,
+    corrected_bundle_sha256: str,
+    corrected_receipt_sha256: str,
 ) -> None:
     selected = {method["name"]: method for method in bundle["methods"]}
     lines = [
@@ -732,10 +1117,10 @@ def _write_erratum(
         f"- Original selection result SHA256: `{ORIGINAL_RESULT_SHA256}`",
         f"- Original final bundle SHA256: `{ORIGINAL_BUNDLE_SHA256}`",
         f"- Original selection receipt SHA256: `{ORIGINAL_RECEIPT_SHA256}`",
-        f"- Corrected selection result SHA256: `{sha256_file(path.parent / 'validation_baselines.json')}`",
-        f"- Corrected final bundle SHA256: `{sha256_file(path.parent / 'final_method_bundle.json')}`",
-        f"- Corrected selection receipt SHA256: `{sha256_file(receipt_path)}`",
-        f"- Archived old receipt: `{archive_path.relative_to(path.parents[2])}`",
+        f"- Corrected selection result SHA256: `{corrected_result_sha256}`",
+        f"- Corrected final bundle SHA256: `{corrected_bundle_sha256}`",
+        f"- Corrected selection receipt SHA256: `{corrected_receipt_sha256}`",
+        f"- Archived old receipt: `{archive_path.relative_to(repo_root)}`",
         "",
         "## Selected configurations",
         "",
@@ -749,6 +1134,7 @@ def _write_erratum(
 
 def run_segment_membership_erratum(repo_root: str | Path) -> dict[str, Any]:
     root = Path(repo_root).resolve()
+    recover_publish_transaction(_publish_journal_path(root))
     started_at = datetime.now(timezone.utc)
     started = time.perf_counter()
     context = _prepare_execution(root, verify_selected_fallback=True)
@@ -769,12 +1155,21 @@ def run_segment_membership_erratum(repo_root: str | Path) -> dict[str, Any]:
     _emit_progress("exact_segment_metric_replay", 0, total, started)
     for row_index, planned in enumerate(plan.rows):
         key = (planned["method"], planned["config_id"], planned["seed"])
+        topk_metadata = _topk_metadata(
+            row_index=row_index,
+            planned=planned,
+            binding=context["binding"],
+            ranking_input_manifest=context["ranking_input_manifest"],
+            artifacts=artifacts,
+        )
         cached, _ = _load_cached_row(
             cache_dir=cache_dir,
             index=row_index,
             planned=planned,
             original=original_rows[key],
             cache_key=cache_key,
+            topk_metadata=topk_metadata,
+            artifacts=artifacts,
         )
         if cached is None:
             elapsed = time.perf_counter() - started
@@ -796,9 +1191,10 @@ def run_segment_membership_erratum(repo_root: str | Path) -> dict[str, Any]:
                     command,
                     cwd=root,
                     timeout_seconds=min(float(ROW_TIMEOUT_SECONDS), remaining),
-                    heartbeat_seconds=float(HEARTBEAT_SECONDS),
-                    heartbeat=_heartbeat_callback(
+                    liveness_interval_seconds=float(LIVENESS_INTERVAL_SECONDS),
+                    liveness_callback=_liveness_callback(
                         cache_dir=cache_dir,
+                        artifact_dir=context["artifact_dir"],
                         planned=planned,
                         row_index=row_index,
                         total=total,
@@ -810,6 +1206,8 @@ def run_segment_membership_erratum(repo_root: str | Path) -> dict[str, Any]:
                 raise GateError(
                     f"Erratum row {row_index + 1} exceeded its supervised deadline"
                 ) from exc
+            finally:
+                _mark_row_inactive(context["artifact_dir"])
             if returncode != 0:
                 raise GateError(
                     f"Erratum row {row_index + 1} worker failed with exit {returncode}"
@@ -820,6 +1218,8 @@ def run_segment_membership_erratum(repo_root: str | Path) -> dict[str, Any]:
                 planned=planned,
                 original=original_rows[key],
                 cache_key=cache_key,
+                topk_metadata=topk_metadata,
+                artifacts=artifacts,
             )
             if cached is None:
                 raise GateError(
@@ -874,29 +1274,37 @@ def run_segment_membership_erratum(repo_root: str | Path) -> dict[str, Any]:
     report_dir = root / "reports/phase1"
     result_path = report_dir / "validation_baselines.json"
     bundle_path = report_dir / "final_method_bundle.json"
-    temporary_result = report_dir / ".validation_baselines.erratum.tmp.json"
-    temporary_bundle = report_dir / ".final_method_bundle.erratum.tmp.json"
-    temporary_result.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
-    validate_selection_result(root, temporary_result, plan=plan)
+    staging = cache_dir / "formal_staging" / uuid.uuid4().hex
+    staging.mkdir(parents=True, exist_ok=False)
+    staged_result = staging / "validation_baselines.json"
+    staged_bundle = staging / "final_method_bundle.json"
+    staged_markdown = staging / "validation_baselines.md"
+    staged_result.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    validate_selection_result(root, staged_result, plan=plan)
     corrected_bundle = derive_final_method_bundle(
-        root, temporary_result, temporary_bundle
+        root, staged_result, staged_bundle
     )
     validate_selection_erratum_invariants(
         original_result, result, original_bundle, corrected_bundle
     )
-    os.replace(temporary_result, result_path)
-    os.replace(temporary_bundle, bundle_path)
-    _write_markdown(report_dir / "validation_baselines.md", result, corrected_bundle)
-    receipt_path, archive_path = supersede_selection_receipt(
-        root,
-        result_path,
-        bundle_path,
-        expected_old_receipt_sha256=ORIGINAL_RECEIPT_SHA256,
-        expected_old_selection_result_sha256=ORIGINAL_RESULT_SHA256,
-        expected_old_final_bundle_sha256=ORIGINAL_BUNDLE_SHA256,
-        erratum_id=ERRATUM_ID,
-        reason=ERRATUM_REASON,
+    _write_markdown(staged_markdown, result, corrected_bundle)
+    selected_at_utc = datetime.now(timezone.utc).isoformat()
+    receipt_path, archive_path, old_receipt_bytes, receipt_payload = (
+        _build_replacement_receipt(
+            root=root,
+            result_path=staged_result,
+            bundle_path=staged_bundle,
+            code_commit=code_commit,
+            plan=plan,
+            selected_at_utc=selected_at_utc,
+        )
     )
+    staged_receipt = staging / "SELECTION_RECEIPT.json"
+    staged_archive = staging / "SUPERSEDED_SELECTION_RECEIPT.json"
+    _atomic_write_json(staged_receipt, receipt_payload)
+    staged_archive.write_bytes(old_receipt_bytes)
+    os.chmod(staged_receipt, 0o444)
+    os.chmod(staged_archive, 0o444)
     runtime_seconds = time.perf_counter() - started
     run_record = {
         "schema_version": 1,
@@ -909,30 +1317,54 @@ def run_segment_membership_erratum(repo_root: str | Path) -> dict[str, Any]:
         "resumed_rows": reused_rows,
         "computed_rows": computed_rows,
         "row_timeout_seconds": ROW_TIMEOUT_SECONDS,
-        "heartbeat_seconds": HEARTBEAT_SECONDS,
+        "liveness_interval_seconds": LIVENESS_INTERVAL_SECONDS,
         "data_warm_item_count": int(np.asarray(segments["data_warm"]).sum()),
         "data_cold_item_count": int(np.asarray(segments["data_cold"]).sum()),
         "data_warm_membership_sha256": segments["data_warm_sha256"],
         "original_selection_result_sha256": ORIGINAL_RESULT_SHA256,
-        "corrected_selection_result_sha256": sha256_file(result_path),
+        "corrected_selection_result_sha256": sha256_file(staged_result),
         "original_final_method_bundle_sha256": ORIGINAL_BUNDLE_SHA256,
-        "corrected_final_method_bundle_sha256": sha256_file(bundle_path),
+        "corrected_final_method_bundle_sha256": sha256_file(staged_bundle),
         "original_selection_receipt_sha256": ORIGINAL_RECEIPT_SHA256,
-        "corrected_selection_receipt_sha256": sha256_file(receipt_path),
+        "corrected_selection_receipt_sha256": sha256_file(staged_receipt),
         "archived_receipt_path": str(archive_path.relative_to(root)),
         "temporal_final_accessed": False,
         "small_matrix_accessed": False,
     }
-    (report_dir / "erratum_001_run.json").write_text(
-        json.dumps(run_record, indent=2, sort_keys=True) + "\n"
-    )
+    staged_run_record = staging / "erratum_001_run.json"
+    _atomic_write_json(staged_run_record, run_record)
+    staged_erratum = staging / "ERRATUM-001.md"
     _write_erratum(
-        path=report_dir / "ERRATUM-001.md",
+        repo_root=root,
+        path=staged_erratum,
         result=result,
         bundle=corrected_bundle,
-        receipt_path=receipt_path,
         archive_path=archive_path,
         segments=segments,
         runtime_seconds=runtime_seconds,
+        corrected_result_sha256=sha256_file(staged_result),
+        corrected_bundle_sha256=sha256_file(staged_bundle),
+        corrected_receipt_sha256=sha256_file(staged_receipt),
     )
+    publish_files_transactionally(
+        journal_path=_publish_journal_path(root),
+        replacements={
+            result_path: staged_result,
+            bundle_path: staged_bundle,
+            report_dir / "validation_baselines.md": staged_markdown,
+            archive_path: staged_archive,
+            receipt_path: staged_receipt,
+            report_dir / "erratum_001_run.json": staged_run_record,
+            report_dir / "ERRATUM-001.md": staged_erratum,
+        },
+    )
+    if (
+        sha256_file(result_path) != run_record["corrected_selection_result_sha256"]
+        or sha256_file(bundle_path)
+        != run_record["corrected_final_method_bundle_sha256"]
+        or sha256_file(receipt_path)
+        != run_record["corrected_selection_receipt_sha256"]
+        or sha256_file(archive_path) != ORIGINAL_RECEIPT_SHA256
+    ):
+        raise GateError("Committed formal publication differs from its staging hashes")
     return run_record

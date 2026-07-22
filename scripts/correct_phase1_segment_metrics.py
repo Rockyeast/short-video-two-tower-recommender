@@ -16,15 +16,18 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from kuairec_phase1.artifacts import ArtifactError
 from kuairec_phase1.erratum import (
-    HEARTBEAT_SECONDS,
+    ERRATUM_ID,
+    LIVENESS_INTERVAL_SECONDS,
     MAX_WALL_SECONDS,
     run_segment_membership_erratum,
 )
-from kuairec_phase1.gates import GateError
+from kuairec_phase1.gates import GateError, sha256_file
+from kuairec_phase1.publish import PublishTransactionError
 from kuairec_phase1.watchdog import (
-    ProcessHeartbeat,
+    ProcessLivenessPulse,
     WatchdogTimeout,
     run_supervised,
+    terminate_process_group_id,
 )
 
 
@@ -35,7 +38,7 @@ def _run_orchestrator() -> int:
     previous_term = signal.signal(signal.SIGTERM, stop_on_signal)
     try:
         result = run_segment_membership_erratum(ROOT)
-    except (ArtifactError, GateError) as exc:
+    except (ArtifactError, GateError, PublishTransactionError) as exc:
         print(f"ERRATUM-001 ABORTED: {exc}", file=sys.stderr, flush=True)
         return 2
     except KeyboardInterrupt:
@@ -51,10 +54,11 @@ def _run_orchestrator() -> int:
     return 0
 
 
-def _supervisor_heartbeat(sample: ProcessHeartbeat) -> None:
+def _supervisor_liveness_pulse(sample: ProcessLivenessPulse) -> None:
     print(
         json.dumps(
             {
+                "pulse_type": "process_liveness_not_progress",
                 "stage": "external_three_hour_supervisor",
                 "pid": sample.pid,
                 "process_group_id": sample.process_group_id,
@@ -71,6 +75,31 @@ def _supervisor_heartbeat(sample: ProcessHeartbeat) -> None:
         ),
         flush=True,
     )
+
+
+def _cleanup_active_row(orchestrator_pid: int) -> None:
+    manifest_sha = sha256_file(ROOT / "manifests/split_manifest.json")
+    liveness = (
+        ROOT
+        / "artifacts"
+        / "phase1"
+        / manifest_sha
+        / "errata"
+        / ERRATUM_ID
+        / "ACTIVE_ROW_LIVENESS.json"
+    )
+    try:
+        payload = json.loads(liveness.read_text())
+    except (OSError, json.JSONDecodeError):
+        return
+    if (
+        payload.get("status") != "running"
+        or payload.get("orchestrator_pid") != orchestrator_pid
+    ):
+        return
+    process_group_id = payload.get("worker_process_group_id")
+    if isinstance(process_group_id, int):
+        terminate_process_group_id(process_group_id)
 
 
 def main() -> int:
@@ -91,9 +120,10 @@ def main() -> int:
             [sys.executable, str(Path(__file__).resolve()), "--orchestrate"],
             cwd=ROOT,
             timeout_seconds=float(MAX_WALL_SECONDS),
-            heartbeat_seconds=float(HEARTBEAT_SECONDS),
-            heartbeat=_supervisor_heartbeat,
+            liveness_interval_seconds=float(LIVENESS_INTERVAL_SECONDS),
+            liveness_callback=_supervisor_liveness_pulse,
             environment=environment,
+            before_terminate=_cleanup_active_row,
         )
     except WatchdogTimeout as exc:
         print(f"ERRATUM-001 ABORTED: {exc}", file=sys.stderr, flush=True)

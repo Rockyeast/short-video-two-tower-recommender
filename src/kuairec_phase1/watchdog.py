@@ -16,7 +16,7 @@ class WatchdogTimeout(RuntimeError):
 
 
 @dataclass(frozen=True)
-class ProcessHeartbeat:
+class ProcessLivenessPulse:
     pid: int
     process_group_id: int
     elapsed_seconds: float
@@ -69,22 +69,47 @@ def terminate_process_group(
     process.wait(timeout=max(grace_seconds, 1.0))
 
 
+def terminate_process_group_id(
+    process_group_id: int, *, grace_seconds: float = 1.0
+) -> None:
+    """Best-effort cleanup for a nested group not owned by this supervisor."""
+
+    if process_group_id <= 1:
+        return
+    try:
+        os.killpg(process_group_id, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + grace_seconds
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(process_group_id, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.02)
+    try:
+        os.killpg(process_group_id, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def run_supervised(
     command: Sequence[str],
     *,
     cwd: str | Path,
     timeout_seconds: float,
-    heartbeat_seconds: float,
-    heartbeat: Callable[[ProcessHeartbeat], None] | None = None,
+    liveness_interval_seconds: float,
+    liveness_callback: Callable[[ProcessLivenessPulse], None] | None = None,
     environment: Mapping[str, str] | None = None,
     poll_seconds: float = 0.25,
+    before_terminate: Callable[[int], None] | None = None,
 ) -> int:
-    """Run one isolated process group with real heartbeats and a hard timeout."""
+    """Run one isolated process group with liveness pulses and a hard timeout."""
 
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
-    if heartbeat_seconds <= 0:
-        raise ValueError("heartbeat_seconds must be positive")
+    if liveness_interval_seconds <= 0:
+        raise ValueError("liveness_interval_seconds must be positive")
     process = subprocess.Popen(
         list(command),
         cwd=str(cwd),
@@ -92,9 +117,17 @@ def run_supervised(
         start_new_session=True,
     )
     started = time.monotonic()
-    next_heartbeat = started
+    next_liveness_pulse = started
     last_sample_time = started
     last_cpu_seconds = 0.0
+    cleanup_called = False
+
+    def cleanup_nested() -> None:
+        nonlocal cleanup_called
+        if not cleanup_called and before_terminate is not None:
+            cleanup_called = True
+            before_terminate(process.pid)
+
     try:
         while True:
             returncode = process.poll()
@@ -102,11 +135,12 @@ def run_supervised(
             if returncode is not None:
                 return int(returncode)
             if now - started >= timeout_seconds:
+                cleanup_nested()
                 terminate_process_group(process)
                 raise WatchdogTimeout(
                     f"Process group {process.pid} exceeded {timeout_seconds:.1f} seconds"
                 )
-            if now >= next_heartbeat:
+            if now >= next_liveness_pulse:
                 sample = _process_sample(process.pid)
                 cpu_percent: float | None = None
                 rss_mb: float | None = None
@@ -120,9 +154,9 @@ def run_supervised(
                         )
                     last_cpu_seconds = cpu_seconds
                     last_sample_time = now
-                if heartbeat is not None:
-                    heartbeat(
-                        ProcessHeartbeat(
+                if liveness_callback is not None:
+                    liveness_callback(
+                        ProcessLivenessPulse(
                             pid=process.pid,
                             process_group_id=process.pid,
                             elapsed_seconds=now - started,
@@ -131,8 +165,9 @@ def run_supervised(
                             state=state,
                         )
                     )
-                next_heartbeat = now + heartbeat_seconds
+                next_liveness_pulse = now + liveness_interval_seconds
             time.sleep(min(poll_seconds, max(0.01, timeout_seconds - (now - started))))
     except BaseException:
+        cleanup_nested()
         terminate_process_group(process)
         raise
