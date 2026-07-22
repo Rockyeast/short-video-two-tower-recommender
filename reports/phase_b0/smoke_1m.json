@@ -1,0 +1,35 @@
+{
+  "bpr_epoch_losses": [
+    0.6931381526722941,
+    0.6928188128235557,
+    0.6924180490720956
+  ],
+  "bpr_loss_strictly_decreasing": true,
+  "bpr_negative_events": 68912,
+  "bpr_positive_events": 68912,
+  "bpr_positive_over_sampled_negative_rate": 0.575618179707453,
+  "canonical_interactions": 924240,
+  "canonical_users": 551,
+  "lazy_histories_probed": 1000,
+  "lazy_history_items_materialized": 48950,
+  "normal_sample_items": 9357,
+  "peak_rss_mb": 525.81,
+  "ranking_queries_including_one_cold_user": 129,
+  "raw_interactions_requested": 1000000,
+  "scope": "first_big_matrix_rows_only_no_final_no_small",
+  "static_source_variant_items": 1,
+  "timings": {
+    "blocked_exact_scoring_s": 2.6102,
+    "bpr_dataset_and_negative_sample_s": 1.3222,
+    "bpr_training_s": 0.6948,
+    "read_and_canonicalize_s": 1.794,
+    "static_features_s": 1.0912,
+    "two_tower_lazy_dataset_and_1000_getitem_s": 1.1721
+  },
+  "topk_shape": [
+    129,
+    100
+  ],
+  "total_timed_s": 8.6845,
+  "two_tower_positive_events": 63096
+}

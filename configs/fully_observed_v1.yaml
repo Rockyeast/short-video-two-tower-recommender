@@ -1,0 +1,113 @@
+protocol_revision: fully-observed-v1
+data:
+  root_env: KUAIREC_DATA_DIR
+  big_matrix: big_matrix.csv
+  small_matrix: small_matrix.csv
+  item_daily_features: item_daily_features.csv
+  item_categories: item_categories.csv
+  caption_categories: kuairec_caption_category.csv
+split:
+  source: manifests/split_manifest.json
+  fit: existing_train_window
+  select: existing_validation_window
+  temporal_final: sealed
+labels:
+  strong_positive:
+    field: watch_ratio
+    operator: ">"
+    threshold: 2.0
+  quick_skip:
+    field: play_duration
+    operator: "<"
+    threshold: min(3000_ms, video_duration)
+validation:
+  unit: one_query_per_user
+  history_source: train_only
+  max_history: 50
+  relevant: unseen_validation_strong_positives
+  catalog: observed_train_or_validation_intersect_normal
+  filter: train_seen
+small_evaluation:
+  status: sealed
+  name: sealed_nearly_fully_observed_evaluation
+  final_refit: big_train_plus_validation_from_scratch
+  user_history_source: big_train_plus_validation_only
+  max_history: 50
+  candidates: observed_pairs_intersect_normal
+  missing_pairs: unavailable_not_negative
+  cold_user_fallback: global_popularity_from_final_refit_context
+metrics:
+  primary: [Recall@20, Recall@50, Recall@100, NDCG@20, Coverage@100]
+  descriptive: [Data-Cold Recall@100]
+  aggregation: one_query_per_user_macro
+  primary_user_segment: warm_user
+  cold_user_reporting: separate_with_denominators
+baselines:
+  random:
+    seeds: [20260722]
+  global_popularity:
+    configurations: 1
+  bpr_mf:
+    maximum_configurations: 3
+    maximum_final_seeds: 3
+    positives: canonical_normal_events_with_watch_ratio_strictly_greater_than_2
+    negatives:
+      count_per_positive_per_epoch: 1
+      distribution: uniform
+      catalog: fit_observed_normal_items
+      exclude: all_fit_known_positive_items_for_user
+      resample_each_epoch: true
+      fixed_seed: 20260722
+    cold_item_score: 0.0
+    optimizer: mini_batch_sgd
+    sparse_gradient_normalization: per_embedding_occurrence_count
+two_tower:
+  maximum_configurations: 3
+  maximum_final_seeds: 3
+  output_dim: 128
+  history_pooling: masked_weighted_mean
+  similarity: dot_product
+  loss: temperature_scaled_in_batch_softmax
+  caption_encoder: frozen_precomputed
+  training_examples:
+    history_timestamp: strictly_before_target
+    target_eligibility: strong_positive_at_first_user_item_interaction
+    prior_any_interaction_with_target: skip_entire_example
+    repeated_batch_target_is_negative: false
+    other_known_user_positive_is_negative: false
+    quick_skip: downweighted_history_only
+  item_features:
+    daily_static_snapshot: earliest_available_row_per_video
+    static_source_variation: report_item_and_use_earliest_snapshot
+    allowed:
+      - video_id
+      - caption_embedding
+      - category_ids
+      - video_duration
+      - video_width
+      - video_height
+      - upload_type
+      - upload_dt
+    daily_aggregate_features: forbidden
+  cold_item:
+    id_embedding: disabled_if_untrained
+    fallback: content_only
+retrieval:
+  phase_a: exact_matrix_multiplication
+  faiss: gated_after_model_effectiveness
+selection_gate:
+  comparison_baseline: max_recall_at_100_of_global_popularity_and_bpr
+  direct_recall_improvement: strictly_greater
+  ndcg_at_20_protection:
+    comparison: strongest_recall_baseline_ndcg_at_20
+    maximum_drop_absolute: 0.01
+  coverage_tradeoff:
+    maximum_recall_at_100_deficit_absolute: 0.02
+    minimum_coverage_at_100_gain_absolute: 0.05
+  data_cold_tradeoff:
+    maximum_recall_at_100_deficit_absolute: 0.02
+    minimum_target_denominator: 100
+    minimum_data_cold_recall_at_100_gain_absolute: 0.05
+  hybrid_pareto:
+    no_worse_metrics: [Recall@100, Coverage@100]
+    minimum_gain_in_at_least_one_absolute: 0.01

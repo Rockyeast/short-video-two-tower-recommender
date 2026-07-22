@@ -1,15 +1,133 @@
 # Short-Video Recommendation on KuaiRec
 
-Phase 0 / protocol-v2.1.1 has been completed, reviewed, and merged. Phase 1 has
-also completed all **97/97** registered temporal-validation selection rows for
-five baseline families: Random, Global Popularity, fit-frozen and
-causal-streaming Time-Decayed Popularity, ItemCF, and BPR-MF.
+The primary development path is now a simple, fixed-catalog retrieval study:
 
-Temporal final and the Small Matrix audit have not been run. No Two-Tower,
-FAISS index, ranking model, serving API, or online-feedback service is included
-yet. The project goal is to build and evaluate a **causal hybrid retrieval
-system**, not to assume in advance that a pure Two-Tower must beat every
-baseline.
+```text
+Big Matrix train/validation
+  -> Popularity and BPR baselines
+  -> content-aware Two-Tower
+  -> exact Top-K retrieval
+  -> sealed nearly-fully-observed Small Matrix evaluation
+```
+
+We follow KuaiRec's intended sparse Big-Matrix training and nearly
+fully-observed Small-Matrix evaluation design, and define a fixed Top-K
+retrieval protocol for comparing popularity, matrix factorization and
+content-aware Two-Tower models. This is **not** an official KuaiRec Two-Tower
+benchmark: the [official repository](https://github.com/chongminggao/KuaiRec)
+and [CIKM 2022 paper](https://arxiv.org/abs/2202.10842) provide the data design,
+not a mandatory model, candidate or metric recipe.
+
+Phase A/A.1 now freezes this route in
+[`docs/fully_observed_protocol_v1.md`](docs/fully_observed_protocol_v1.md), with
+the executable configuration in
+[`configs/fully_observed_v1.yaml`](configs/fully_observed_v1.yaml). It includes
+synthetic-tested dataset/query adapters, fixed candidate filtering, shared
+Recall/NDCG/Coverage evaluation, Popularity and BPR interfaces, exact dot-product
+retrieval, and a deterministic Two-Tower reference encoder.
+Phase B0 adds bounded execution plumbing: a real static-feature loader, lazy
+Two-Tower histories, epoch-resampled BPR negatives/training, blocked Exact
+scoring and a shared cold-user fallback. This is still pre-experiment: full Big
+Two-Tower training, caption-vector generation, Small evaluation and FAISS remain
+unrun.
+
+The original bounded 100K-interaction plumbing smoke is committed at
+[`reports/phase_b0/smoke_100k.json`](reports/phase_b0/smoke_100k.json). After
+correcting sparse BPR gradient normalization, the cross-user 1M-interaction
+smoke at
+[`reports/phase_b0/smoke_1m.json`](reports/phase_b0/smoke_1m.json) covers 551
+users and records strictly decreasing three-epoch loss
+(`0.693138 -> 0.692819 -> 0.692418`). This is a learning/systems smoke, not a
+converged effectiveness claim. A deterministic synthetic test at the formal
+4096 batch size separately requires loss below 0.60 and at least 90% sampled
+pair ordering accuracy. The
+legacy BPR reuse decision is documented at
+[`reports/phase_b0/legacy_bpr_compatibility.md`](reports/phase_b0/legacy_bpr_compatibility.md):
+its negative sampling and cold-item semantics differ, so it is not reused as
+the fully-observed-V1 baseline.
+
+Phase B1A ran exactly one frozen BPR configuration and seed on canonical Big
+train, selecting only on Big validation. The full report is
+[`reports/phase_b1a/full_bpr_pilot.md`](reports/phase_b1a/full_bpr_pilot.md).
+Primary metrics cover 6,816 warm-user queries and 118,539 targets; the other
+2 cold-user queries and 26 targets are reported separately. Epoch 20 was
+selected by Recall@100 with NDCG@20 as the tie-break:
+
+| Method | Recall@100 | NDCG@20 | Coverage@100 |
+|---|---:|---:|---:|
+| Random | 0.012930 | 0.002675 | 1.000000 |
+| Global Popularity | 0.036643 | 0.010615 | 0.080085 |
+| BPR epoch 20 | **0.048439** | **0.012774** | 0.333049 |
+
+The separate-seed fixed diagnostic win rate rose from 49.94% at initialization
+to 93.42% at epoch 20. That diagnostic shows the optimizer learned its fixed
+pair task; Big-validation Recall/NDCG provide the separate
+recommendation-effectiveness evidence. BPR Data-Cold Recall@100 was zero in
+this run, consistent with a pure ID model being unable to learn videos unseen
+during training; this is not stated as a mathematical inevitability. The BPR
+Recall@100 gain over Global Popularity was an observed 32.2% relative gain under
+the frozen Big-validation protocol for one seed, not evidence of statistical
+significance or cross-dataset stability.
+
+Before NORMAL membership is read, the B1A runner now fail-closes on the exact
+`item_daily_features.csv` SHA frozen in the processed manifest. The verified
+source SHA is
+`45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b`;
+the sorted, deduplicated set contains 10,699 NORMAL items and has membership
+SHA256
+`631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e`.
+The existing BPR model was not retrained. Small Matrix, temporal final and
+Two-Tower were not accessed or run.
+
+The older protocol-v2.1.1 temporal route remains in the repository as an
+optional production-like stress test. Its Phase 0 audit and all **97/97**
+temporal-validation baseline rows remain preserved and are now permanently
+frozen; no further temporal-baseline experiments will be added. ERRATUM-001
+completed the 97/97 segment-only correction without changing overall
+Recall/NDCG/Coverage or any selected configuration. Its corrected Warm/Tail/Cold
+metrics and artifact lineage are documented in
+[`reports/phase1/ERRATUM-001.md`](reports/phase1/ERRATUM-001.md). Temporal final
+and Small Matrix model metrics have not been run.
+
+All future raw-data commands must set `KUAIREC_DATA_DIR` to the existing shared
+KuaiRec `data/` directory. This worktree does not copy or modify raw data.
+
+## Primary fully-observed V1 route
+
+- Labels: strict `watch_ratio > 2.0`; quick skip is strict
+  `play_duration < min(3000 ms, video_duration)`.
+- Big validation: one query per user, train-only last-50 history, unseen
+  validation positives, fixed `NORMAL` catalog, train-seen filtering.
+- Small evaluation: observed `NORMAL` pairs only; missing/blocked pairs are
+  unavailable rather than negative; after selection, refit from scratch on Big
+  train+validation and build Small user histories from that Big context only.
+- Warm users define primary metrics. Cold users remain in the audit and use a
+  fit-context Popularity fallback; cold positives are never silently dropped.
+- BPR cold items score zero. Two-Tower cold items disable the untrained ID
+  embedding and use content only.
+- BPR resamples one fit-observed `NORMAL` negative per positive per epoch after
+  excluding all fit-known positives for that user. Sparse gradients are
+  normalized per addressed embedding rather than by the full batch; its Exact
+  scorer uses blocked matrix multiplication rather than Python dot products per
+  candidate.
+- Two-Tower targets must be a user's first interaction with that video; later
+  strong repeats are skipped rather than made artificially unseen. Histories
+  are strictly earlier than their target and mask duplicate/known-positive
+  in-batch false negatives; quick skips only downweight history in V1.
+- Model features are fail-closed to static/content fields; daily engagement
+  aggregates are forbidden.
+- Metrics: Recall@20/50/100, NDCG@20, Coverage@100 and descriptive Data-Cold
+  Recall@100.
+- Budget: one Popularity configuration, at most three BPR and three Two-Tower
+  configurations, then at most three final seeds.
+- Exact retrieval comes first. FAISS, serving, reranking and sequence models
+  are outside this phase.
+- The gate compares Two-Tower with the stronger of Popularity and BPR using
+  numeric Recall/Coverage thresholds plus a 0.01 absolute NDCG@20 protection,
+  not a presumed BPR winner.
+
+> The remaining sections preserve the legacy protocol-v2.1.1 record. They are
+> not the evaluation contract for the new primary route.
 
 ## Locked label
 
@@ -108,7 +226,7 @@ Blocked/missing information is an evaluation-time availability mask only. It
 must never enter training, user history, feature construction, hyperparameter
 selection, or negative sampling.
 
-## Phase 1 temporal-validation baselines
+## Legacy optional temporal-validation baselines
 
 All methods use the same 99,248 validation queries and targets, causal candidate
 membership, seen filtering, deterministic tie-breaks, and registered metrics.

@@ -1,0 +1,33 @@
+{
+  "bpr_epoch_loss": 0.6930579584775086,
+  "bpr_negative_events": 7225,
+  "bpr_positive_events": 7225,
+  "canonical_interactions": 92502,
+  "lazy_histories_probed": 1000,
+  "lazy_history_items_materialized": 48950,
+  "normal_sample_items": 6804,
+  "notes": [
+    "The original ERRATUM process was running concurrently, so timings are conservative.",
+    "No temporal-final or Small-Matrix file was read.",
+    "The single static-source variation is video 4409 width/height metadata; the loader used its earliest snapshot."
+  ],
+  "peak_rss_mb": 152.6,
+  "ranking_queries_including_one_cold_user": 58,
+  "raw_interactions_requested": 100000,
+  "scope": "first_big_matrix_rows_only_no_final_no_small",
+  "static_source_variant_items": 1,
+  "timings": {
+    "blocked_exact_scoring_s": 0.7207,
+    "bpr_dataset_and_negative_sample_s": 0.0838,
+    "bpr_one_epoch_s": 0.0281,
+    "read_and_canonicalize_s": 0.3854,
+    "static_features_s": 1.3466,
+    "two_tower_lazy_dataset_and_1000_getitem_s": 0.0986
+  },
+  "topk_shape": [
+    58,
+    100
+  ],
+  "total_timed_s": 2.6632,
+  "two_tower_positive_events": 7225
+}

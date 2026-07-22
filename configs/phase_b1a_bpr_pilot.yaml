@@ -1,0 +1,23 @@
+phase: phase-b1a-full-bpr-pilot
+scope:
+  fit: canonical_big_train
+  select: canonical_big_validation
+  forbidden: [small_matrix, temporal_final, two_tower]
+training:
+  seed: 20260722
+  embedding_dim: 64
+  learning_rate: 0.05
+  l2: 0.0001
+  batch_size: 4096
+  max_epochs: 20
+  checkpoints: [5, 10, 15, 20]
+audit:
+  negative_seed: 20260723
+  fixed_for_all_checkpoints: true
+stopping:
+  non_finite: stop
+  epoch_5_recall_at_100_must_exceed_random: true
+  epoch_5_audit_win_rate_minimum_improvement: 0.02
+selection:
+  primary: Recall@100
+  tie_break: NDCG@20
