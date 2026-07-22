@@ -83,6 +83,89 @@ def _write_fixture(root: Path) -> dict:
     return load_artifacts(root)
 
 
+def _causal_streaming_fixture(
+    candidate_bits: np.ndarray | None = None,
+) -> dict:
+    """Four deterministic queries around two validation timestamps.
+
+    Item 0 has one train positive. Item 2 receives its first positive at
+    timestamp 110; items 1 and 3 receive positives together at timestamp 120.
+    The tiny timestamps keep decay deterministic without changing the intended
+    score ordering.
+    """
+
+    if candidate_bits is None:
+        candidate_bits = np.full((4, 1), 0b00001111, dtype=np.uint8)
+    return {
+        "catalog": {
+            "video_ids": np.asarray([10, 20, 30, 40], dtype=np.int32),
+            "train_end": np.asarray([100.0], dtype=np.float64),
+        },
+        "train": {
+            "item": np.asarray([0], dtype=np.int32),
+            "timestamp": np.asarray([100.0], dtype=np.float64),
+        },
+        "queries": {
+            "user": np.asarray([0, 1, 2, 3], dtype=np.int32),
+            "timestamp": np.asarray([110.0, 120.0, 120.0, 130.0]),
+            "target_indptr": np.asarray([0, 1, 2, 3, 4], dtype=np.int64),
+            "target_indices": np.asarray([2, 1, 3, 0], dtype=np.int32),
+        },
+        "candidate_bits": candidate_bits,
+    }
+
+
+def _ranked_items(row: np.ndarray) -> list[int]:
+    return row[row >= 0].astype(int).tolist()
+
+
+def test_causal_streaming_future_feedback_does_not_change_past_and_cold_starts_zero():
+    ranked = rank_causal_streaming_decayed(_causal_streaming_fixture(), 1)
+
+    # Before item 2's first validation positive, only train-warm item 0 has a
+    # nonzero score. Future positives for items 1, 2, and 3 cannot rewrite it.
+    assert _ranked_items(ranked[0]) == [0, 1, 2, 3]
+
+    # Item 2 was train-cold, but after its timestamp-110 positive it may gain
+    # dynamic popularity and therefore leads both timestamp-120 rankings.
+    assert _ranked_items(ranked[1]) == [2, 0, 1, 3]
+
+
+def test_causal_streaming_scores_equal_timestamp_queries_before_any_update():
+    ranked = rank_causal_streaming_decayed(_causal_streaming_fixture(), 1)
+
+    # The two timestamp-120 targets are different, but neither query can use
+    # the other's feedback because the entire timestamp is scored atomically.
+    assert _ranked_items(ranked[1]) == [2, 0, 1, 3]
+    assert _ranked_items(ranked[2]) == [2, 0, 1, 3]
+
+
+def test_causal_streaming_earlier_feedback_changes_later_ranking():
+    ranked = rank_causal_streaming_decayed(_causal_streaming_fixture(), 1)
+
+    # Once timestamp 120 is complete, its item-1 and item-3 positives are
+    # available to timestamp 130. Their equal scores use video ID as tie-break.
+    assert _ranked_items(ranked[3]) == [1, 3, 2, 0]
+
+
+def test_causal_streaming_respects_each_query_candidate_membership():
+    # Candidate sets by row: {0,2}, {1,2}, {0,3}, and {1,3}.
+    candidate_bits = np.asarray(
+        [[0b00000101], [0b00000110], [0b00001001], [0b00001010]],
+        dtype=np.uint8,
+    )
+    ranked = rank_causal_streaming_decayed(
+        _causal_streaming_fixture(candidate_bits), 1
+    )
+
+    assert [_ranked_items(row) for row in ranked] == [
+        [0, 2],
+        [2, 1],
+        [0, 3],
+        [1, 3],
+    ]
+
+
 def test_all_five_baseline_paths_share_candidates_and_metrics(tmp_path):
     artifacts = _write_fixture(tmp_path / "artifacts")
     outputs = [

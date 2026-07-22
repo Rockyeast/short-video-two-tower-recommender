@@ -1,11 +1,15 @@
 # Short-Video Recommendation on KuaiRec
 
-This repository is currently limited to **Phase 0 / protocol-v2.1.1: data,
-candidate-catalog, and evaluation audit**.
+Phase 0 / protocol-v2.1.1 has been completed, reviewed, and merged. Phase 1 has
+also completed all **97/97** registered temporal-validation selection rows for
+five baseline families: Random, Global Popularity, fit-frozen and
+causal-streaming Time-Decayed Popularity, ItemCF, and BPR-MF.
 
-No Two-Tower model, ranking model, FAISS index, serving API, or online-feedback
-component is implemented at this stage. The five baselines are specified but
-remain unimplemented and unexecuted until protocol-v2.1.1 is reviewed.
+Temporal final and the Small Matrix audit have not been run. No Two-Tower,
+FAISS index, ranking model, serving API, or online-feedback service is included
+yet. The project goal is to build and evaluate a **causal hybrid retrieval
+system**, not to assume in advance that a pure Two-Tower must beat every
+baseline.
 
 ## Locked label
 
@@ -104,18 +108,48 @@ Blocked/missing information is an evaluation-time availability mask only. It
 must never enter training, user history, feature construction, hyperparameter
 selection, or negative sampling.
 
-## Locked baseline scope
+## Phase 1 temporal-validation baselines
 
-Random, Global Popularity, Causal Time-Decayed Popularity, ItemCF, and BPR are
-specified but not yet implemented or run. Time-decayed popularity must compare
-fit-frozen and causal-streaming variants on validation; the stronger registered
-variant becomes the baseline in the frozen final bundle. BPR uses the causal
-candidate catalog at each positive event time and falls back to the selected
-time-decayed popularity policy for users absent from fit data.
+All methods use the same 99,248 validation queries and targets, causal candidate
+membership, seen filtering, deterministic tie-breaks, and registered metrics.
+The table below reports the selected configuration for each family, plus the
+best fit-frozen time-decayed-popularity configuration needed for an
+information-condition comparison.
 
-Planning scale uses `497,117` canonical train targets. Ten BPR epochs therefore
-represent approximately `4,971,170` positive updates before batching. These are
-cost estimates, not executed results.
+| Information condition | Method / selected configuration | Recall@100 | NDCG@20 | Coverage@100 |
+|---|---|---:|---:|---:|
+| frozen/static | Random | 0.015287 | 0.001105 | 0.999033 |
+| frozen/static | Global Popularity | 0.046721 | 0.004532 | 0.093353 |
+| frozen/static | 1-day fit-frozen Time-Decayed Popularity | 0.089987 | 0.011351 | 0.087954 |
+| frozen/static | ItemCF (`neighbors=200`, `shrinkage=0`) | 0.067105 | 0.008653 | 0.365201 |
+| frozen/static | BPR-MF (`dim=64`, `epoch=20`, `lr=0.001`, `L2=0.0001`) | **0.096103** | 0.011670 | 0.285982 |
+| online causal | 1-day causal-streaming Time-Decayed Popularity | **0.462951** | **0.110571** | 0.142616 |
+
+BPR-MF is currently the strongest frozen personalized baseline. The much larger
+streaming-popularity number is a different information condition: all queries
+at a timestamp are scored first, then that timestamp's canonical strong
+positives update popularity for later queries only. It is causal, but it is not
+a train-frozen comparison.
+
+Of the 99,248 validation targets, 60,271 (60.7%) are `Cold` relative to train.
+Here `Cold` means that the item had no strong-positive target in train. It does
+not mean strict query-time zero-shot: an item may already have received an
+earlier validation positive before a later query. This distinction explains why
+causal streaming can obtain Cold Recall@100 of 0.603790 while BPR-MF obtains
+0.000398. Their Warm Recall@100 values are much closer: 0.245170 and
+approximately 0.244093, respectively.
+
+Phase 2 will therefore use two separate gates:
+
+1. compare a pure Two-Tower against BPR-MF and the other frozen baselines under
+   the frozen/static information condition;
+2. compare a Two-Tower + Causal Popularity hybrid against the strongest online
+   causal baseline.
+
+No Two-Tower improvement is claimed before those validation experiments. The
+formal Phase 1 results, selected configurations, and receipt are under
+`reports/phase1/` and `receipts/`; the explanatory summary is
+`reports/phase1/interpretation.md`.
 
 ## Active protocol-v2.1.1 contracts
 
