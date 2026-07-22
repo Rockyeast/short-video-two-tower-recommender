@@ -27,9 +27,11 @@ Recall/NDCG/Coverage evaluation, Popularity and BPR interfaces, exact dot-produc
 retrieval, and a deterministic Two-Tower reference encoder.
 Phase B0 adds bounded execution plumbing: a real static-feature loader, lazy
 Two-Tower histories, epoch-resampled BPR negatives/training, blocked Exact
-scoring and a shared cold-user fallback. This is still pre-experiment: full Big
-Two-Tower training, caption-vector generation, Small evaluation and FAISS remain
-unrun.
+scoring and a shared cold-user fallback. Phase B2A now adds one real PyTorch
+Two-Tower V1 engineering path, including immutable MiniLM caption embeddings,
+content-only cold-item encoding, masked in-batch training and sampled Exact
+retrieval. Full Big Two-Tower training, formal validation, Small evaluation and
+FAISS remain unrun.
 
 The original bounded 100K-interaction plumbing smoke is committed at
 [`reports/phase_b0/smoke_100k.json`](reports/phase_b0/smoke_100k.json). After
@@ -76,8 +78,26 @@ source SHA is
 the sorted, deduplicated set contains 10,699 NORMAL items and has membership
 SHA256
 `631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e`.
-The existing BPR model was not retrained. Small Matrix, temporal final and
-Two-Tower were not accessed or run.
+The existing BPR model was not retrained. During B1A, Small Matrix, temporal
+final and Two-Tower were not accessed or run.
+
+Phase B2A executed one bounded real-data Two-Tower engineering smoke. It used
+256 users, 7,436 causal examples and 5,941 touched items; the separate-seed
+fixed diagnostic loss decreased from 6.146019 to 4.587346 and diagonal Top-1
+rose from 0.39% to 5.47%. Every input-covered item/user/history branch had a
+finite non-zero gradient. The frozen caption encoder covered all 9,388 model
+items at exact revision
+`e8f8c211226b894fcb81acc59f3b34ba3efd5f42`.
+
+The sampled retrieval smoke used 128 validation queries and a 4,096-item
+catalog. Its Recall@100 was 0.147449, but this number is deliberately marked
+`sampled_catalog_smoke=true`, `comparable_to_b1a=false`,
+`effectiveness_claim=false`, and `formal_gate_executed=false`; it cannot be
+compared with the full-catalog B1A result. See
+[`reports/phase_b2a/two_tower_smoke.md`](reports/phase_b2a/two_tower_smoke.md)
+and the accompanying JSON for cache identity, gradients, false-negative-mask,
+timing and resource details. Caption vectors and the smoke checkpoint are
+ignored artifacts, not committed files.
 
 The older protocol-v2.1.1 temporal route remains in the repository as an
 optional production-like stress test. Its Phase 0 audit and all **97/97**

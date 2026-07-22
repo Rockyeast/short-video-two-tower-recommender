@@ -1,0 +1,26 @@
+{
+  "cache_file_sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+  "cache_locator": "artifacts/phase_b2a/caption_embeddings.npz",
+  "cleaned_text_sha256": "6af1d5f7aeb9a7a0d822c167cd5f3e73ea70b96dfde437abde8fb02cd26e0748",
+  "cuda_version": "13.0",
+  "dtype": "float32",
+  "embedding_payload_sha256": "9455b459f2466be2d122fdcc11f5fff9ff0fef75a435c6965b61363696f903fc",
+  "empty_text_count": 0,
+  "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "nonempty_coverage": 1.0,
+  "nonempty_text_count": 9388,
+  "ordered_item_membership_sha256": "b16eb4d7fd5717cf4c5c29ed05c29aed1dde03d8671e9ea0f358c1533ccf6163",
+  "preprocessing_version": "phase-b2a-caption-fallback-v1",
+  "resolved_revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+  "schema_version": 1,
+  "sentence_transformers_version": "5.6.0",
+  "shape": [
+    9388,
+    384
+  ],
+  "source_actual_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+  "source_expected_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+  "source_locator": "KUAIREC_DATA_DIR/kuairec_caption_category.csv",
+  "torch_version": "2.11.0+cu130",
+  "wall_time_s": 118.5568
+}
