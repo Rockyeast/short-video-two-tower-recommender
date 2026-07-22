@@ -173,7 +173,7 @@ def run(
         "bpr_loss_strictly_decreasing": all(
             later < earlier
             for earlier, later in zip(
-                trained.epoch_losses, trained.epoch_losses[1:], strict=True
+                trained.epoch_losses, trained.epoch_losses[1:]
             )
         ),
         "bpr_positive_over_sampled_negative_rate": float(

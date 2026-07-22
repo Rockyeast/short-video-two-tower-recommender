@@ -32,8 +32,16 @@ scoring and a shared cold-user fallback. This is still pre-experiment: full Big
 preprocessing/training, a trainable Two-Tower result, caption-vector generation,
 Small evaluation and FAISS remain unrun.
 
-The bounded 100K-interaction smoke report is committed at
-[`reports/phase_b0/smoke_100k.json`](reports/phase_b0/smoke_100k.json). The
+The original bounded 100K-interaction plumbing smoke is committed at
+[`reports/phase_b0/smoke_100k.json`](reports/phase_b0/smoke_100k.json). After
+correcting sparse BPR gradient normalization, the cross-user 1M-interaction
+smoke at
+[`reports/phase_b0/smoke_1m.json`](reports/phase_b0/smoke_1m.json) covers 551
+users and records strictly decreasing three-epoch loss
+(`0.693138 -> 0.692819 -> 0.692418`). This is a learning/systems smoke, not a
+converged effectiveness claim. A deterministic synthetic test at the formal
+4096 batch size separately requires loss below 0.60 and at least 90% sampled
+pair ordering accuracy. The
 legacy BPR reuse decision is documented at
 [`reports/phase_b0/legacy_bpr_compatibility.md`](reports/phase_b0/legacy_bpr_compatibility.md):
 its negative sampling and cold-item semantics differ, so it is not reused as
