@@ -18,7 +18,7 @@ benchmark: the [official repository](https://github.com/chongminggao/KuaiRec)
 and [CIKM 2022 paper](https://arxiv.org/abs/2202.10842) provide the data design,
 not a mandatory model, candidate or metric recipe.
 
-Phase A now freezes this route in
+Phase A/A.1 now freezes this route in
 [`docs/fully_observed_protocol_v1.md`](docs/fully_observed_protocol_v1.md), with
 the executable configuration in
 [`configs/fully_observed_v1.yaml`](configs/fully_observed_v1.yaml). It includes
@@ -26,6 +26,9 @@ synthetic-tested dataset/query adapters, fixed candidate filtering, shared
 Recall/NDCG/Coverage evaluation, Popularity and BPR interfaces, exact dot-product
 retrieval, and a deterministic Two-Tower reference encoder. **No full-data
 baseline, model training or effectiveness result has been run or claimed.**
+This is the system skeleton only: real preprocessing, BPR training, trainable
+Two-Tower results, caption-vector generation, Small evaluation and FAISS are
+still unimplemented or unrun.
 
 The older protocol-v2.1.1 temporal route remains in the repository as an
 optional production-like stress test. Its Phase 0 audit and all **97/97**
@@ -45,13 +48,25 @@ KuaiRec `data/` directory. This worktree does not copy or modify raw data.
 - Big validation: one query per user, train-only last-50 history, unseen
   validation positives, fixed `NORMAL` catalog, train-seen filtering.
 - Small evaluation: observed `NORMAL` pairs only; missing/blocked pairs are
-  unavailable rather than negative; run once after Big-validation selection.
+  unavailable rather than negative; after selection, refit from scratch on Big
+  train+validation and build Small user histories from that Big context only.
+- Warm users define primary metrics. Cold users remain in the audit and use a
+  fit-context Popularity fallback; cold positives are never silently dropped.
+- BPR cold items score zero. Two-Tower cold items disable the untrained ID
+  embedding and use content only.
+- Two-Tower histories are strictly earlier than their target, exclude that
+  target, and mask duplicate/known-positive in-batch false negatives; quick
+  skips only downweight history in V1.
+- Model features are fail-closed to static/content fields; daily engagement
+  aggregates are forbidden.
 - Metrics: Recall@20/50/100, NDCG@20, Coverage@100 and descriptive Data-Cold
   Recall@100.
 - Budget: one Popularity configuration, at most three BPR and three Two-Tower
   configurations, then at most three final seeds.
 - Exact retrieval comes first. FAISS, serving, reranking and sequence models
   are outside this phase.
+- The gate compares Two-Tower with the stronger of Popularity and BPR using
+  numeric Recall/Coverage thresholds, not a presumed BPR winner.
 
 > The remaining sections preserve the legacy protocol-v2.1.1 record. They are
 > not the evaluation contract for the new primary route.

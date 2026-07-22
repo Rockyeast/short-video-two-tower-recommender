@@ -86,10 +86,14 @@ class RetrievalQueries:
     candidates: tuple[np.ndarray, ...]
     relevant: tuple[np.ndarray, ...]
     catalog: np.ndarray
+    warm_user_mask: np.ndarray
     diagnostics: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         count = len(self.user_ids)
+        warm_user_mask = np.asarray(self.warm_user_mask)
+        if warm_user_mask.shape != (count,) or warm_user_mask.dtype != np.bool_:
+            raise ValueError("warm_user_mask must be one boolean per query")
         if len(np.unique(self.user_ids)) != count:
             raise ValueError("Each user may contribute at most one query")
         for values in (
@@ -211,6 +215,7 @@ def build_big_validation_queries(
         candidates=tuple(candidates),
         relevant=tuple(relevant_rows),
         catalog=catalog,
+        warm_user_mask=np.asarray([len(row) > 0 for row in histories], dtype=bool),
         diagnostics={"zero_relevant_users_excluded": skipped_zero_positive},
     )
 
@@ -218,18 +223,35 @@ def build_big_validation_queries(
 def build_small_observed_queries(
     observed_events: pd.DataFrame,
     *,
+    big_history_events: pd.DataFrame,
     normal_item_ids: np.ndarray,
+    max_history: int = 50,
 ) -> RetrievalQueries:
-    """Build sealed-evaluation semantics without treating missing pairs as negatives."""
+    """Build Small queries with user histories from Big fit data only.
 
+    KuaiRec excludes Small user-item interactions from Big Matrix. After model
+    selection, ``big_history_events`` is the refit context (Big train plus Big
+    validation). Small feedback defines only candidates and relevance; it must
+    never enter the user representation.
+    """
+
+    if max_history <= 0:
+        raise ValueError("max_history must be positive")
     observed = _validate_events(observed_events, name="small_observed_events")
+    big_history = _validate_events(big_history_events, name="big_history_events")
     normal = set(int(item) for item in np.asarray(normal_item_ids, dtype=np.int64))
     observed = observed[observed["video_id"].isin(normal)].copy()
     observed["strong"] = is_strong_positive(observed["watch_ratio"])
     users: list[int] = []
     candidates: list[np.ndarray] = []
     relevant: list[np.ndarray] = []
+    histories: list[np.ndarray] = []
+    history_weights: list[np.ndarray] = []
+    warm_users: list[bool] = []
     zero_positive = 0
+    history_groups = {
+        int(user): rows for user, rows in big_history.groupby("user_id", sort=False)
+    }
     for user, rows in observed.groupby("user_id", sort=True):
         candidate_row = np.unique(rows["video_id"].to_numpy(np.int64))
         relevant_row = np.unique(
@@ -238,19 +260,25 @@ def build_small_observed_queries(
         if not len(relevant_row):
             zero_positive += 1
             continue
+        history = history_groups.get(int(user), big_history.iloc[0:0]).tail(max_history)
         users.append(int(user))
         candidates.append(candidate_row)
         relevant.append(relevant_row)
-    empty = tuple(np.asarray([], dtype=np.int64) for _ in users)
-    empty_weights = tuple(np.asarray([], dtype=np.float32) for _ in users)
+        histories.append(history["video_id"].to_numpy(np.int64))
+        history_weights.append(_history_weights(history))
+        warm_users.append(len(history) > 0)
     return RetrievalQueries(
         user_ids=np.asarray(users, dtype=np.int64),
-        histories=empty,
-        history_weights=empty_weights,
+        histories=tuple(histories),
+        history_weights=tuple(history_weights),
         candidates=tuple(candidates),
         relevant=tuple(relevant),
         catalog=np.asarray(sorted(normal), dtype=np.int64),
-        diagnostics={"zero_relevant_users_excluded": zero_positive},
+        warm_user_mask=np.asarray(warm_users, dtype=bool),
+        diagnostics={
+            "zero_relevant_users_excluded": zero_positive,
+            "cold_users_retained": int(sum(not value for value in warm_users)),
+        },
     )
 
 

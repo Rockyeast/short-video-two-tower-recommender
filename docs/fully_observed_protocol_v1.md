@@ -3,10 +3,12 @@
 ## Status and claim boundary
 
 This document freezes the primary KuaiRec retrieval route before full model
-experiments. We follow KuaiRec's intended sparse Big-Matrix training and nearly
-fully-observed Small-Matrix evaluation design, then define our own fixed Top-K
-protocol for Popularity, BPR-MF and a content-aware Two-Tower. There is no
-official KuaiRec Two-Tower leaderboard or mandatory model/metric recipe.
+experiments. Phase A/A.1 is a protocol and interface skeleton, not a completed
+recommendation system and not evidence that a model is effective. We follow
+KuaiRec's intended sparse Big-Matrix training and nearly fully-observed
+Small-Matrix evaluation design, then define our own fixed Top-K protocol for
+Popularity, BPR-MF and a content-aware Two-Tower. There is no official KuaiRec
+Two-Tower leaderboard or mandatory model/metric recipe.
 
 Sources:
 
@@ -51,8 +53,14 @@ history, candidate set or popularity score. There is no timestamp replay.
 
 ## Sealed nearly-fully-observed evaluation
 
-Small Matrix is run once only after model type, hyperparameters and any hybrid
-weight are frozen on Big validation. For user `u`:
+Small Matrix is run once only after model type, hyperparameters, seed and any
+hybrid weight are frozen on Big validation. The final model is then refit from
+scratch on Big train + validation. Small user representations use only the
+last 50 interactions from that Big train + validation refit context. Small
+feedback never enters user history, training or feature construction. This
+matches the KuaiRec paper: Big contains additional interactions for the Small
+users/items while all Small user-item interactions are excluded from Big. For
+user `u`:
 
 ```text
 candidates(u) = physically observed Small pairs intersect NORMAL items
@@ -65,10 +73,15 @@ opening it, report user/item overlap with Big train+validation, content-feature
 coverage, data-cold items and users without Big history. Coverage audit numbers
 must not be used for model selection.
 
+Users with no Big history are retained and reported as cold users. They use the
+fit-context Global Popularity fallback for ranking and are reported separately;
+they are not silently removed from candidate, target or denominator counts.
+
 ## Metrics and segmentation
 
 All models share the same queries, candidates, stable item-ID tie-break and
-evaluator:
+evaluator. Warm-user metrics are primary. Cold-user metrics and denominators
+are reported separately after the declared Popularity fallback:
 
 - Recall@20, Recall@50, Recall@100;
 - NDCG@20;
@@ -89,19 +102,45 @@ is one query per user, this is also user-macro. V1 has no bootstrap CI.
 - Two-Tower + Popularity: considered only after the first four methods finish.
 
 Two-Tower V1 uses item ID, category, frozen/precomputed caption vectors and
-static features in the item tower. The user tower combines user ID with a
+static features in the item tower. Allowed model inputs are exactly item ID,
+caption embedding, category IDs, duration, width, height, upload type and upload
+date. Daily engagement aggregates such as show/play/like/follow counts are
+forbidden. `video_type` and visibility may filter the catalog but are not model
+features. The user tower combines user ID with a
 masked weighted mean of up to 50 train-history item representations. The loss
 is temperature-scaled in-batch softmax over dot products; embeddings are
 128-dimensional and L2-normalized. Exact matrix-multiplication retrieval comes
 before any FAISS experiment.
 
+### Two-Tower training and cold-start contract
+
+For every strong-positive target at time `t`, history contains at most 50
+fit-context events with timestamp strictly less than `t`. Every occurrence of
+the target video is removed from its own history. Same-timestamp events cannot
+enter each other's histories. In-batch logits mask repeated targets and every
+other known fit-context positive of that row's user. Quick skips are
+downweighted history context only in V1, not explicit negatives.
+
+BPR assigns every candidate without a trained item factor a fixed score of
+zero. Two-Tower zeros the ID-embedding contribution for an item whose ID
+embedding was not trained, leaving category/caption/static content as the
+cold-item path. Neither model may delete a cold positive target.
+
 ## Gate and prohibition
 
-Two-Tower may enter sealed Small evaluation if it beats BPR Recall@100, is
-within two absolute percentage points with clearly higher Coverage@100,
-improves a sufficiently supported data-cold slice, or forms a clear hybrid
-Recall/Coverage Pareto improvement. Small results never trigger a protocol or
-hyperparameter change.
+The comparison baseline is the stronger Big-validation Recall@100 result from
+Global Popularity and BPR, never BPR by assumption. Two-Tower may enter sealed
+Small evaluation under one predeclared rule:
+
+1. Recall@100 strictly exceeds that strongest baseline; or
+2. Recall@100 is within 0.02 absolute and Coverage@100 improves by at least 0.05
+   absolute; or
+3. Recall@100 is within 0.02 absolute, the data-cold denominator is at least
+   100 targets, and Data-Cold Recall@100 improves by at least 0.05 absolute; or
+4. the frozen Two-Tower + Popularity hybrid is no worse on both Recall@100 and
+   Coverage@100 and improves at least one by 0.01 absolute.
+
+Small results never trigger a protocol or hyperparameter change.
 
 Numbers from this protocol must never be compared in one table with legacy
 causal temporal numbers. V1 excludes ItemCF grids, sequence/attention models,

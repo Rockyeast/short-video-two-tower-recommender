@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 
 from .data import RetrievalQueries, is_strong_positive
-from .retrieval import ExactDotProductRetriever
 
 
 def _normalize(values: np.ndarray) -> np.ndarray:
@@ -86,14 +85,55 @@ class BPRModel:
     def encode_items(self) -> np.ndarray:
         return np.asarray(self.item_factors, dtype=np.float32)
 
-    def rank(self, queries: RetrievalQueries, *, k: int = 100) -> np.ndarray:
-        return ExactDotProductRetriever().search(
-            self.encode_users(queries.user_ids),
-            self.encode_items(),
-            item_ids=self.item_ids,
-            candidates=queries.candidates,
-            k=k,
+    def rank(
+        self,
+        queries: RetrievalQueries,
+        *,
+        k: int = 100,
+        cold_user_fallback: PopularityBaseline | None = None,
+    ) -> np.ndarray:
+        """Rank without dropping cold users or items.
+
+        Missing item factors receive a fixed score of zero. A query user with
+        no learned factor is routed to the explicitly supplied Popularity
+        fallback rather than raising or being removed from evaluation.
+        """
+
+        user_positions = {
+            int(user): index for index, user in enumerate(self.user_ids)
+        }
+        item_positions = {
+            int(item): index for index, item in enumerate(self.item_ids)
+        }
+        fallback = (
+            None
+            if cold_user_fallback is None
+            else cold_user_fallback.rank(queries, k=k)
         )
+        output = np.full((len(queries.user_ids), k), -1, dtype=np.int64)
+        for row, (user, candidates) in enumerate(
+            zip(queries.user_ids, queries.candidates, strict=True)
+        ):
+            user_position = user_positions.get(int(user))
+            if user_position is None:
+                if fallback is None:
+                    raise ValueError(
+                        "BPR cold query user requires a Popularity fallback"
+                    )
+                output[row] = fallback[row]
+                continue
+            user_vector = self.user_factors[user_position]
+            scores = {
+                int(item): (
+                    float(self.item_factors[item_positions[int(item)]] @ user_vector)
+                    if int(item) in item_positions
+                    else 0.0
+                )
+                for item in candidates
+            }
+            ranked = sorted(scores, key=lambda item: (-scores[item], item))[:k]
+            output[row, : len(ranked)] = ranked
+        return output
 
 
 class NumpyTwoTowerReference:
@@ -135,12 +175,20 @@ class NumpyTwoTowerReference:
         category_indices: np.ndarray,
         caption_embeddings: np.ndarray,
         static_features: np.ndarray,
+        *,
+        use_id_embedding: np.ndarray | None = None,
     ) -> np.ndarray:
         item_indices = np.asarray(item_indices, dtype=np.int64)
         category_indices = np.asarray(category_indices, dtype=np.int64)
+        id_vectors = self.item_id_embedding[item_indices].copy()
+        if use_id_embedding is not None:
+            id_mask = np.asarray(use_id_embedding)
+            if id_mask.shape != item_indices.shape or id_mask.dtype != np.bool_:
+                raise ValueError("use_id_embedding must be one boolean per item")
+            id_vectors[~id_mask] = 0.0
         inputs = np.concatenate(
             (
-                self.item_id_embedding[item_indices],
+                id_vectors,
                 self.category_embedding[category_indices],
                 np.asarray(caption_embeddings, dtype=np.float32),
                 np.asarray(static_features, dtype=np.float32),
@@ -180,8 +228,9 @@ def in_batch_softmax_loss(
     positive_item_vectors: np.ndarray,
     *,
     temperature: float,
+    valid_logit_mask: np.ndarray | None = None,
 ) -> float:
-    """Temperature-scaled diagonal cross-entropy for in-batch negatives."""
+    """Temperature-scaled cross-entropy with false-negative masking."""
 
     if temperature <= 0:
         raise ValueError("temperature must be positive")
@@ -190,6 +239,15 @@ def in_batch_softmax_loss(
     if users.shape != items.shape or users.ndim != 2:
         raise ValueError("In-batch user/item vectors need equal rank-2 shapes")
     logits = users @ items.T / temperature
+    if valid_logit_mask is not None:
+        mask = np.asarray(valid_logit_mask)
+        if mask.shape != logits.shape or mask.dtype != np.bool_:
+            raise ValueError(
+                "valid_logit_mask must be boolean with batch-square shape"
+            )
+        if not np.all(np.diag(mask)):
+            raise ValueError("Every diagonal positive must remain valid")
+        logits = np.where(mask, logits, -np.inf)
     logits -= logits.max(axis=1, keepdims=True)
     log_partition = np.log(np.exp(logits).sum(axis=1))
     return float(np.mean(log_partition - np.diag(logits)))

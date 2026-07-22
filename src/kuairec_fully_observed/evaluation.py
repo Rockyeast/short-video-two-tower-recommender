@@ -41,9 +41,48 @@ def evaluate_retrieval(
     """Compute the locked V1 query-macro metrics without bootstrap machinery."""
 
     ranked_rows = _ranked_rows(topk, queries)
-    query_count = len(ranked_rows)
-    if query_count == 0:
+    if not len(ranked_rows):
         raise ValueError("At least one evaluable query is required")
+    warm_indices = np.flatnonzero(queries.warm_user_mask)
+    cold_indices = np.flatnonzero(~queries.warm_user_mask)
+    if not len(warm_indices):
+        raise ValueError("Primary evaluation requires at least one warm-user query")
+    primary = _evaluate_rows(
+        ranked_rows, queries, warm_indices, data_cold_item_ids=data_cold_item_ids
+    )
+    cold_user = (
+        _evaluate_rows(
+            ranked_rows,
+            queries,
+            cold_indices,
+            data_cold_item_ids=data_cold_item_ids,
+        )
+        if len(cold_indices)
+        else None
+    )
+    primary["cold_user_metrics"] = None if cold_user is None else cold_user["metrics"]
+    primary["cold_user_denominators"] = (
+        {"query_count": 0, "target_count": 0}
+        if cold_user is None
+        else cold_user["denominators"]
+    )
+    primary["denominators"]["all_query_count"] = len(ranked_rows)
+    primary["denominators"]["all_target_count"] = int(
+        sum(len(row) for row in queries.relevant)
+    )
+    return primary
+
+
+def _evaluate_rows(
+    ranked_rows: tuple[np.ndarray, ...],
+    queries: RetrievalQueries,
+    indices: np.ndarray,
+    *,
+    data_cold_item_ids: np.ndarray | None,
+) -> dict[str, Any]:
+    """Evaluate one predeclared user segment without changing its rankings."""
+
+    query_count = len(indices)
     recall = {k: [] for k in (20, 50, 100)}
     ndcg20: list[float] = []
     recommended: set[int] = set()
@@ -58,9 +97,9 @@ def evaluate_retrieval(
     cold_recall: list[float] = []
     cold_target_count = 0
     discounts = 1.0 / np.log2(np.arange(2, 22, dtype=np.float64))
-    for ranked, relevant_values in zip(
-        ranked_rows, queries.relevant, strict=True
-    ):
+    for index in indices:
+        ranked = ranked_rows[int(index)]
+        relevant_values = queries.relevant[int(index)]
         relevant = set(int(item) for item in relevant_values)
         for k in (20, 50, 100):
             hits = sum(int(item) in relevant for item in ranked[:k])
@@ -78,7 +117,7 @@ def evaluate_retrieval(
             cold_hits = sum(int(item) in cold_relevant for item in ranked[:100])
             cold_recall.append(cold_hits / len(cold_relevant))
     candidate_union = set(
-        int(item) for row in queries.candidates for item in row
+        int(item) for index in indices for item in queries.candidates[int(index)]
     )
     return {
         "metrics": {
@@ -93,8 +132,10 @@ def evaluate_retrieval(
         },
         "denominators": {
             "query_count": query_count,
-            "user_count": len(np.unique(queries.user_ids)),
-            "target_count": int(sum(len(row) for row in queries.relevant)),
+            "user_count": len(np.unique(queries.user_ids[indices])),
+            "target_count": int(
+                sum(len(queries.relevant[int(index)]) for index in indices)
+            ),
             "candidate_union_count": len(candidate_union),
             "data_cold_query_count": len(cold_recall),
             "data_cold_target_count": cold_target_count,

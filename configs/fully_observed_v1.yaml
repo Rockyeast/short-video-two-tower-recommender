@@ -30,12 +30,18 @@ validation:
 small_evaluation:
   status: sealed
   name: sealed_nearly_fully_observed_evaluation
+  final_refit: big_train_plus_validation_from_scratch
+  user_history_source: big_train_plus_validation_only
+  max_history: 50
   candidates: observed_pairs_intersect_normal
   missing_pairs: unavailable_not_negative
+  cold_user_fallback: global_popularity_from_final_refit_context
 metrics:
   primary: [Recall@20, Recall@50, Recall@100, NDCG@20, Coverage@100]
   descriptive: [Data-Cold Recall@100]
   aggregation: one_query_per_user_macro
+  primary_user_segment: warm_user
+  cold_user_reporting: separate_with_denominators
 baselines:
   random:
     seeds: [20260722]
@@ -52,6 +58,39 @@ two_tower:
   similarity: dot_product
   loss: temperature_scaled_in_batch_softmax
   caption_encoder: frozen_precomputed
+  training_examples:
+    history_timestamp: strictly_before_target
+    exclude_target_from_own_history: true
+    repeated_batch_target_is_negative: false
+    other_known_user_positive_is_negative: false
+    quick_skip: downweighted_history_only
+  item_features:
+    allowed:
+      - video_id
+      - caption_embedding
+      - category_ids
+      - video_duration
+      - video_width
+      - video_height
+      - upload_type
+      - upload_dt
+    daily_aggregate_features: forbidden
+  cold_item:
+    id_embedding: disabled_if_untrained
+    fallback: content_only
 retrieval:
   phase_a: exact_matrix_multiplication
   faiss: gated_after_model_effectiveness
+selection_gate:
+  comparison_baseline: max_recall_at_100_of_global_popularity_and_bpr
+  direct_recall_improvement: strictly_greater
+  coverage_tradeoff:
+    maximum_recall_at_100_deficit_absolute: 0.02
+    minimum_coverage_at_100_gain_absolute: 0.05
+  data_cold_tradeoff:
+    maximum_recall_at_100_deficit_absolute: 0.02
+    minimum_target_denominator: 100
+    minimum_data_cold_recall_at_100_gain_absolute: 0.05
+  hybrid_pareto:
+    no_worse_metrics: [Recall@100, Coverage@100]
+    minimum_gain_in_at_least_one_absolute: 0.01
