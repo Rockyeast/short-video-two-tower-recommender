@@ -1,0 +1,22 @@
+{
+  "code_commit": "03b639c4cbf92b2d6a212be4770dde752cc41af2",
+  "final_method_bundle_path": "reports/phase1/final_method_bundle.json",
+  "final_method_bundle_sha256": "c56c83bc96486fb87d4650be59321aeb3dfdf11421d181a50baf1f23448119ac",
+  "methods": [
+    "random",
+    "global_popularity",
+    "time_decayed_popularity",
+    "itemcf",
+    "bpr_mf"
+  ],
+  "protocol_revision": "protocol-v2.1.1",
+  "receipt_type": "selection",
+  "schema_version": 1,
+  "selected_at_utc": "2026-07-22T07:05:57.794781+00:00",
+  "selection_plan_path": "configs/phase1_selection_plan.yaml",
+  "selection_plan_sha256": "305860485e24bcbb55f82f17ab6a34576b7420c317e909ae453d240125c96bdb",
+  "selection_result_path": "reports/phase1/validation_baselines.json",
+  "selection_result_sha256": "f3dbbba9de5552d8d6bb34ae0fbe58dc50b57726a180b61bd9d216f31927857f",
+  "split_manifest_sha256": "e271c45d34651387926e7572e18b8605654fd7dc8720e1f5e9b34a40378eea91",
+  "status": "completed"
+}

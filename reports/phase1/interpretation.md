@@ -1,8 +1,8 @@
 # Phase 1 Result Interpretation
 
-This note explains the completed temporal-validation results. It does not
-participate in model selection and does not alter the formal result JSON, final
-method bundle, or Selection Receipt.
+This note explains the completed temporal-validation results after
+[ERRATUM-001](ERRATUM-001.md). It does not participate in model selection or
+change the registered objective, configurations, or overall ranking metrics.
 
 ## Two information conditions
 
@@ -22,23 +22,41 @@ Recall@100 is `0.462951`.
 These numbers answer different questions and should not be presented as a
 direct frozen-model leaderboard.
 
+## Corrected segment membership
+
+ERRATUM-001 enforces the active cold-start contract:
+
+- `Warm`: the item has at least one canonical Big Matrix interaction in the
+  train reference window, independent of label;
+- `Cold`: the item has no canonical Big Matrix interaction in that window;
+- `Tail`: a low-frequency subgroup of the data-warm catalog.
+
+The 99,248 validation queries/targets contain 72,115 Warm targets, 27,133 Cold
+targets, and 48,008 Tail targets. Tail overlaps Warm rather than forming a third
+partition. Cold is not strict query-time zero-shot: after an item's first
+validation positive, causal streaming may use that event for later queries.
+
 ## Why streaming popularity is much higher
 
-Validation contains 99,248 queries/targets, of which 60,271 (60.7%) are
-train-cold. A rapidly decayed streaming counter can learn that an item has just
-started receiving strong feedback and immediately surface it for later
-queries. A frozen BPR item representation cannot learn from those validation
-events. On warm targets their Recall@100 values are almost identical:
-`0.245170` for causal popularity versus approximately `0.244093` for BPR. The
-large overall gap is concentrated in the reported Cold group:
-`0.603790` versus `0.000398`.
+A one-day causal counter reacts to current validation-period demand after each
+timestamp is scored. It can therefore surface newly active items and reinforce
+short-lived trends for later queries. Frozen BPR cannot update its item
+representations from those validation events.
 
-## What `Cold` means
+The corrected Recall@100 values show a broad advantage for causal-streaming
+Time-Decayed Popularity over BPR-MF:
 
-`Cold` means **no canonical strong-positive target in train**. It does not mean
-that the item has no information at query time. After an item's first
-validation positive, causal streaming may use that event for later queries.
-The current Cold metric is therefore not a strict zero-shot cold-start metric.
+| Segment | Causal-streaming popularity | BPR-MF |
+|---|---:|---:|
+| Overall | **0.462951** | 0.096103 |
+| Warm | **0.448048** | 0.132039 |
+| Tail | **0.512435** | 0.036640 |
+| Cold | **0.502561** | 0.000590 |
+
+The gap is therefore present across Warm, Tail, and Cold; it is not
+concentrated only in Cold. This does not establish that popularity is a better
+frozen personalized model, because the two methods operate under different
+information conditions.
 
 ## Phase 2 implication
 
@@ -55,7 +73,9 @@ until its registered validation gate is run.
 
 ## Integrity boundary
 
-This document is interpretation only. The 97/97 formal selection rows,
-selected configurations, `validation_baselines.json`,
-`final_method_bundle.json`, and Selection Receipt remain unchanged. Temporal
+ERRATUM-001 corrected only Warm/Tail/Cold membership, denominators, segment
+Recall, and their bootstrap intervals across all 97 rows. Overall
+Recall/NDCG/Coverage values and every selected configuration are unchanged. The
+formal result JSON, final method bundle, and Selection Receipt were updated
+with new hashes and explicit lineage to their archived predecessors. Temporal
 final and the Small Matrix audit remain unrun.

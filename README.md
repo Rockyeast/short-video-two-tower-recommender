@@ -131,13 +131,27 @@ at a timestamp are scored first, then that timestamp's canonical strong
 positives update popularity for later queries only. It is causal, but it is not
 a train-frozen comparison.
 
-Of the 99,248 validation targets, 60,271 (60.7%) are `Cold` relative to train.
-Here `Cold` means that the item had no strong-positive target in train. It does
-not mean strict query-time zero-shot: an item may already have received an
-earlier validation positive before a later query. This distinction explains why
-causal streaming can obtain Cold Recall@100 of 0.603790 while BPR-MF obtains
-0.000398. Their Warm Recall@100 values are much closer: 0.245170 and
-approximately 0.244093, respectively.
+ERRATUM-001 corrected the Phase 1 segment-membership implementation. Under the
+active contract, an item is `Warm` if it has any canonical Big Matrix
+interaction in the train reference window, independent of label, and `Cold` if
+it has none. Of the 99,248 validation queries/targets, 72,115 are Warm and
+27,133 (27.3%) are Cold; 48,008 target Tail items, a subgroup of the data-warm
+catalog. `Cold` still does not mean strict query-time zero-shot: an item may
+already have received an earlier validation positive before a later query.
+
+The corrected Recall@100 comparison shows that 1-day causal-streaming
+Time-Decayed Popularity leads BPR-MF in every reported segment, not only Cold:
+
+| Method | Warm Recall@100 | Tail Recall@100 | Cold Recall@100 |
+|---|---:|---:|---:|
+| 1-day causal-streaming Time-Decayed Popularity | **0.448048** | **0.512435** | **0.502561** |
+| BPR-MF | 0.132039 | 0.036640 | 0.000590 |
+
+This remains a comparison across different information conditions: streaming
+popularity causally absorbs validation feedback after prediction, whereas BPR
+is train-frozen. See the committed
+[ERRATUM-001 report](reports/phase1/ERRATUM-001.md) for the corrected membership,
+artifact lineage, and invariants.
 
 Phase 2 will therefore use two separate gates:
 
@@ -149,7 +163,8 @@ Phase 2 will therefore use two separate gates:
 No Two-Tower improvement is claimed before those validation experiments. The
 formal Phase 1 results, selected configurations, and receipt are under
 `reports/phase1/` and `receipts/`; the explanatory summary is
-`reports/phase1/interpretation.md`.
+`reports/phase1/interpretation.md`, and the segment correction is documented in
+[`reports/phase1/ERRATUM-001.md`](reports/phase1/ERRATUM-001.md).
 
 ## Active protocol-v2.1.1 contracts
 

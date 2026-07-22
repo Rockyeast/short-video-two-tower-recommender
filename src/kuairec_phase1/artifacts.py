@@ -208,6 +208,98 @@ def _unpack_positions(row: np.ndarray, item_count: int) -> np.ndarray:
     return np.flatnonzero(np.unpackbits(row, bitorder="little")[:item_count])
 
 
+def _stable_item_membership_sha256(video_ids: np.ndarray, mask: np.ndarray) -> str:
+    body = "".join(
+        f"{int(video_id)}\n" for video_id in video_ids[np.asarray(mask, dtype=bool)]
+    ).encode()
+    return hashlib.sha256(body).hexdigest()
+
+
+def build_selection_segment_membership(
+    *,
+    video_ids: np.ndarray,
+    event_items: np.ndarray,
+    event_timestamps: np.ndarray,
+    positive_target_items: np.ndarray,
+    train_end_exclusive: float,
+    expected_data_warm_count: int | None = None,
+    expected_data_warm_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Build selection segments without conflating three membership concepts.
+
+    Data-warm membership comes from every canonical train-window interaction,
+    regardless of label. Popularity and head membership come only from eligible
+    canonical strong-positive train targets. Whether an optimizer touched an ID
+    is deliberately absent: Phase 2 must record that from the actual fit run.
+    """
+
+    video_ids = np.asarray(video_ids, dtype=np.int64)
+    event_items = np.asarray(event_items, dtype=np.int64)
+    event_timestamps = np.asarray(event_timestamps, dtype=np.float64)
+    positive_target_items = np.asarray(positive_target_items, dtype=np.int64)
+    item_count = len(video_ids)
+    if event_items.shape != event_timestamps.shape:
+        raise ArtifactError("Canonical event item/timestamp arrays differ in shape")
+    if len(event_items) and (
+        int(event_items.min()) < 0 or int(event_items.max()) >= item_count
+    ):
+        raise ArtifactError("Canonical event item index is outside the catalog")
+    if len(positive_target_items) and (
+        int(positive_target_items.min()) < 0
+        or int(positive_target_items.max()) >= item_count
+    ):
+        raise ArtifactError("Positive target item index is outside the catalog")
+
+    train_event_items = event_items[event_timestamps < float(train_end_exclusive)]
+    interaction_count = np.bincount(
+        train_event_items, minlength=item_count
+    ).astype(np.int64)
+    positive_target_count = np.bincount(
+        positive_target_items, minlength=item_count
+    ).astype(np.int64)
+    data_warm = interaction_count > 0
+    data_cold = ~data_warm
+
+    order = np.lexsort((video_ids, -positive_target_count))
+    total = int(positive_target_count.sum())
+    head = np.zeros(item_count, dtype=bool)
+    if total:
+        cutoff_index = int(
+            np.searchsorted(
+                np.cumsum(positive_target_count[order]), 0.8 * total
+            )
+        )
+        head[order[: cutoff_index + 1]] = True
+    tail = data_warm & ~head
+    membership_sha256 = _stable_item_membership_sha256(video_ids, data_warm)
+
+    if (
+        expected_data_warm_count is not None
+        and int(data_warm.sum()) != int(expected_data_warm_count)
+    ):
+        raise ArtifactError(
+            "Phase 0 data-warm item count mismatch: "
+            f"{int(data_warm.sum())} != {int(expected_data_warm_count)}"
+        )
+    if (
+        expected_data_warm_sha256 is not None
+        and membership_sha256 != expected_data_warm_sha256
+    ):
+        raise ArtifactError(
+            "Phase 0 data-warm membership SHA256 mismatch: "
+            f"{membership_sha256} != {expected_data_warm_sha256}"
+        )
+    return {
+        "interaction_count": interaction_count,
+        "positive_target_count": positive_target_count,
+        "data_warm": data_warm,
+        "data_cold": data_cold,
+        "head": head,
+        "tail": tail,
+        "data_warm_sha256": membership_sha256,
+    }
+
+
 def _canonical_inputs(
     root: Path,
     work: Path,
@@ -427,16 +519,22 @@ def _canonical_inputs(
     if phase0._stable_target_hash(train_frame) != expected_train_hash:
         raise ArtifactError("Train target hash mismatch")
 
-    train_counts = np.bincount(train_item, minlength=len(video_ids)).astype(np.int64)
-    order = np.lexsort((video_ids, -train_counts))
-    total = int(train_counts.sum())
-    cutoff_index = int(np.searchsorted(np.cumsum(train_counts[order]), 0.8 * total))
-    head = np.zeros(len(video_ids), dtype=bool)
-    if total:
-        head[order[: cutoff_index + 1]] = True
-    warm = train_counts > 0
-    tail = warm & ~head
-    cold = ~warm
+    cold_reference = manifest["cold_start_contexts"]["validation"]
+    segments = build_selection_segment_membership(
+        video_ids=video_ids,
+        event_items=events_item,
+        event_timestamps=events_time,
+        positive_target_items=train_item,
+        train_end_exclusive=train_end,
+        expected_data_warm_count=int(cold_reference["reference_item_count"]),
+        expected_data_warm_sha256=cold_reference["reference_membership_sha256"],
+    )
+    interaction_count = segments["interaction_count"]
+    positive_target_count = segments["positive_target_count"]
+    data_warm = segments["data_warm"]
+    data_cold = segments["data_cold"]
+    head = segments["head"]
+    tail = segments["tail"]
     dates = np.asarray(sorted(catalog["state_by_date"]), dtype=np.int32)
     catalog_bits = np.stack(
         [
@@ -449,11 +547,17 @@ def _canonical_inputs(
         video_ids=video_ids,
         dates=dates,
         eligible_bits=catalog_bits,
-        train_counts=train_counts,
-        warm=warm,
+        # train_counts remains the positive-target count used by the existing
+        # popularity baseline. It is not a data-warm membership count.
+        train_counts=positive_target_count,
+        interaction_count=interaction_count,
+        positive_target_count=positive_target_count,
+        data_warm=data_warm,
+        data_cold=data_cold,
+        warm=data_warm,
         head=head,
         tail=tail,
-        cold=cold,
+        cold=data_cold,
         train_end=np.asarray([train_end]),
         validation_end=np.asarray([validation_end]),
     )
@@ -547,9 +651,12 @@ def _canonical_inputs(
         "validation_candidate_score_count": int(candidate_counts.sum()),
         "validation_target_sha256": target_hash,
         "validation_candidate_membership_sha256": membership_digest.hexdigest(),
-        "warm_items": int(warm.sum()),
+        "data_warm_items": int(data_warm.sum()),
+        "data_warm_membership_sha256": segments["data_warm_sha256"],
+        "positive_target_items": int((positive_target_count > 0).sum()),
+        "head_items": int(head.sum()),
         "tail_items": int(tail.sum()),
-        "cold_items": int(cold.sum()),
+        "data_cold_items": int(data_cold.sum()),
         "peak_memory_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0,
         "temporal_final_rows_persisted": 0,
         "small_matrix_rows_read": 0,
