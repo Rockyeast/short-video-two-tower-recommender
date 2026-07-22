@@ -86,8 +86,16 @@ def test_phase_b1a_synthetic_e2e_uses_only_train_validation(tmp_path: Path):
     trace = report["artifacts"]["item_daily_features_traceability"]
     assert trace["sha256_match"] is True
     assert trace["normal_membership_count"] == 4
+    assert trace["source_locator"] == (
+        "KUAIREC_DATA_DIR/item_daily_features.csv"
+    )
+    assert "source_path" not in trace
     assert (tmp_path / "report.json").is_file()
     assert (tmp_path / "report.md").is_file()
+    for report_path in (tmp_path / "report.json", tmp_path / "report.md"):
+        report_text = report_path.read_text()
+        assert str(data_dir.resolve()) not in report_text
+        assert "/home/rockyeast/" not in report_text
 
     daily_path = data_dir / "item_daily_features.csv"
     daily_path.write_text(daily_path.read_text().replace("NORMAL", "AD", 1))

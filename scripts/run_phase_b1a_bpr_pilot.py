@@ -126,7 +126,7 @@ def _normal_video_ids(
         digest.update(f"{int(video_id)}\n".encode())
     return normal_ids, {
         "source_name": source_name,
-        "source_path": str(path),
+        "source_locator": "KUAIREC_DATA_DIR/item_daily_features.csv",
         "actual_sha256": actual_sha256,
         "expected_sha256": expected_sha256,
         "sha256_match": True,
@@ -406,7 +406,7 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
             "`item_daily_features.csv` was verified before NORMAL membership "
             "was read:",
             "",
-            f"- Path: `{report['artifacts']['item_daily_features_traceability']['source_path']}`",
+            f"- Input: `{report['artifacts']['item_daily_features_traceability']['source_locator']}`",
             f"- Actual SHA256: `{report['artifacts']['item_daily_features_traceability']['actual_sha256']}`",
             f"- Expected SHA256: `{report['artifacts']['item_daily_features_traceability']['expected_sha256']}`",
             f"- Sorted unique NORMAL items: `{report['artifacts']['item_daily_features_traceability']['normal_membership_count']}`",

@@ -11,8 +11,8 @@
       "normal_membership_hash_scheme": "sha256(normal-video-membership-v1\\n + sorted-unique-decimal-id\\n)",
       "normal_membership_sha256": "631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e",
       "sha256_match": true,
-      "source_name": "item_daily_features.csv",
-      "source_path": "/home/rockyeast/mle/short-video-two-tower-recommender/data/raw/KuaiRec 2.0/data/item_daily_features.csv"
+      "source_locator": "KUAIREC_DATA_DIR/item_daily_features.csv",
+      "source_name": "item_daily_features.csv"
     },
     "processed_events_sha256": "476ebcae49140d3c307ca6cb1461847f42e849d8f5c91dd7a2661396fc2b9a02",
     "processed_manifest_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5"

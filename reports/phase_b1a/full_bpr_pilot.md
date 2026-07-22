@@ -40,7 +40,7 @@ or cross-dataset-stability claim is made.
 
 `item_daily_features.csv` was verified before NORMAL membership was read:
 
-- Path: `/home/rockyeast/mle/short-video-two-tower-recommender/data/raw/KuaiRec 2.0/data/item_daily_features.csv`
+- Input: `KUAIREC_DATA_DIR/item_daily_features.csv`
 - Actual SHA256: `45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b`
 - Expected SHA256: `45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b`
 - Sorted unique NORMAL items: `10699`
