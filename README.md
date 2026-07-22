@@ -88,7 +88,7 @@ the same user timestamp remain one atomic multi-target query.
 
 The [official KuaiRec documentation](https://github.com/chongminggao/KuaiRec)
 explains that the 0.4% missing Small Matrix pairs arise because users blocked
-videos or their authors. Protocol-v2.1 therefore uses deliberately separate
+videos or their authors. Protocol-v2.1.1 therefore uses deliberately separate
 evaluations:
 
 1. **Primary quality audit:** remove each user's blocked/missing pairs, rank only
