@@ -527,9 +527,14 @@ def fast_verify_processed_artifacts(repo_root: str | Path) -> dict[str, Any]:
     source_hashes = fingerprint.get("source_file_sha256")
     if not isinstance(source_hashes, dict):
         raise ArtifactError("Artifact source hashes are missing")
-    for relative, digest in source_hashes.items():
-        if sha256_file(root / relative) != digest:
-            raise ArtifactError(f"Raw source changed after full verification: {relative}")
+    dataset_sources = phase0_manifest.get("dataset", {}).get("source_files", {})
+    for name, digest in source_hashes.items():
+        entry = dataset_sources.get(name)
+        if not isinstance(entry, dict):
+            raise ArtifactError(f"Raw source disappeared from manifest: {name}")
+        source = root / "data/raw" / entry["relative_path"]
+        if sha256_file(source) != digest:
+            raise ArtifactError(f"Raw source changed after full verification: {name}")
     hashes = value.get("files")
     if not isinstance(hashes, dict) or set(hashes) != set(ARTIFACT_FILES):
         raise ArtifactError("Processed artifact file table is incomplete")
