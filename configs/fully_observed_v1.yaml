@@ -1,0 +1,57 @@
+protocol_revision: fully-observed-v1
+data:
+  root_env: KUAIREC_DATA_DIR
+  big_matrix: big_matrix.csv
+  small_matrix: small_matrix.csv
+  item_daily_features: item_daily_features.csv
+  item_categories: item_categories.csv
+  caption_categories: kuairec_caption_category.csv
+split:
+  source: manifests/split_manifest.json
+  fit: existing_train_window
+  select: existing_validation_window
+  temporal_final: sealed
+labels:
+  strong_positive:
+    field: watch_ratio
+    operator: ">"
+    threshold: 2.0
+  quick_skip:
+    field: play_duration
+    operator: "<"
+    threshold: min(3000_ms, video_duration)
+validation:
+  unit: one_query_per_user
+  history_source: train_only
+  max_history: 50
+  relevant: unseen_validation_strong_positives
+  catalog: observed_train_or_validation_intersect_normal
+  filter: train_seen
+small_evaluation:
+  status: sealed
+  name: sealed_nearly_fully_observed_evaluation
+  candidates: observed_pairs_intersect_normal
+  missing_pairs: unavailable_not_negative
+metrics:
+  primary: [Recall@20, Recall@50, Recall@100, NDCG@20, Coverage@100]
+  descriptive: [Data-Cold Recall@100]
+  aggregation: one_query_per_user_macro
+baselines:
+  random:
+    seeds: [20260722]
+  global_popularity:
+    configurations: 1
+  bpr_mf:
+    maximum_configurations: 3
+    maximum_final_seeds: 3
+two_tower:
+  maximum_configurations: 3
+  maximum_final_seeds: 3
+  output_dim: 128
+  history_pooling: masked_weighted_mean
+  similarity: dot_product
+  loss: temperature_scaled_in_batch_softmax
+  caption_encoder: frozen_precomputed
+retrieval:
+  phase_a: exact_matrix_multiplication
+  faiss: gated_after_model_effectiveness

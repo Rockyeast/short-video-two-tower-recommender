@@ -1,15 +1,60 @@
 # Short-Video Recommendation on KuaiRec
 
-Phase 0 / protocol-v2.1.1 has been completed, reviewed, and merged. Phase 1 has
-also completed all **97/97** registered temporal-validation selection rows for
-five baseline families: Random, Global Popularity, fit-frozen and
-causal-streaming Time-Decayed Popularity, ItemCF, and BPR-MF.
+The primary development path is now a simple, fixed-catalog retrieval study:
 
-Temporal final and the Small Matrix audit have not been run. No Two-Tower,
-FAISS index, ranking model, serving API, or online-feedback service is included
-yet. The project goal is to build and evaluate a **causal hybrid retrieval
-system**, not to assume in advance that a pure Two-Tower must beat every
-baseline.
+```text
+Big Matrix train/validation
+  -> Popularity and BPR baselines
+  -> content-aware Two-Tower
+  -> exact Top-K retrieval
+  -> sealed nearly-fully-observed Small Matrix evaluation
+```
+
+We follow KuaiRec's intended sparse Big-Matrix training and nearly
+fully-observed Small-Matrix evaluation design, and define a fixed Top-K
+retrieval protocol for comparing popularity, matrix factorization and
+content-aware Two-Tower models. This is **not** an official KuaiRec Two-Tower
+benchmark: the [official repository](https://github.com/chongminggao/KuaiRec)
+and [CIKM 2022 paper](https://arxiv.org/abs/2202.10842) provide the data design,
+not a mandatory model, candidate or metric recipe.
+
+Phase A now freezes this route in
+[`docs/fully_observed_protocol_v1.md`](docs/fully_observed_protocol_v1.md), with
+the executable configuration in
+[`configs/fully_observed_v1.yaml`](configs/fully_observed_v1.yaml). It includes
+synthetic-tested dataset/query adapters, fixed candidate filtering, shared
+Recall/NDCG/Coverage evaluation, Popularity and BPR interfaces, exact dot-product
+retrieval, and a deterministic Two-Tower reference encoder. **No full-data
+baseline, model training or effectiveness result has been run or claimed.**
+
+The older protocol-v2.1.1 temporal route remains in the repository as an
+optional production-like stress test. Its Phase 0 audit and all **97/97**
+temporal-validation baseline rows remain preserved. Temporal final and Small
+Matrix model metrics have not been run. The committed legacy Warm/Cold segment
+numbers still have the known membership-definition error until ERRATUM-001 is
+formally replayed; the correction runner exists on PR #3, but this branch does
+not run or modify it.
+
+All future raw-data commands must set `KUAIREC_DATA_DIR` to the existing shared
+KuaiRec `data/` directory. This worktree does not copy or modify raw data.
+
+## Primary fully-observed V1 route
+
+- Labels: strict `watch_ratio > 2.0`; quick skip is strict
+  `play_duration < min(3000 ms, video_duration)`.
+- Big validation: one query per user, train-only last-50 history, unseen
+  validation positives, fixed `NORMAL` catalog, train-seen filtering.
+- Small evaluation: observed `NORMAL` pairs only; missing/blocked pairs are
+  unavailable rather than negative; run once after Big-validation selection.
+- Metrics: Recall@20/50/100, NDCG@20, Coverage@100 and descriptive Data-Cold
+  Recall@100.
+- Budget: one Popularity configuration, at most three BPR and three Two-Tower
+  configurations, then at most three final seeds.
+- Exact retrieval comes first. FAISS, serving, reranking and sequence models
+  are outside this phase.
+
+> The remaining sections preserve the legacy protocol-v2.1.1 record. They are
+> not the evaluation contract for the new primary route.
 
 ## Locked label
 
@@ -108,7 +153,7 @@ Blocked/missing information is an evaluation-time availability mask only. It
 must never enter training, user history, feature construction, hyperparameter
 selection, or negative sampling.
 
-## Phase 1 temporal-validation baselines
+## Legacy optional temporal-validation baselines
 
 All methods use the same 99,248 validation queries and targets, causal candidate
 membership, seen filtering, deterministic tie-breaks, and registered metrics.
