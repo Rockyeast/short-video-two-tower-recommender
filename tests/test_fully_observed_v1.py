@@ -7,21 +7,26 @@ import yaml
 
 from kuairec_fully_observed import (
     BPRModel,
+    ExactDotProductRetriever,
     NumpyTwoTowerReference,
     PopularityBaseline,
     RetrievalQueries,
     build_big_validation_queries,
+    build_bpr_training_dataset,
     build_fixed_validation_catalog,
     build_in_batch_logit_mask,
     build_small_observed_queries,
     build_two_tower_training_examples,
+    build_two_tower_training_dataset,
     data_cold_items,
     evaluate_retrieval,
     in_batch_softmax_loss,
     is_quick_skip,
     is_strong_positive,
+    load_static_item_features,
     resolve_kuairec_data_dir,
     stable_random_rank,
+    train_bpr_sgd,
     validate_model_item_feature_columns,
 )
 
@@ -302,6 +307,34 @@ def test_bpr_cold_item_is_zero_scored_and_cold_user_uses_popularity():
     assert result["cold_user_metrics"]["Recall@100"] == 1.0
 
 
+def test_block_exact_scoring_and_shared_cold_user_fallback():
+    retriever = ExactDotProductRetriever()
+    users = np.asarray([[1.0, 0.0], [0.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    items = np.asarray([[2.0, 0.0], [0.0, 3.0]], dtype=np.float32)
+    candidates = tuple(np.asarray([1, 2, 3]) for _ in range(3))
+    fallback = np.asarray([[3, 2, 1], [2, 3, 1], [1, 2, 3]])
+
+    ranked = retriever.search(
+        users,
+        items,
+        item_ids=np.asarray([1, 2]),
+        candidates=candidates,
+        k=3,
+        warm_user_mask=np.asarray([True, False, True]),
+        fallback_topk=fallback,
+        missing_item_score=0.0,
+        score_block_size=2,
+    )
+    np.testing.assert_array_equal(
+        ranked,
+        [
+            [1, 2, 3],
+            [2, 3, 1],
+            [2, 1, 3],
+        ],
+    )
+
+
 def test_two_tower_reference_shapes_normalization_and_loss():
     model = NumpyTwoTowerReference(
         num_users=3,
@@ -361,6 +394,34 @@ def test_two_tower_cold_item_ignores_untrained_id_embedding():
     np.testing.assert_allclose(before, after)
 
 
+def test_two_tower_encoded_ranking_uses_shared_cold_user_fallback():
+    model = NumpyTwoTowerReference(
+        num_users=1,
+        num_items=2,
+        num_categories=1,
+        caption_dim=1,
+        static_dim=1,
+        output_dim=2,
+    )
+    queries = _queries(
+        user_ids=[1, 2],
+        candidates=[np.asarray([10, 20]), np.asarray([10, 20])],
+        relevant=[np.asarray([10]), np.asarray([20])],
+        catalog=np.asarray([10, 20]),
+        warm_user_mask=np.asarray([True, False]),
+    )
+    ranked = model.rank_encoded(
+        np.asarray([[1.0, 0.0], [0.0, 0.0]], dtype=np.float32),
+        np.asarray([[2.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        item_ids=np.asarray([10, 20]),
+        queries=queries,
+        learned_user_mask=np.asarray([True, False]),
+        cold_user_fallback=PopularityBaseline({10: 1.0, 20: 2.0}),
+        k=2,
+    )
+    np.testing.assert_array_equal(ranked, [[10, 20], [20, 10]])
+
+
 def test_training_examples_are_causal_and_exclude_target_from_history():
     events = _events(
         [
@@ -373,7 +434,10 @@ def test_training_examples_are_causal_and_exclude_target_from_history():
         ]
     )
     examples = build_two_tower_training_examples(events)
+    lazy = build_two_tower_training_dataset(events)
 
+    assert len(lazy) == 3
+    np.testing.assert_array_equal(lazy[2].history, [1, 2, 3])
     np.testing.assert_array_equal(examples.target_item_ids, [2, 3, 4])
     np.testing.assert_array_equal(examples.histories[0], [4, 1])
     np.testing.assert_array_equal(examples.histories[1], [4, 1])
@@ -383,6 +447,50 @@ def test_training_examples_are_causal_and_exclude_target_from_history():
     ):
         assert int(target) not in set(int(item) for item in history)
     assert examples.history_weights[0][1] == pytest.approx(0.025)
+
+
+def test_bpr_epoch_sampler_excludes_all_known_positives_and_is_deterministic():
+    rows = [
+        (1, 3, 0.1, 1000.0, 1000.0, 1.0),
+        (1, 4, 0.2, 1000.0, 1000.0, 1.0),
+        (1, 5, 0.3, 1000.0, 1000.0, 1.0),
+    ]
+    rows.extend(
+        (1, 1 + (index % 2), 1.0 + index, 3000.0, 1000.0, 3.0)
+        for index in range(8)
+    )
+    rows.extend(
+        [
+            (2, 1, 20.0, 1000.0, 1000.0, 1.0),
+            (2, 2, 21.0, 3000.0, 1000.0, 3.0),
+        ]
+    )
+    dataset = build_bpr_training_dataset(
+        _events(rows),
+        normal_item_ids=np.asarray([1, 2, 3, 4, 5, 99]),
+        seed=17,
+    )
+    epoch_zero = dataset.sample_negatives(0)
+    epoch_zero_again = dataset.sample_negatives(0)
+    epoch_one = dataset.sample_negatives(1)
+
+    np.testing.assert_array_equal(epoch_zero, epoch_zero_again)
+    assert not np.array_equal(epoch_zero, epoch_one)
+    assert len(epoch_zero) == len(dataset.positive_item_ids)
+    assert 99 not in dataset.negative_catalog
+    for user, negative in zip(dataset.user_ids, epoch_zero, strict=True):
+        assert int(negative) not in dataset.known_positive_items[int(user)]
+
+    trained = train_bpr_sgd(
+        dataset,
+        embedding_dim=8,
+        learning_rate=0.05,
+        epochs=2,
+        batch_size=4,
+    )
+    assert len(trained.epoch_losses) == 2
+    assert np.isfinite(trained.epoch_losses).all()
+    assert 99 not in trained.model.item_ids
 
 
 def test_in_batch_mask_removes_duplicate_and_known_positive_false_negatives():
@@ -416,6 +524,83 @@ def test_static_feature_allowlist_rejects_daily_aggregate_leakage():
             validate_model_item_feature_columns(["video_id", leaked])
 
 
+def test_real_static_feature_loader_never_materializes_daily_aggregates(tmp_path):
+    pd.DataFrame(
+        {
+            "video_id": [1, 1, 2],
+            "date": [20200101, 20200102, 20200101],
+            "video_type": ["NORMAL", "NORMAL", "AD"],
+            "upload_dt": ["2019-12-01", "2019-12-01", "2019-12-02"],
+            "upload_type": ["ShortImport", "ShortImport", "ShortImport"],
+            "video_duration": [1000.0, 1000.0, 2000.0],
+            "video_width": [720, 720, 1080],
+            "video_height": [1280, 1280, 1920],
+            "show_cnt": [10, 9999, 5],
+            "like_cnt": [1, 8888, 0],
+        }
+    ).to_csv(tmp_path / "item_daily_features.csv", index=False)
+    pd.DataFrame(
+        {
+            "video_id": [1, 2],
+            "manual_cover_text": ["cover", "UNKNOWN"],
+            "caption": ["caption", None],
+            "topic_tag": ["[]", "sports"],
+            "first_level_category_id": [8, 9],
+            "second_level_category_id": [10, 11],
+            "third_level_category_id": [12, 13],
+        }
+    ).to_csv(tmp_path / "kuairec_caption_category.csv", index=False)
+
+    features = load_static_item_features(tmp_path, chunksize=1)
+    assert features.frame.columns.tolist() == [
+        "video_id",
+        "caption_text",
+        "category_ids",
+        "video_duration",
+        "video_width",
+        "video_height",
+        "upload_type",
+        "upload_dt",
+    ]
+    assert "show_cnt" not in features.frame
+    assert "like_cnt" not in features.frame
+    np.testing.assert_array_equal(features.normal_item_ids, [1])
+    assert len(features.variant_static_item_ids) == 0
+    assert features.frame.loc[0, "caption_text"] == "caption"
+    assert features.frame.loc[1, "caption_text"] == "sports"
+
+
+def test_static_feature_loader_reports_corrections_and_uses_earliest_row(tmp_path):
+    pd.DataFrame(
+        {
+            "video_id": [1, 1],
+            "date": [20200101, 20200102],
+            "video_type": ["NORMAL", "NORMAL"],
+            "upload_dt": ["2019-12-01", "2019-12-01"],
+            "upload_type": ["ShortImport", "ShortImport"],
+            "video_duration": [1000.0, 1000.0],
+            "video_width": [720, 721],
+            "video_height": [1280, 1281],
+        }
+    ).to_csv(tmp_path / "item_daily_features.csv", index=False)
+    pd.DataFrame(
+        {
+            "video_id": [1],
+            "manual_cover_text": ["cover"],
+            "caption": ["caption"],
+            "topic_tag": ["[]"],
+            "first_level_category_id": [8],
+            "second_level_category_id": [10],
+            "third_level_category_id": [12],
+        }
+    ).to_csv(tmp_path / "kuairec_caption_category.csv", index=False)
+
+    features = load_static_item_features(tmp_path)
+    np.testing.assert_array_equal(features.variant_static_item_ids, [1])
+    assert features.frame.loc[0, "video_width"] == 720
+    assert features.frame.loc[0, "video_height"] == 1280
+
+
 def test_selection_gate_targets_the_strongest_baseline_with_numeric_thresholds():
     with open("configs/fully_observed_v1.yaml", encoding="utf-8") as stream:
         config = yaml.safe_load(stream)
@@ -429,3 +614,4 @@ def test_selection_gate_targets_the_strongest_baseline_with_numeric_thresholds()
         "minimum_coverage_at_100_gain_absolute": 0.05,
     }
     assert gate["data_cold_tradeoff"]["minimum_target_denominator"] == 100
+    assert gate["ndcg_at_20_protection"]["maximum_drop_absolute"] == 0.01

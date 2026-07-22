@@ -26,9 +26,18 @@ synthetic-tested dataset/query adapters, fixed candidate filtering, shared
 Recall/NDCG/Coverage evaluation, Popularity and BPR interfaces, exact dot-product
 retrieval, and a deterministic Two-Tower reference encoder. **No full-data
 baseline, model training or effectiveness result has been run or claimed.**
-This is the system skeleton only: real preprocessing, BPR training, trainable
-Two-Tower results, caption-vector generation, Small evaluation and FAISS are
-still unimplemented or unrun.
+Phase B0 adds bounded execution plumbing: a real static-feature loader, lazy
+Two-Tower histories, epoch-resampled BPR negatives/training, blocked Exact
+scoring and a shared cold-user fallback. This is still pre-experiment: full Big
+preprocessing/training, a trainable Two-Tower result, caption-vector generation,
+Small evaluation and FAISS remain unrun.
+
+The bounded 100K-interaction smoke report is committed at
+[`reports/phase_b0/smoke_100k.json`](reports/phase_b0/smoke_100k.json). The
+legacy BPR reuse decision is documented at
+[`reports/phase_b0/legacy_bpr_compatibility.md`](reports/phase_b0/legacy_bpr_compatibility.md):
+its negative sampling and cold-item semantics differ, so it is not reused as
+the fully-observed-V1 baseline.
 
 The older protocol-v2.1.1 temporal route remains in the repository as an
 optional production-like stress test. Its Phase 0 audit and all **97/97**
@@ -54,6 +63,9 @@ KuaiRec `data/` directory. This worktree does not copy or modify raw data.
   fit-context Popularity fallback; cold positives are never silently dropped.
 - BPR cold items score zero. Two-Tower cold items disable the untrained ID
   embedding and use content only.
+- BPR resamples one fit-observed `NORMAL` negative per positive per epoch after
+  excluding all fit-known positives for that user; its Exact scorer uses
+  blocked matrix multiplication rather than Python dot products per candidate.
 - Two-Tower histories are strictly earlier than their target, exclude that
   target, and mask duplicate/known-positive in-batch false negatives; quick
   skips only downweight history in V1.
@@ -66,7 +78,8 @@ KuaiRec `data/` directory. This worktree does not copy or modify raw data.
 - Exact retrieval comes first. FAISS, serving, reranking and sequence models
   are outside this phase.
 - The gate compares Two-Tower with the stronger of Popularity and BPR using
-  numeric Recall/Coverage thresholds, not a presumed BPR winner.
+  numeric Recall/Coverage thresholds plus a 0.01 absolute NDCG@20 protection,
+  not a presumed BPR winner.
 
 > The remaining sections preserve the legacy protocol-v2.1.1 record. They are
 > not the evaluation contract for the new primary route.

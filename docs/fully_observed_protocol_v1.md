@@ -101,12 +101,21 @@ is one query per user, this is also user-macro. V1 has no bootstrap CI.
 - Two-Tower: at most three configurations and three final seeds.
 - Two-Tower + Popularity: considered only after the first four methods finish.
 
+BPR positives are canonical `NORMAL` events with `watch_ratio > 2.0`. For each
+positive and each epoch, one uniform negative is resampled from fit-observed
+`NORMAL` videos after removing every strong-positive video known for that user
+in the fit context. The random seed is fixed. Restricting the negative catalog
+to fit-observed videos preserves the declared score-zero behavior for truly
+data-cold items.
+
 Two-Tower V1 uses item ID, category, frozen/precomputed caption vectors and
 static features in the item tower. Allowed model inputs are exactly item ID,
 caption embedding, category IDs, duration, width, height, upload type and upload
 date. Daily engagement aggregates such as show/play/like/follow counts are
 forbidden. `video_type` and visibility may filter the catalog but are not model
-features. The user tower combines user ID with a
+features. Static fields sourced from the daily table use each video's earliest
+available row; any later source correction is counted and reported rather than
+silently selecting a future snapshot. The user tower combines user ID with a
 masked weighted mean of up to 50 train-history item representations. The loss
 is temperature-scaled in-batch softmax over dot products; embeddings are
 128-dimensional and L2-normalized. Exact matrix-multiplication retrieval comes
@@ -130,7 +139,8 @@ cold-item path. Neither model may delete a cold positive target.
 
 The comparison baseline is the stronger Big-validation Recall@100 result from
 Global Popularity and BPR, never BPR by assumption. Two-Tower may enter sealed
-Small evaluation under one predeclared rule:
+Small evaluation only if its NDCG@20 is no more than 0.01 absolute below that
+baseline and it satisfies one predeclared rule:
 
 1. Recall@100 strictly exceeds that strongest baseline; or
 2. Recall@100 is within 0.02 absolute and Coverage@100 improves by at least 0.05

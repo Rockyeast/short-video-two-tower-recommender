@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 
 from .data import RetrievalQueries, is_strong_positive
+from .retrieval import ExactDotProductRetriever
+from .training import BPRTrainingDataset
 
 
 def _normalize(values: np.ndarray) -> np.ndarray:
@@ -91,6 +93,7 @@ class BPRModel:
         *,
         k: int = 100,
         cold_user_fallback: PopularityBaseline | None = None,
+        score_block_size: int = 256,
     ) -> np.ndarray:
         """Rank without dropping cold users or items.
 
@@ -99,41 +102,154 @@ class BPRModel:
         fallback rather than raising or being removed from evaluation.
         """
 
-        user_positions = {
-            int(user): index for index, user in enumerate(self.user_ids)
-        }
-        item_positions = {
-            int(item): index for index, item in enumerate(self.item_ids)
-        }
-        fallback = (
+        user_positions = {int(user): index for index, user in enumerate(self.user_ids)}
+        user_vectors = np.zeros(
+            (len(queries.user_ids), self.user_factors.shape[1]), dtype=np.float32
+        )
+        learned_user = np.zeros(len(queries.user_ids), dtype=bool)
+        for row, user in enumerate(queries.user_ids):
+            position = user_positions.get(int(user))
+            if position is not None:
+                user_vectors[row] = self.user_factors[position]
+                learned_user[row] = True
+        warm = learned_user & queries.warm_user_mask
+        fallback_topk = (
             None
             if cold_user_fallback is None
             else cold_user_fallback.rank(queries, k=k)
         )
-        output = np.full((len(queries.user_ids), k), -1, dtype=np.int64)
-        for row, (user, candidates) in enumerate(
-            zip(queries.user_ids, queries.candidates, strict=True)
-        ):
-            user_position = user_positions.get(int(user))
-            if user_position is None:
-                if fallback is None:
-                    raise ValueError(
-                        "BPR cold query user requires a Popularity fallback"
-                    )
-                output[row] = fallback[row]
-                continue
-            user_vector = self.user_factors[user_position]
-            scores = {
-                int(item): (
-                    float(self.item_factors[item_positions[int(item)]] @ user_vector)
-                    if int(item) in item_positions
-                    else 0.0
-                )
-                for item in candidates
-            }
-            ranked = sorted(scores, key=lambda item: (-scores[item], item))[:k]
-            output[row, : len(ranked)] = ranked
-        return output
+        return ExactDotProductRetriever().search(
+            user_vectors,
+            self.item_factors,
+            item_ids=self.item_ids,
+            candidates=queries.candidates,
+            k=k,
+            warm_user_mask=warm,
+            fallback_topk=fallback_topk,
+            missing_item_score=0.0,
+            score_block_size=score_block_size,
+        )
+
+
+@dataclass(frozen=True)
+class BPRTrainingResult:
+    model: BPRModel
+    epoch_losses: tuple[float, ...]
+
+
+def _sgd_indexed_update(
+    matrix: np.ndarray,
+    indices: np.ndarray,
+    gradients: np.ndarray,
+    *,
+    learning_rate: float,
+    normalization: int,
+) -> None:
+    unique, inverse = np.unique(indices, return_inverse=True)
+    accumulated = np.zeros((len(unique), matrix.shape[1]), dtype=np.float32)
+    np.add.at(accumulated, inverse, gradients)
+    matrix[unique] -= learning_rate * accumulated / float(normalization)
+
+
+def train_bpr_sgd(
+    dataset: BPRTrainingDataset,
+    *,
+    embedding_dim: int = 64,
+    learning_rate: float = 0.05,
+    l2: float = 1e-4,
+    epochs: int = 1,
+    batch_size: int = 4096,
+) -> BPRTrainingResult:
+    """Train the minimal BPR baseline with epoch-resampled negatives."""
+
+    if embedding_dim <= 0 or learning_rate <= 0 or l2 < 0:
+        raise ValueError("Invalid BPR optimization hyperparameters")
+    if epochs <= 0 or batch_size <= 0:
+        raise ValueError("epochs and batch_size must be positive")
+    user_ids = np.unique(dataset.user_ids)
+    item_ids = np.asarray(dataset.negative_catalog, dtype=np.int64)
+    user_positions = {int(user): index for index, user in enumerate(user_ids)}
+    item_positions = {int(item): index for index, item in enumerate(item_ids)}
+    positive_users = np.fromiter(
+        (user_positions[int(user)] for user in dataset.user_ids),
+        dtype=np.int64,
+        count=len(dataset.user_ids),
+    )
+    positive_items = np.fromiter(
+        (item_positions[int(item)] for item in dataset.positive_item_ids),
+        dtype=np.int64,
+        count=len(dataset.positive_item_ids),
+    )
+    rng = np.random.default_rng(dataset.seed)
+    users = rng.normal(0.0, 0.05, (len(user_ids), embedding_dim)).astype(np.float32)
+    items = rng.normal(0.0, 0.05, (len(item_ids), embedding_dim)).astype(np.float32)
+    touched_items = np.zeros(len(item_ids), dtype=bool)
+    order = np.arange(len(positive_users), dtype=np.int64)
+    losses: list[float] = []
+    for epoch in range(epochs):
+        negative_ids = dataset.sample_negatives(epoch)
+        negative_items = np.fromiter(
+            (item_positions[int(item)] for item in negative_ids),
+            dtype=np.int64,
+            count=len(negative_ids),
+        )
+        touched_items[positive_items] = True
+        touched_items[negative_items] = True
+        rng.shuffle(order)
+        total_loss = 0.0
+        total_examples = 0
+        for begin in range(0, len(order), batch_size):
+            batch = order[begin : begin + batch_size]
+            user_index = positive_users[batch]
+            positive_index = positive_items[batch]
+            negative_index = negative_items[batch]
+            user_vector = users[user_index].copy()
+            positive_vector = items[positive_index].copy()
+            negative_vector = items[negative_index].copy()
+            difference = positive_vector - negative_vector
+            score = np.sum(user_vector * difference, axis=1)
+            coefficient = 1.0 / (1.0 + np.exp(np.clip(score, -30.0, 30.0)))
+            user_gradient = -coefficient[:, None] * difference + l2 * user_vector
+            positive_gradient = (
+                -coefficient[:, None] * user_vector + l2 * positive_vector
+            )
+            negative_gradient = (
+                coefficient[:, None] * user_vector + l2 * negative_vector
+            )
+            normalization = len(batch)
+            _sgd_indexed_update(
+                users,
+                user_index,
+                user_gradient,
+                learning_rate=learning_rate,
+                normalization=normalization,
+            )
+            _sgd_indexed_update(
+                items,
+                positive_index,
+                positive_gradient,
+                learning_rate=learning_rate,
+                normalization=normalization,
+            )
+            _sgd_indexed_update(
+                items,
+                negative_index,
+                negative_gradient,
+                learning_rate=learning_rate,
+                normalization=normalization,
+            )
+            total_loss += float(np.logaddexp(0.0, -score).sum())
+            total_examples += len(batch)
+        losses.append(total_loss / total_examples)
+    return BPRTrainingResult(
+        model=BPRModel(
+            user_ids=user_ids,
+            item_ids=item_ids[touched_items],
+            user_factors=users,
+            item_factors=items[touched_items],
+        ),
+        epoch_losses=tuple(losses),
+    )
 
 
 class NumpyTwoTowerReference:
@@ -221,6 +337,34 @@ class NumpyTwoTowerReference:
         inputs = np.concatenate((self.user_id_embedding[users], pooled), axis=1)
         hidden = np.maximum(inputs @ self.user_hidden, 0.0)
         return _normalize(hidden @ self.user_output)
+
+    def rank_encoded(
+        self,
+        query_user_vectors: np.ndarray,
+        item_vectors: np.ndarray,
+        *,
+        item_ids: np.ndarray,
+        queries: RetrievalQueries,
+        learned_user_mask: np.ndarray,
+        cold_user_fallback: PopularityBaseline,
+        k: int = 100,
+        score_block_size: int = 256,
+    ) -> np.ndarray:
+        """Use the same blocked cold-user route as BPR after encoding."""
+
+        learned = np.asarray(learned_user_mask)
+        if learned.shape != (len(queries.user_ids),) or learned.dtype != np.bool_:
+            raise ValueError("learned_user_mask must be one boolean per query")
+        return ExactDotProductRetriever().search(
+            query_user_vectors,
+            item_vectors,
+            item_ids=item_ids,
+            candidates=queries.candidates,
+            k=k,
+            warm_user_mask=learned & queries.warm_user_mask,
+            fallback_topk=cold_user_fallback.rank(queries, k=k),
+            score_block_size=score_block_size,
+        )
 
 
 def in_batch_softmax_loss(

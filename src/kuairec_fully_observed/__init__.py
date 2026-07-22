@@ -13,41 +13,57 @@ from .data import (
 from .evaluation import evaluate_retrieval
 from .features import (
     MODEL_ITEM_FEATURE_COLUMNS,
+    StaticItemFeatures,
+    load_static_item_features,
     validate_model_item_feature_columns,
 )
 from .models import (
     BPRModel,
+    BPRTrainingResult,
     NumpyTwoTowerReference,
     PopularityBaseline,
     in_batch_softmax_loss,
     stable_random_rank,
+    train_bpr_sgd,
 )
 from .retrieval import ExactDotProductRetriever
 from .training import (
+    BPRTrainingDataset,
+    TwoTowerTrainingDataset,
     TwoTowerTrainingExamples,
+    build_bpr_training_dataset,
     build_in_batch_logit_mask,
+    build_two_tower_training_dataset,
     build_two_tower_training_examples,
 )
 
 __all__ = [
     "BPRModel",
+    "BPRTrainingDataset",
+    "BPRTrainingResult",
     "ExactDotProductRetriever",
     "NumpyTwoTowerReference",
     "MODEL_ITEM_FEATURE_COLUMNS",
     "PopularityBaseline",
     "RetrievalQueries",
+    "StaticItemFeatures",
+    "TwoTowerTrainingDataset",
     "TwoTowerTrainingExamples",
     "build_big_validation_queries",
+    "build_bpr_training_dataset",
     "build_fixed_validation_catalog",
     "build_in_batch_logit_mask",
     "build_small_observed_queries",
+    "build_two_tower_training_dataset",
     "build_two_tower_training_examples",
     "data_cold_items",
     "evaluate_retrieval",
     "in_batch_softmax_loss",
     "is_quick_skip",
     "is_strong_positive",
+    "load_static_item_features",
     "resolve_kuairec_data_dir",
     "stable_random_rank",
+    "train_bpr_sgd",
     "validate_model_item_feature_columns",
 ]

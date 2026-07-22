@@ -50,6 +50,16 @@ baselines:
   bpr_mf:
     maximum_configurations: 3
     maximum_final_seeds: 3
+    positives: canonical_normal_events_with_watch_ratio_strictly_greater_than_2
+    negatives:
+      count_per_positive_per_epoch: 1
+      distribution: uniform
+      catalog: fit_observed_normal_items
+      exclude: all_fit_known_positive_items_for_user
+      resample_each_epoch: true
+      fixed_seed: 20260722
+    cold_item_score: 0.0
+    optimizer: mini_batch_sgd
 two_tower:
   maximum_configurations: 3
   maximum_final_seeds: 3
@@ -65,6 +75,8 @@ two_tower:
     other_known_user_positive_is_negative: false
     quick_skip: downweighted_history_only
   item_features:
+    daily_static_snapshot: earliest_available_row_per_video
+    static_source_variation: report_item_and_use_earliest_snapshot
     allowed:
       - video_id
       - caption_embedding
@@ -84,6 +96,9 @@ retrieval:
 selection_gate:
   comparison_baseline: max_recall_at_100_of_global_popularity_and_bpr
   direct_recall_improvement: strictly_greater
+  ndcg_at_20_protection:
+    comparison: strongest_recall_baseline_ndcg_at_20
+    maximum_drop_absolute: 0.01
   coverage_tradeoff:
     maximum_recall_at_100_deficit_absolute: 0.02
     minimum_coverage_at_100_gain_absolute: 0.05
