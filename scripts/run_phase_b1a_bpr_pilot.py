@@ -57,7 +57,7 @@ def _load_config(path: Path) -> dict[str, Any]:
     if config.get("training") != expected:
         raise RuntimeError("Phase B1A training configuration is not frozen")
     if config.get("audit", {}).get("negative_seed") != 20260723:
-        raise RuntimeError("Phase B1A audit-negative seed is not frozen")
+        raise RuntimeError("Phase B1A diagnostic-negative seed is not frozen")
     return config
 
 
@@ -89,28 +89,68 @@ def _verify_processed_artifacts(
     return manifest
 
 
-def _normal_video_ids(data_dir: Path) -> np.ndarray:
-    path = data_dir / "item_daily_features.csv"
+def _normal_video_ids(
+    data_dir: Path, processed_manifest: dict[str, Any]
+) -> tuple[np.ndarray, dict[str, Any]]:
+    source_name = "item_daily_features.csv"
+    path = (data_dir / source_name).resolve()
+    source_hashes = processed_manifest.get("fingerprint", {}).get(
+        "source_file_sha256"
+    )
+    if not isinstance(source_hashes, dict) or source_name not in source_hashes:
+        raise RuntimeError(
+            "Processed manifest has no exact source SHA for "
+            f"{source_name}: path={path}"
+        )
+    expected_sha256 = str(source_hashes[source_name])
+    actual_sha256 = _sha256_file(path)
+    if actual_sha256 != expected_sha256:
+        raise RuntimeError(
+            f"{source_name} SHA256 mismatch: path={path} "
+            f"actual={actual_sha256} expected={expected_sha256}"
+        )
+
+    # The source identity is verified before NORMAL membership is read.
     frame = pd.read_csv(path, usecols=["video_id", "video_type"])
     variation = frame.groupby("video_id")["video_type"].nunique(dropna=False)
     if (variation > 1).any():
         raise RuntimeError("video_type changes across daily snapshots")
     first = frame.drop_duplicates("video_id", keep="first")
-    return np.sort(
+    normal_ids = np.unique(
         first.loc[first["video_type"].eq("NORMAL"), "video_id"].to_numpy(
             np.int64
         )
     )
+    digest = hashlib.sha256(b"normal-video-membership-v1\n")
+    for video_id in normal_ids:
+        digest.update(f"{int(video_id)}\n".encode())
+    return normal_ids, {
+        "source_name": source_name,
+        "source_path": str(path),
+        "actual_sha256": actual_sha256,
+        "expected_sha256": expected_sha256,
+        "sha256_match": True,
+        "normal_membership_count": int(len(normal_ids)),
+        "normal_membership_sha256": digest.hexdigest(),
+        "normal_membership_hash_scheme": (
+            "sha256(normal-video-membership-v1\\n + sorted-unique-decimal-id\\n)"
+        ),
+    }
 
 
 def _prepare_inputs(
-    artifact_dir: Path, data_dir: Path, *, training_seed: int
+    artifact_dir: Path,
+    data_dir: Path,
+    processed_manifest: dict[str, Any],
+    *,
+    training_seed: int,
 ) -> tuple[
     BPRTrainingDataset,
     RetrievalQueries,
     PopularityBaseline,
     np.ndarray,
     dict[str, int],
+    dict[str, Any],
 ]:
     events_file = np.load(artifact_dir / "events_train_validation.npz")
     catalog_file = np.load(artifact_dir / "catalog.npz")
@@ -122,7 +162,9 @@ def _prepare_inputs(
     video_ids = catalog_file["video_ids"].astype(np.int64, copy=False)
     train_end = float(catalog_file["train_end"][0])
 
-    normal_ids = _normal_video_ids(data_dir)
+    normal_ids, input_traceability = _normal_video_ids(
+        data_dir, processed_manifest
+    )
     normal_item = np.isin(video_ids, normal_ids)
     event_normal = normal_item[event_items]
     train_event = event_times < train_end
@@ -211,9 +253,24 @@ def _prepare_inputs(
         "validation_queries": int(len(query_users)),
         "validation_targets": int(sum(len(row) for row in relevant)),
         "warm_validation_queries": int(np.count_nonzero(warm)),
+        "warm_validation_targets": int(
+            sum(
+                len(row)
+                for row, is_warm in zip(relevant, warm, strict=True)
+                if is_warm
+            )
+        ),
+        "cold_user_validation_queries": int(len(warm) - np.count_nonzero(warm)),
+        "cold_user_validation_targets": int(
+            sum(
+                len(row)
+                for row, is_warm in zip(relevant, warm, strict=True)
+                if not is_warm
+            )
+        ),
         "data_cold_items": int(len(data_cold)),
     }
-    return dataset, queries, popularity, data_cold, counts
+    return dataset, queries, popularity, data_cold, counts, input_traceability
 
 
 def _audit_pairwise(
@@ -282,6 +339,13 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
     baselines = report["baselines"]
     random_metrics = baselines["random"]["metrics"]
     popularity_metrics = baselines["global_popularity"]["metrics"]
+    selected_row = next(
+        row for row in report["checkpoints"] if row["epoch"] == selected
+    )
+    selected_metrics = selected_row["validation"]["metrics"]
+    relative_recall_gain = (
+        selected_metrics["Recall@100"] / popularity_metrics["Recall@100"] - 1.0
+    ) * 100.0
     text = "\n".join(
         [
             "# Phase B1A Full BPR Pilot",
@@ -306,7 +370,7 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
             "",
             "## BPR checkpoints",
             "",
-            "| Epoch | Audit loss | Audit win | Recall@20 | Recall@50 | "
+            "| Epoch | Diagnostic loss | Diagnostic win | Recall@20 | Recall@50 | "
             "Recall@100 | NDCG@20 | Coverage@100 |",
             "|---:|---:|---:|---:|---:|---:|---:|---:|",
             *rows,
@@ -315,12 +379,38 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
             f"Selected checkpoint: `{selected}`.",
             f"Stop reason: `{report.get('stop_reason')}`.",
             "",
-            f"Validation queries: `{report['counts']['validation_queries']}`; "
-            f"targets: `{report['counts']['validation_targets']}`; runtime: "
+            f"Primary warm-user queries: "
+            f"`{report['counts']['warm_validation_queries']}`; targets: "
+            f"`{report['counts']['warm_validation_targets']}`. Cold-user audit "
+            f"queries: `{report['counts']['cold_user_validation_queries']}`; "
+            f"targets: `{report['counts']['cold_user_validation_targets']}`. "
+            f"Runtime: "
             f"`{report['runtime_s'] / 60.0:.2f} minutes`.",
             "",
-            "The fixed audit-negative metrics are optimization diagnostics, "
-            "not recommendation-effectiveness claims.",
+            "The separate-seed fixed diagnostic metrics measure optimization "
+            "only; they are not recommendation-effectiveness claims.",
+            "",
+            "The selected BPR checkpoint's Data-Cold Recall@100 was `0` in "
+            "this run, consistent with a pure ID model being unable to learn "
+            "videos unseen during training; this is an observed result, not a "
+            "claim of mathematical inevitability.",
+            "",
+            "BPR's Recall@100 improvement over Global Popularity was "
+            f"`{relative_recall_gain:.1f}%` relative in the frozen "
+            "Big-validation protocol for this single seed. No "
+            "statistical-significance or cross-dataset-stability claim is "
+            "made.",
+            "",
+            "## Input traceability",
+            "",
+            "`item_daily_features.csv` was verified before NORMAL membership "
+            "was read:",
+            "",
+            f"- Path: `{report['artifacts']['item_daily_features_traceability']['source_path']}`",
+            f"- Actual SHA256: `{report['artifacts']['item_daily_features_traceability']['actual_sha256']}`",
+            f"- Expected SHA256: `{report['artifacts']['item_daily_features_traceability']['expected_sha256']}`",
+            f"- Sorted unique NORMAL items: `{report['artifacts']['item_daily_features_traceability']['normal_membership_count']}`",
+            f"- Membership SHA256: `{report['artifacts']['item_daily_features_traceability']['normal_membership_sha256']}`",
             "",
         ]
     )
@@ -343,9 +433,17 @@ def run(
         repo_root, processed_artifact_dir
     )
     training = config["training"]
-    dataset, queries, popularity, data_cold, counts = _prepare_inputs(
+    (
+        dataset,
+        queries,
+        popularity,
+        data_cold,
+        counts,
+        input_traceability,
+    ) = _prepare_inputs(
         processed_artifact_dir,
         data_dir,
+        artifact_manifest,
         training_seed=int(training["seed"]),
     )
     audit_dataset = replace(
@@ -480,6 +578,7 @@ def run(
             "code_commit": subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True
             ).strip(),
+            "item_daily_features_traceability": input_traceability,
         },
         "runtime_s": time.perf_counter() - started,
         "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss

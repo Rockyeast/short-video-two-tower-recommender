@@ -4,6 +4,16 @@
     "audit_negatives_sha256": "b40c97a9525ef066f514d387a6c91b898490eb05cbd262296c153f92b9312070",
     "code_commit": "42b1ece07b8619fff50dc4e173071fb1333347e6",
     "config_sha256": "d37c982bf9c7c7d2072beecfdc652b7131fe18b128d8cb74d40113614e3a636d",
+    "item_daily_features_traceability": {
+      "actual_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+      "expected_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+      "normal_membership_count": 10699,
+      "normal_membership_hash_scheme": "sha256(normal-video-membership-v1\\n + sorted-unique-decimal-id\\n)",
+      "normal_membership_sha256": "631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e",
+      "sha256_match": true,
+      "source_name": "item_daily_features.csv",
+      "source_path": "/home/rockyeast/mle/short-video-two-tower-recommender/data/raw/KuaiRec 2.0/data/item_daily_features.csv"
+    },
     "processed_events_sha256": "476ebcae49140d3c307ca6cb1461847f42e849d8f5c91dd7a2661396fc2b9a02",
     "processed_manifest_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5"
   },
@@ -345,13 +355,16 @@
     "bpr_positive_events": 615459,
     "canonical_train_events": 8145207,
     "canonical_train_validation_events": 10024291,
+    "cold_user_validation_queries": 2,
+    "cold_user_validation_targets": 26,
     "data_cold_items": 1492,
     "fit_observed_normal_items": 7873,
     "fixed_validation_catalog_items": 9365,
     "training_users": 7162,
     "validation_queries": 6818,
     "validation_targets": 118565,
-    "warm_validation_queries": 6816
+    "warm_validation_queries": 6816,
+    "warm_validation_targets": 118539
   },
   "epochs_completed": 20,
   "initialization_audit": {

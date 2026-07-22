@@ -49,7 +49,9 @@ the fully-observed-V1 baseline.
 Phase B1A ran exactly one frozen BPR configuration and seed on canonical Big
 train, selecting only on Big validation. The full report is
 [`reports/phase_b1a/full_bpr_pilot.md`](reports/phase_b1a/full_bpr_pilot.md).
-Epoch 20 was selected by Recall@100 with NDCG@20 as the tie-break:
+Primary metrics cover 6,816 warm-user queries and 118,539 targets; the other
+2 cold-user queries and 26 targets are reported separately. Epoch 20 was
+selected by Recall@100 with NDCG@20 as the tie-break:
 
 | Method | Recall@100 | NDCG@20 | Coverage@100 |
 |---|---:|---:|---:|
@@ -57,12 +59,25 @@ Epoch 20 was selected by Recall@100 with NDCG@20 as the tie-break:
 | Global Popularity | 0.036643 | 0.010615 | 0.080085 |
 | BPR epoch 20 | **0.048439** | **0.012774** | 0.333049 |
 
-The fixed audit-negative win rate rose from 49.94% at initialization to 93.42%
-at epoch 20. That diagnostic proves the optimizer learned its fixed pair task;
-Big-validation Recall/NDCG provide the separate recommendation-effectiveness
-evidence. BPR Data-Cold Recall@100 remained zero, as expected for an ID-only
-model with fixed-zero scores for train-unseen videos. Small Matrix, temporal
-final and Two-Tower were not accessed or run.
+The separate-seed fixed diagnostic win rate rose from 49.94% at initialization
+to 93.42% at epoch 20. That diagnostic shows the optimizer learned its fixed
+pair task; Big-validation Recall/NDCG provide the separate
+recommendation-effectiveness evidence. BPR Data-Cold Recall@100 was zero in
+this run, consistent with a pure ID model being unable to learn videos unseen
+during training; this is not stated as a mathematical inevitability. The BPR
+Recall@100 gain over Global Popularity was an observed 32.2% relative gain under
+the frozen Big-validation protocol for one seed, not evidence of statistical
+significance or cross-dataset stability.
+
+Before NORMAL membership is read, the B1A runner now fail-closes on the exact
+`item_daily_features.csv` SHA frozen in the processed manifest. The verified
+source SHA is
+`45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b`;
+the sorted, deduplicated set contains 10,699 NORMAL items and has membership
+SHA256
+`631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e`.
+The existing BPR model was not retrained. Small Matrix, temporal final and
+Two-Tower were not accessed or run.
 
 The older protocol-v2.1.1 temporal route remains in the repository as an
 optional production-like stress test. Its Phase 0 audit and all **97/97**

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from scripts.run_phase_b1a_bpr_pilot import run
 
@@ -38,9 +39,24 @@ def test_phase_b1a_synthetic_e2e_uses_only_train_validation(tmp_path: Path):
         train_end=np.asarray([10.0]),
         validation_end=np.asarray([20.0]),
     )
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    pd.DataFrame(
+        {
+            "video_id": [10, 20, 30, 40],
+            "video_type": ["NORMAL"] * 4,
+        }
+    ).to_csv(data_dir / "item_daily_features.csv", index=False)
     manifest = {
         "artifact_scope": "train_and_validation_only",
-        "fingerprint": {"split_manifest_sha256": split_sha},
+        "fingerprint": {
+            "split_manifest_sha256": split_sha,
+            "source_file_sha256": {
+                "item_daily_features.csv": _sha(
+                    data_dir / "item_daily_features.csv"
+                )
+            },
+        },
         "statistics": {
             "small_matrix_rows_read": 0,
             "temporal_final_rows_persisted": 0,
@@ -51,14 +67,6 @@ def test_phase_b1a_synthetic_e2e_uses_only_train_validation(tmp_path: Path):
         },
     }
     (artifact_dir / "manifest.json").write_text(json.dumps(manifest))
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    pd.DataFrame(
-        {
-            "video_id": [10, 20, 30, 40],
-            "video_type": ["NORMAL"] * 4,
-        }
-    ).to_csv(data_dir / "item_daily_features.csv", index=False)
 
     report = run(
         repo_root,
@@ -75,5 +83,26 @@ def test_phase_b1a_synthetic_e2e_uses_only_train_validation(tmp_path: Path):
     assert report["claim_boundary"]["two_tower_run"] is False
     assert report["checkpoints"][0]["epoch"] == 5
     assert report["initialization_audit"]["pair_count"] == 4
+    trace = report["artifacts"]["item_daily_features_traceability"]
+    assert trace["sha256_match"] is True
+    assert trace["normal_membership_count"] == 4
     assert (tmp_path / "report.json").is_file()
     assert (tmp_path / "report.md").is_file()
+
+    daily_path = data_dir / "item_daily_features.csv"
+    daily_path.write_text(daily_path.read_text().replace("NORMAL", "AD", 1))
+    with pytest.raises(
+        RuntimeError,
+        match=r"item_daily_features\.csv SHA256 mismatch: .*actual=.*expected=",
+    ):
+        run(
+            repo_root,
+            config_path=repo_root / "configs/phase_b1a_bpr_pilot.yaml",
+            processed_artifact_dir=artifact_dir,
+            data_dir=data_dir,
+            checkpoint_dir=tmp_path / "rejected-checkpoints",
+            report_json=tmp_path / "rejected-report.json",
+            report_markdown=tmp_path / "rejected-report.md",
+        )
+    assert not (tmp_path / "rejected-checkpoints").exists()
+    assert not (tmp_path / "rejected-report.json").exists()
