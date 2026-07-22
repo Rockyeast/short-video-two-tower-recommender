@@ -617,6 +617,38 @@ def test_bpr_learns_at_formal_batch_size_and_is_seed_reproducible():
     assert np.mean(correct) >= 0.90
 
 
+def test_bpr_checkpoint_callback_includes_initialization_and_can_stop():
+    dataset = build_bpr_training_dataset(
+        _events(
+            [
+                (1, 10, 1.0, 3000.0, 1000.0, 3.0),
+                (1, 20, 2.0, 1000.0, 1000.0, 1.0),
+                (2, 20, 1.0, 3000.0, 1000.0, 3.0),
+                (2, 10, 2.0, 1000.0, 1000.0, 1.0),
+            ]
+        ),
+        normal_item_ids=np.asarray([10, 20]),
+        seed=9,
+    )
+    observed: list[tuple[int, int, int]] = []
+
+    def callback(epoch, model, losses):
+        observed.append((epoch, len(model.item_ids), len(losses)))
+        return epoch < 1
+
+    result = train_bpr_sgd(
+        dataset,
+        embedding_dim=4,
+        epochs=3,
+        batch_size=4096,
+        checkpoint_epochs=(0, 1, 2, 3),
+        checkpoint_callback=callback,
+    )
+
+    assert observed == [(0, 2, 0), (1, 2, 1)]
+    assert len(result.epoch_losses) == 1
+
+
 def test_in_batch_mask_removes_duplicate_and_known_positive_false_negatives():
     mask = build_in_batch_logit_mask(
         np.asarray([1, 1, 2]),

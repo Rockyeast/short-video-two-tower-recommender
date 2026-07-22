@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -137,6 +138,11 @@ class BPRTrainingResult:
     epoch_losses: tuple[float, ...]
 
 
+BPRCheckpointCallback = Callable[
+    [int, BPRModel, tuple[float, ...]], bool
+]
+
+
 def _sgd_indexed_update(
     matrix: np.ndarray,
     indices: np.ndarray,
@@ -167,13 +173,27 @@ def train_bpr_sgd(
     l2: float = 1e-4,
     epochs: int = 1,
     batch_size: int = 4096,
+    checkpoint_epochs: tuple[int, ...] = (),
+    checkpoint_callback: BPRCheckpointCallback | None = None,
 ) -> BPRTrainingResult:
-    """Train the minimal BPR baseline with epoch-resampled negatives."""
+    """Train BPR with epoch-resampled negatives and optional stop callbacks.
+
+    ``checkpoint_epochs`` may include zero for an initialization audit.  The
+    callback returns false to stop after the current checkpoint, allowing a
+    bounded pilot to enforce preregistered gates without restarting training.
+    """
 
     if embedding_dim <= 0 or learning_rate <= 0 or l2 < 0:
         raise ValueError("Invalid BPR optimization hyperparameters")
     if epochs <= 0 or batch_size <= 0:
         raise ValueError("epochs and batch_size must be positive")
+    checkpoint_epochs = tuple(int(value) for value in checkpoint_epochs)
+    if tuple(sorted(set(checkpoint_epochs))) != checkpoint_epochs:
+        raise ValueError("checkpoint_epochs must be sorted and unique")
+    if any(value < 0 or value > epochs for value in checkpoint_epochs):
+        raise ValueError("checkpoint epoch is outside [0, epochs]")
+    if checkpoint_epochs and checkpoint_callback is None:
+        raise ValueError("checkpoint epochs require a callback")
     user_ids = np.unique(dataset.user_ids)
     item_ids = np.asarray(dataset.negative_catalog, dtype=np.int64)
     user_positions = {int(user): index for index, user in enumerate(user_ids)}
@@ -191,9 +211,21 @@ def train_bpr_sgd(
     rng = np.random.default_rng(dataset.seed)
     users = rng.normal(0.0, 0.05, (len(user_ids), embedding_dim)).astype(np.float32)
     items = rng.normal(0.0, 0.05, (len(item_ids), embedding_dim)).astype(np.float32)
-    touched_items = np.zeros(len(item_ids), dtype=bool)
     order = np.arange(len(positive_users), dtype=np.int64)
     losses: list[float] = []
+
+    def snapshot() -> BPRModel:
+        return BPRModel(
+            user_ids=user_ids.copy(),
+            item_ids=item_ids.copy(),
+            user_factors=users.copy(),
+            item_factors=items.copy(),
+        )
+
+    if 0 in checkpoint_epochs and checkpoint_callback is not None:
+        if not checkpoint_callback(0, snapshot(), tuple(losses)):
+            return BPRTrainingResult(model=snapshot(), epoch_losses=tuple(losses))
+
     for epoch in range(epochs):
         negative_ids = dataset.sample_negatives(epoch)
         negative_items = np.fromiter(
@@ -201,8 +233,6 @@ def train_bpr_sgd(
             dtype=np.int64,
             count=len(negative_ids),
         )
-        touched_items[positive_items] = True
-        touched_items[negative_items] = True
         rng.shuffle(order)
         total_loss = 0.0
         total_examples = 0
@@ -236,16 +266,26 @@ def train_bpr_sgd(
                 np.concatenate((positive_gradient, negative_gradient), axis=0),
                 learning_rate=learning_rate,
             )
+            if not (
+                np.isfinite(users[user_index]).all()
+                and np.isfinite(items[positive_index]).all()
+                and np.isfinite(items[negative_index]).all()
+            ):
+                raise FloatingPointError("BPR parameters became non-finite")
             total_loss += float(np.logaddexp(0.0, -score).sum())
             total_examples += len(batch)
         losses.append(total_loss / total_examples)
+        completed_epoch = epoch + 1
+        if (
+            completed_epoch in checkpoint_epochs
+            and checkpoint_callback is not None
+            and not checkpoint_callback(
+                completed_epoch, snapshot(), tuple(losses)
+            )
+        ):
+            break
     return BPRTrainingResult(
-        model=BPRModel(
-            user_ids=user_ids,
-            item_ids=item_ids[touched_items],
-            user_factors=users,
-            item_factors=items[touched_items],
-        ),
+        model=snapshot(),
         epoch_losses=tuple(losses),
     )
 
