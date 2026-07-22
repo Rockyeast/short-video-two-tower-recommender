@@ -66,11 +66,13 @@ final and Two-Tower were not accessed or run.
 
 The older protocol-v2.1.1 temporal route remains in the repository as an
 optional production-like stress test. Its Phase 0 audit and all **97/97**
-temporal-validation baseline rows remain preserved. Temporal final and Small
-Matrix model metrics have not been run. The committed legacy Warm/Cold segment
-numbers still have the known membership-definition error until ERRATUM-001 is
-formally replayed; the correction runner exists on PR #3, but this branch does
-not run or modify it.
+temporal-validation baseline rows remain preserved and are now permanently
+frozen; no further temporal-baseline experiments will be added. ERRATUM-001
+completed the 97/97 segment-only correction without changing overall
+Recall/NDCG/Coverage or any selected configuration. Its corrected Warm/Tail/Cold
+metrics and artifact lineage are documented in
+[`reports/phase1/ERRATUM-001.md`](reports/phase1/ERRATUM-001.md). Temporal final
+and Small Matrix model metrics have not been run.
 
 All future raw-data commands must set `KUAIREC_DATA_DIR` to the existing shared
 KuaiRec `data/` directory. This worktree does not copy or modify raw data.
