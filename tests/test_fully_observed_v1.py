@@ -335,6 +335,66 @@ def test_block_exact_scoring_and_shared_cold_user_fallback():
     )
 
 
+def test_blocked_exact_scoring_matches_naive_randomized_reference():
+    rng = np.random.default_rng(20260722)
+    retriever = ExactDotProductRetriever()
+    for _ in range(10):
+        query_count = int(rng.integers(3, 12))
+        learned_item_count = int(rng.integers(5, 20))
+        dimension = int(rng.integers(2, 10))
+        k = 7
+        item_ids = np.arange(100, 100 + learned_item_count, dtype=np.int64)
+        missing_ids = np.arange(1000, 1005, dtype=np.int64)
+        catalog = np.concatenate((item_ids, missing_ids))
+        users = rng.normal(size=(query_count, dimension)).astype(np.float32)
+        items = rng.normal(size=(learned_item_count, dimension)).astype(np.float32)
+        warm = rng.random(query_count) > 0.25
+        candidates = tuple(
+            np.sort(
+                rng.choice(
+                    catalog,
+                    size=int(rng.integers(1, len(catalog) + 1)),
+                    replace=False,
+                )
+            )
+            for _ in range(query_count)
+        )
+        expected = np.full((query_count, k), -1, dtype=np.int64)
+        positions = {int(item): index for index, item in enumerate(item_ids)}
+        for row, candidate_row in enumerate(candidates):
+            scored = []
+            for item in candidate_row:
+                position = positions.get(int(item))
+                score = (
+                    0.0
+                    if position is None
+                    else float(users[row] @ items[position])
+                )
+                scored.append((int(item), score))
+            ranked = [
+                item
+                for item, _ in sorted(
+                    scored, key=lambda pair: (-pair[1], pair[0])
+                )
+            ]
+            expected[row, : min(k, len(ranked))] = ranked[:k]
+        fallback = expected.copy()
+
+        for block_size in (1, 3, 16):
+            actual = retriever.search(
+                users,
+                items,
+                item_ids=item_ids,
+                candidates=candidates,
+                k=k,
+                warm_user_mask=warm,
+                fallback_topk=fallback,
+                missing_item_score=0.0,
+                score_block_size=block_size,
+            )
+            np.testing.assert_array_equal(actual, expected)
+
+
 def test_two_tower_reference_shapes_normalization_and_loss():
     model = NumpyTwoTowerReference(
         num_users=3,
@@ -422,7 +482,7 @@ def test_two_tower_encoded_ranking_uses_shared_cold_user_fallback():
     np.testing.assert_array_equal(ranked, [[10, 20], [20, 10]])
 
 
-def test_training_examples_are_causal_and_exclude_target_from_history():
+def test_training_examples_are_causal_and_require_first_item_contact():
     events = _events(
         [
             (1, 4, 0.5, 1000.0, 1000.0, 1.0),
@@ -436,16 +496,15 @@ def test_training_examples_are_causal_and_exclude_target_from_history():
     examples = build_two_tower_training_examples(events)
     lazy = build_two_tower_training_dataset(events)
 
-    assert len(lazy) == 3
-    np.testing.assert_array_equal(lazy[2].history, [1, 2, 3])
-    np.testing.assert_array_equal(examples.target_item_ids, [2, 3, 4])
+    assert len(lazy) == 2
+    np.testing.assert_array_equal(examples.target_item_ids, [2, 3])
     np.testing.assert_array_equal(examples.histories[0], [4, 1])
     np.testing.assert_array_equal(examples.histories[1], [4, 1])
-    np.testing.assert_array_equal(examples.histories[2], [1, 2, 3])
     for target, history in zip(
         examples.target_item_ids, examples.histories, strict=True
     ):
         assert int(target) not in set(int(item) for item in history)
+    assert 4 in examples.known_positive_items[1]
     assert examples.history_weights[0][1] == pytest.approx(0.025)
 
 
@@ -491,6 +550,71 @@ def test_bpr_epoch_sampler_excludes_all_known_positives_and_is_deterministic():
     assert len(trained.epoch_losses) == 2
     assert np.isfinite(trained.epoch_losses).all()
     assert 99 not in trained.model.item_ids
+
+
+def test_bpr_learns_at_formal_batch_size_and_is_seed_reproducible():
+    rows = []
+    for user in range(32):
+        positive_item = 1 + user % 4
+        observed_nonpositive = 10 + user % 4
+        for repeat in range(8):
+            timestamp = float(repeat * 2)
+            rows.extend(
+                [
+                    (user, positive_item, timestamp, 3000.0, 1000.0, 3.0),
+                    (
+                        user,
+                        observed_nonpositive,
+                        timestamp + 1.0,
+                        1000.0,
+                        1000.0,
+                        1.0,
+                    ),
+                ]
+            )
+    dataset = build_bpr_training_dataset(
+        _events(rows),
+        normal_item_ids=np.arange(1, 15, dtype=np.int64),
+        seed=17,
+    )
+    settings = {
+        "embedding_dim": 8,
+        "learning_rate": 0.25,
+        "l2": 1e-4,
+        "epochs": 20,
+        "batch_size": 4096,
+    }
+    first = train_bpr_sgd(dataset, **settings)
+    second = train_bpr_sgd(dataset, **settings)
+
+    assert first.epoch_losses[-1] < 0.60
+    np.testing.assert_array_equal(first.epoch_losses, second.epoch_losses)
+    np.testing.assert_array_equal(
+        first.model.user_factors, second.model.user_factors
+    )
+    np.testing.assert_array_equal(
+        first.model.item_factors, second.model.item_factors
+    )
+
+    user_positions = {
+        int(user): index for index, user in enumerate(first.model.user_ids)
+    }
+    item_positions = {
+        int(item): index for index, item in enumerate(first.model.item_ids)
+    }
+    negatives = dataset.sample_negatives(settings["epochs"] - 1)
+    correct = []
+    for user, positive, negative in zip(
+        dataset.user_ids, dataset.positive_item_ids, negatives, strict=True
+    ):
+        user_vector = first.model.user_factors[user_positions[int(user)]]
+        positive_vector = first.model.item_factors[item_positions[int(positive)]]
+        negative_vector = first.model.item_factors[item_positions[int(negative)]]
+        correct.append(
+            float(user_vector @ positive_vector)
+            > float(user_vector @ negative_vector)
+        )
+    assert np.mean(correct) >= 0.90
 
 
 def test_in_batch_mask_removes_duplicate_and_known_positive_false_negatives():

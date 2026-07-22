@@ -143,12 +143,20 @@ def _sgd_indexed_update(
     gradients: np.ndarray,
     *,
     learning_rate: float,
-    normalization: int,
 ) -> None:
-    unique, inverse = np.unique(indices, return_inverse=True)
+    """Average each sparse row by its own batch occurrence count.
+
+    Dividing by the full mini-batch makes a user or item that occurs once in a
+    4096-example batch receive only 1/4096 of its intended update.  Sparse
+    parameters instead average only the gradients that address that row.
+    """
+
+    unique, inverse, counts = np.unique(
+        indices, return_inverse=True, return_counts=True
+    )
     accumulated = np.zeros((len(unique), matrix.shape[1]), dtype=np.float32)
     np.add.at(accumulated, inverse, gradients)
-    matrix[unique] -= learning_rate * accumulated / float(normalization)
+    matrix[unique] -= learning_rate * accumulated / counts[:, None]
 
 
 def train_bpr_sgd(
@@ -216,27 +224,17 @@ def train_bpr_sgd(
             negative_gradient = (
                 coefficient[:, None] * user_vector + l2 * negative_vector
             )
-            normalization = len(batch)
             _sgd_indexed_update(
                 users,
                 user_index,
                 user_gradient,
                 learning_rate=learning_rate,
-                normalization=normalization,
             )
             _sgd_indexed_update(
                 items,
-                positive_index,
-                positive_gradient,
+                np.concatenate((positive_index, negative_index)),
+                np.concatenate((positive_gradient, negative_gradient), axis=0),
                 learning_rate=learning_rate,
-                normalization=normalization,
-            )
-            _sgd_indexed_update(
-                items,
-                negative_index,
-                negative_gradient,
-                learning_rate=learning_rate,
-                normalization=normalization,
             )
             total_loss += float(np.logaddexp(0.0, -score).sum())
             total_examples += len(batch)

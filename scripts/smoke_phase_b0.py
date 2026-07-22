@@ -26,11 +26,19 @@ def _elapsed(started: float) -> float:
     return round(time.perf_counter() - started, 4)
 
 
-def run(data_dir: Path, *, max_interactions: int, max_queries: int) -> dict[str, object]:
-    if not 1 <= max_interactions <= 100_000:
-        raise ValueError("max_interactions must be in [1, 100000]")
+def run(
+    data_dir: Path,
+    *,
+    max_interactions: int,
+    max_queries: int,
+    bpr_epochs: int,
+) -> dict[str, object]:
+    if not 1 <= max_interactions <= 1_000_000:
+        raise ValueError("max_interactions must be in [1, 1000000]")
     if not 1 <= max_queries <= 256:
         raise ValueError("max_queries must be in [1, 256]")
+    if not 1 <= bpr_epochs <= 20:
+        raise ValueError("bpr_epochs must be in [1, 20]")
     timings: dict[str, float] = {}
 
     started = time.perf_counter()
@@ -74,10 +82,41 @@ def run(data_dir: Path, *, max_interactions: int, max_queries: int) -> dict[str,
         embedding_dim=16,
         learning_rate=0.05,
         l2=1e-4,
-        epochs=1,
+        epochs=bpr_epochs,
         batch_size=4096,
     )
-    timings["bpr_one_epoch_s"] = _elapsed(started)
+    timings["bpr_training_s"] = _elapsed(started)
+
+    last_negatives = bpr_data.sample_negatives(bpr_epochs - 1)
+    user_positions = {
+        int(user): index for index, user in enumerate(trained.model.user_ids)
+    }
+    item_positions = {
+        int(item): index for index, item in enumerate(trained.model.item_ids)
+    }
+    user_index = np.fromiter(
+        (user_positions[int(user)] for user in bpr_data.user_ids),
+        dtype=np.int64,
+        count=len(bpr_data.user_ids),
+    )
+    positive_index = np.fromiter(
+        (item_positions[int(item)] for item in bpr_data.positive_item_ids),
+        dtype=np.int64,
+        count=len(bpr_data.positive_item_ids),
+    )
+    negative_index = np.fromiter(
+        (item_positions[int(item)] for item in last_negatives),
+        dtype=np.int64,
+        count=len(last_negatives),
+    )
+    final_margin = np.sum(
+        trained.model.user_factors[user_index]
+        * (
+            trained.model.item_factors[positive_index]
+            - trained.model.item_factors[negative_index]
+        ),
+        axis=1,
+    )
 
     started = time.perf_counter()
     known_users = trained.model.user_ids[:max_queries]
@@ -120,6 +159,7 @@ def run(data_dir: Path, *, max_interactions: int, max_queries: int) -> dict[str,
         "scope": "first_big_matrix_rows_only_no_final_no_small",
         "raw_interactions_requested": max_interactions,
         "canonical_interactions": len(events),
+        "canonical_users": int(events["user_id"].nunique()),
         "normal_sample_items": len(catalog),
         "static_source_variant_items": len(static.variant_static_item_ids),
         "bpr_positive_events": len(bpr_data.user_ids),
@@ -129,7 +169,16 @@ def run(data_dir: Path, *, max_interactions: int, max_queries: int) -> dict[str,
         "lazy_history_items_materialized": history_item_count,
         "ranking_queries_including_one_cold_user": len(query_users),
         "topk_shape": list(topk.shape),
-        "bpr_epoch_loss": trained.epoch_losses[0],
+        "bpr_epoch_losses": list(trained.epoch_losses),
+        "bpr_loss_strictly_decreasing": all(
+            later < earlier
+            for earlier, later in zip(
+                trained.epoch_losses, trained.epoch_losses[1:], strict=True
+            )
+        ),
+        "bpr_positive_over_sampled_negative_rate": float(
+            np.mean(final_margin > 0.0)
+        ),
         "timings": timings,
         "total_timed_s": round(sum(timings.values()), 4),
         "peak_rss_mb": round(
@@ -143,6 +192,7 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--max-interactions", type=int, default=100_000)
     parser.add_argument("--max-queries", type=int, default=128)
+    parser.add_argument("--bpr-epochs", type=int, default=3)
     args = parser.parse_args()
     print(
         json.dumps(
@@ -150,6 +200,7 @@ def main() -> None:
                 args.data_dir.resolve(),
                 max_interactions=args.max_interactions,
                 max_queries=args.max_queries,
+                bpr_epochs=args.bpr_epochs,
             ),
             indent=2,
             sort_keys=True,

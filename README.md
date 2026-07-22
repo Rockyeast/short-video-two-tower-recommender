@@ -64,11 +64,14 @@ KuaiRec `data/` directory. This worktree does not copy or modify raw data.
 - BPR cold items score zero. Two-Tower cold items disable the untrained ID
   embedding and use content only.
 - BPR resamples one fit-observed `NORMAL` negative per positive per epoch after
-  excluding all fit-known positives for that user; its Exact scorer uses
-  blocked matrix multiplication rather than Python dot products per candidate.
-- Two-Tower histories are strictly earlier than their target, exclude that
-  target, and mask duplicate/known-positive in-batch false negatives; quick
-  skips only downweight history in V1.
+  excluding all fit-known positives for that user. Sparse gradients are
+  normalized per addressed embedding rather than by the full batch; its Exact
+  scorer uses blocked matrix multiplication rather than Python dot products per
+  candidate.
+- Two-Tower targets must be a user's first interaction with that video; later
+  strong repeats are skipped rather than made artificially unseen. Histories
+  are strictly earlier than their target and mask duplicate/known-positive
+  in-batch false negatives; quick skips only downweight history in V1.
 - Model features are fail-closed to static/content fields; daily engagement
   aggregates are forbidden.
 - Metrics: Recall@20/50/100, NDCG@20, Coverage@100 and descriptive Data-Cold

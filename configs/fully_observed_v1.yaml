@@ -60,6 +60,7 @@ baselines:
       fixed_seed: 20260722
     cold_item_score: 0.0
     optimizer: mini_batch_sgd
+    sparse_gradient_normalization: per_embedding_occurrence_count
 two_tower:
   maximum_configurations: 3
   maximum_final_seeds: 3
@@ -70,7 +71,8 @@ two_tower:
   caption_encoder: frozen_precomputed
   training_examples:
     history_timestamp: strictly_before_target
-    exclude_target_from_own_history: true
+    target_eligibility: strong_positive_at_first_user_item_interaction
+    prior_any_interaction_with_target: skip_entire_example
     repeated_batch_target_is_negative: false
     other_known_user_positive_is_negative: false
     quick_skip: downweighted_history_only

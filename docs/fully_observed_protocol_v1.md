@@ -106,7 +106,9 @@ positive and each epoch, one uniform negative is resampled from fit-observed
 `NORMAL` videos after removing every strong-positive video known for that user
 in the fit context. The random seed is fixed. Restricting the negative catalog
 to fit-observed videos preserves the declared score-zero behavior for truly
-data-cold items.
+data-cold items. Mini-batch SGD averages a sparse user/item row only across the
+examples in that batch that address that row; it does not divide every sparse
+row update by the full batch size.
 
 Two-Tower V1 uses item ID, category, frozen/precomputed caption vectors and
 static features in the item tower. Allowed model inputs are exactly item ID,
@@ -123,12 +125,15 @@ before any FAISS experiment.
 
 ### Two-Tower training and cold-start contract
 
-For every strong-positive target at time `t`, history contains at most 50
-fit-context events with timestamp strictly less than `t`. Every occurrence of
-the target video is removed from its own history. Same-timestamp events cannot
-enter each other's histories. In-batch logits mask repeated targets and every
-other known fit-context positive of that row's user. Quick skips are
-downweighted history context only in V1, not explicit negatives.
+Only a strong-positive event at a user's first interaction with that video may
+be a training target. If any earlier interaction with the video exists, the
+entire later target example is skipped rather than fabricating an unseen event
+by deleting the video from history. For each retained target at time `t`,
+history contains at most 50 fit-context events with timestamp strictly less
+than `t`; same-timestamp events cannot enter each other's histories. In-batch
+logits mask repeated targets and every other known fit-context positive of that
+row's user. Quick skips are downweighted history context only in V1, not
+explicit negatives.
 
 BPR assigns every candidate without a trained item factor a fixed score of
 zero. Two-Tower zeros the ID-embedding contribution for an item whose ID

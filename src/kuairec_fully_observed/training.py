@@ -61,13 +61,23 @@ class TwoTowerTrainingDataset:
             strong &= np.isin(
                 self.item_ids, np.asarray(normal_item_ids, dtype=np.int64)
             )
-        self.positive_event_indices = np.flatnonzero(strong).astype(np.int64)
+        # The online task retrieves unseen items.  A later strong interaction
+        # with an already encountered item is therefore not a valid target;
+        # dropping only that item from history would fabricate an unseen event.
+        first_user_item_contact = ~events.duplicated(
+            ["user_id", "video_id"], keep="first"
+        ).to_numpy()
+        self.positive_event_indices = np.flatnonzero(
+            strong & first_user_item_contact
+        ).astype(np.int64)
         unique_users, starts = np.unique(self.user_ids, return_index=True)
         self._user_starts = {
             int(user): int(start) for user, start in zip(unique_users, starts, strict=True)
         }
         known: defaultdict[int, set[int]] = defaultdict(set)
-        for event_index in self.positive_event_indices:
+        # False-negative masking still needs every known strong-positive item,
+        # including later repeats that are intentionally not training targets.
+        for event_index in np.flatnonzero(strong):
             known[int(self.user_ids[event_index])].add(
                 int(self.item_ids[event_index])
             )
