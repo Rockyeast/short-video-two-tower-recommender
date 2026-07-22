@@ -12,6 +12,31 @@ dataset:
     - social_network.csv
     - kuairec_caption_category.csv
 
+protocol:
+  revision: protocol-v2.1.1
+  status: phase_0_protocol_audit_only
+  lineage:
+    parent_commit: 87a8267e1bef033652501ae373d72d06468946d0
+    parent_manifest_sha256: c8562306bf61ca266e70a5cea5258f58078594048298dbe90d58c100f26e822f
+    revision_reason: implement Small Matrix NORMAL/AD audit separation and frozen static scoring time
+  active_contracts:
+    event_canonicalization: contracts/event_canonicalization_v1.yaml
+    temporal_evaluation: contracts/temporal_evaluation_v2.yaml
+    small_matrix_audit: contracts/fully_observed_audit_v2.yaml
+    fit_contexts: contracts/fit_contexts_v1.yaml
+    candidate_catalog: contracts/candidate_catalog_v1.yaml
+    target_deduplication: contracts/target_deduplication_v1.yaml
+    cold_start: contracts/two_tower_cold_start_v2.yaml
+    metrics: contracts/metrics_v1.yaml
+    baselines: contracts/baselines_v1.yaml
+    negative_sampling: contracts/negative_sampling_v2.yaml
+  inactive_legacy_contracts:
+    - contracts/temporal_evaluation_v1.yaml
+    - contracts/fully_observed_audit_v1.yaml
+    - contracts/two_tower_cold_start_v1.yaml
+    - contracts/negative_sampling_v1.yaml
+  model_or_baseline_executed: false
+
 label:
   field: watch_ratio
   operator: ">"
@@ -27,8 +52,31 @@ split:
   train_fraction: 0.70
   validation_fraction: 0.15
   temporal_final_fraction: 0.15
+  fraction_validation:
+    keys: [train_fraction, validation_fraction, temporal_final_fraction]
+    each_fraction_strictly_between_zero_and_one: true
+    required_sum: 1.0
+    absolute_tolerance: 1.0e-12
   final_locked: true
   small_matrix_audit_locked: true
+
+fit_contexts:
+  selection:
+    fit_splits: [train]
+    evaluation_split: validation
+    cold_reference_splits: [train]
+  final:
+    fit_splits: [train, validation]
+    initialize_from_scratch: true
+    evaluation_split: temporal_final
+    cold_reference_splits: [train, validation]
+    evaluation_count: exactly_once
+  small_matrix_audit:
+    fit_artifact: frozen_final_fit_artifact
+    history_splits: [train, validation]
+    cold_reference_splits: [train, validation]
+    static_score_timestamp: validation_end_exclusive
+    evaluation_replay_or_state_update: forbidden
 
 evaluation:
   history_scope: all_events_strictly_before_query_timestamp
@@ -36,11 +84,47 @@ evaluation:
   simultaneous_timestamp_policy: group_targets_shared_pre_group_history
   filter_seen_items: true
   small_matrix_history_source: big_matrix_train_plus_validation_only
+  temporal_candidate_catalog: causal_normal_public_only
+  small_matrix_primary_candidates: observed_normal_pairs_excluding_blocked_or_missing
+  small_matrix_secondary_candidates: all_3327_for_blocked_safety_audit
+  temporal_final_status: phase_0_aggregate_audited_then_frozen
+  temporal_final_untouched_claim: false
+
+candidate_catalog:
+  primary_video_type: NORMAL
+  excluded_video_types: [AD]
+  allowed_visible_status: [public]
+  excluded_visible_status: [private, only friends]
+  visibility_snapshot: latest_row_strictly_before_query_local_date
+  inconsistent_upload_dt_policy: fail_closed_generation
+  inconsistent_video_type_policy: fail_closed_generation
+
+target_canonicalization:
+  key: [user_id, video_id, timestamp]
+  exact_duplicate_policy: retain_one_and_report
+  binary_label_conflict_policy: exclude_entire_key_and_report
+  same_positive_label_policy: coalesce_to_one_target_and_report
+  training_source: canonical_eligible_target_table_only
+
+event_canonicalization:
+  contract: contracts/event_canonicalization_v1.yaml
+  event_key: [user_id, video_id, timestamp]
+  required_consumers:
+    - split_membership_under_frozen_protocol_v2_boundaries
+    - temporal_history
+    - last_50_history
+    - seen_filter
+    - quick_skip_pool
+    - popularity
+  raw_rows_for_required_consumers: forbidden
 
 negative_sampling:
   session_gap_minutes: 30
   local_window_minutes: 30
   candidate_hard_negative_direction: future_from_query_time
+  future_window_may_cross_fit_cutoff: false
   seen_quick_skips_are_context_only: true
   random_unexposed_correction: sampled_softmax_log_expected_sampling_count
   correction_probability: full_source_mixture_probability
+  uniform_denominator: actual_eligible_pool_after_positive_target_removal
+  hard_negative_audit_required_before_two_tower: true

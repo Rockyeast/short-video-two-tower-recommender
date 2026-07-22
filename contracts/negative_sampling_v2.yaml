@@ -1,0 +1,134 @@
+contract_id: kuairec-mixed-negative-sampling-v2
+protocol_revision: protocol-v2.1.1
+status: active_design_only_two_tower_not_implemented
+
+fit_contexts: contracts/fit_contexts_v1.yaml
+candidate_catalog: contracts/candidate_catalog_v1.yaml
+target_contract: contracts/target_deduplication_v1.yaml
+event_contract: contracts/event_canonicalization_v1.yaml
+
+session:
+  sort: [user_id, timestamp]
+  new_session_when_gap_minutes_strictly_greater_than: 30
+  equal_timestamps_are_one_atomic_event_group: true
+
+candidate_hard_negatives:
+  source: nonconflicting_canonical_quick_skip_events
+  quick_skip_expression: play_duration < min(3000, video_duration)
+  terminology: same_session_future_window_observed_negative
+  not_same_impression: true
+  start: strictly_after_query_timestamp
+  end: >-
+    Minimum of query timestamp plus 30 minutes, same-session end, and the
+    current fit-context cutoff. A selection run may not inspect validation;
+    a final refit may not inspect temporal_final.
+  requirements:
+    - item_is_in_query_time_candidate_catalog
+    - item_is_unseen_under_canonical_events_strictly_before_query_time
+    - item_is_not_in_current_positive_target_set
+    - no_binary_label_conflict_at_negative_event_key
+
+seen_quick_skips:
+  role: history_context_and_seen_filter_only
+  eligible_as_primary_candidate_negative: false
+
+random_unexposed_negatives:
+  pool: >-
+    The actual query-time available and unseen candidate pool after removing
+    every item in the current positive target set.
+  distribution: uniform
+  denominator: actual_size_of_pool_after_positive_target_removal
+  per_source_probability: q_uniform(i|u,t) = 1 / actual_uniform_pool_size
+  empty_pool_policy: source_unavailable_and_mixture_renormalized
+  separate_loss_weight: none
+
+popular_negatives:
+  popularity_source: >-
+    Canonical targets whose target timestamp is strictly earlier than the
+    current query timestamp and strictly inside the current fit-context cutoff.
+    Targets at the query timestamp or later are unavailable.
+  query_time_causal: true
+  may_cross_fit_cutoff: false
+  exclude: current_positive_target_set
+  pool: query_time_available_and_unseen_candidate_pool
+  distribution: count(i)^0.75 normalized over the actual eligible pool
+  per_source_probability: q_popular(i|u,t) = count(i)^0.75 / eligible_pool_mass
+
+candidate_hard_negative_distribution:
+  pool: deduplicated eligible hard-negative item IDs excluding current targets
+  distribution: uniform
+  per_source_probability: q_hard(i|u,t) = 1 / actual_hard_pool_size
+
+sampled_source_mixture:
+  hyperparameter_selection_split: validation_only
+  preregistered_candidates:
+    - {name: uniform_only, uniform: 1.0, hard: 0.0, popular: 0.0}
+    - {name: balanced, uniform: 0.3333333333, hard: 0.3333333333, popular: 0.3333333334}
+    - {name: hard_heavy, uniform: 0.25, hard: 0.5, popular: 0.25}
+  empty_source_pool: renormalize_nonzero_source_weights_and_record_effective_weights
+  sampling: with_replacement
+
+probability_correction:
+  total_probability: >-
+    q(i|u,t) = pi_uniform*q_uniform(i|u,t) + pi_hard*q_hard(i|u,t)
+    + pi_popular*q_popular(i|u,t), using effective weights after empty-pool
+    renormalization and summing overlapping source support exactly once.
+  sampled_softmax_logit_adjustment: subtract log(K * q(i|u,t))
+  required_log_fields:
+    - sampled_item_id
+    - selected_source
+    - effective_source_weights
+    - actual_source_pool_sizes
+    - q_source
+    - q_total
+    - K
+  arbitrary_source_specific_loss_weight: forbidden
+
+in_batch_negatives:
+  source: other canonical positive items in the training batch
+  masking:
+    - current_query_positive_target_set
+    - positive_items_known_for_this_user_strictly_before_query_timestamp
+  future_positive_labels_in_current_fit_context_may_be_read_for_masking: false
+  same_timestamp_other_targets_are_in_current_query_positive_target_set: true
+  probability: empirical canonical-positive item frequency in current fit context
+  correction: subtract log((batch_size - 1) * q_batch(i))
+  enters_sampled_source_mixture: false
+
+pre_two_tower_audit_gate:
+  required_before_implementation: true
+  run_scope: fit_data_only_never_validation_or_final_labels
+  required_pool_coverage:
+    - fraction_of_training_queries_with_nonempty_hard_pool
+    - hard_pool_size_distribution
+    - eligible_hard_items_per_query_distribution
+    - source_mixture_effective_weight_distribution
+  false_negative_risk:
+    unit: deduplicated_hard_negative_query_item_pair
+    denominator: count_of_all_deduplicated_hard_query_item_pairs
+    pair_level_rates:
+      - later_strong_positive_in_remaining_same_session
+      - later_strong_positive_within_1_day
+      - later_strong_positive_within_7_days
+      - later_strong_positive_before_current_fit_cutoff
+    universal_later_positive_time_rule: >-
+      Every later-positive diagnostic requires query_timestamp <
+      later_timestamp < current_fit_context_end_exclusive.
+    remaining_session_upper_bound: >-
+      min(session_end_exclusive, current_fit_context_end_exclusive)
+    query_level_any_risk:
+      denominator: training_queries_with_at_least_one_hard_negative_pair
+      metrics:
+        - any_hard_item_later_positive_in_remaining_same_session
+        - any_hard_item_later_positive_within_1_day
+        - any_hard_item_later_positive_within_7_days
+        - any_hard_item_later_positive_before_current_fit_cutoff
+    report_pair_and_query_counts_with_every_rate: true
+  future_positive_lookup:
+    purpose: post_hoc_diagnostic_only
+    may_filter_hard_negative_pool: false
+    may_change_sampler_or_mixture: false
+    may_select_hyperparameters: false
+    may_enter_training_features_or_loss: false
+    same_event_key_positive_and_quick_skip_conflict: exclude_from_hard_pool
+  validation_or_final_lookup_for_training_decisions: forbidden

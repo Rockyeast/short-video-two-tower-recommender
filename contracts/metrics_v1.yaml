@@ -1,0 +1,148 @@
+contract_id: kuairec-ranking-metrics-v1
+protocol_revision: protocol-v2.1.1
+status: active_protocol_only_no_metric_evaluation_executed
+
+relevance:
+  type: binary
+  temporal:
+    expression: watch_ratio > 2.0
+    target_source: canonical eligible temporal target table
+    scope: query-time causal NORMAL-only candidate task
+  small_matrix_primary:
+    expression: watch_ratio > 2.0
+    target_source: physically observed Small Matrix pairs
+    scope: per-user observed NORMAL pairs after blocked_or_missing exclusion
+  small_matrix_ad_diagnostic:
+    expression: watch_ratio > 2.0
+    target_source: physically observed Small Matrix AD pairs
+    aggregation: separate_from_primary
+  blocked_or_missing_pairs:
+    relevance: undefined
+    allowed_use: exclusion_mask_and_secondary_safety_metrics_only
+
+ranking:
+  primary_sort:
+    - score_descending
+    - video_id_ascending
+  nan_score: negative_infinity
+  topk_length: min(K, candidate_count)
+  duplicate_recommendations: forbidden
+
+ks:
+  recall: [20, 50, 100]
+  ndcg: [10, 20]
+  coverage: [20, 50, 100]
+  tail_recall: [20, 50, 100]
+  cold_recall: [20, 50, 100]
+  blocked: [10, 20, 50, 100]
+
+query_metrics:
+  Recall@K: >-
+    count(TopK(query) intersect targets(query)) divided by
+    count(targets(query)).
+  DCG@K: >-
+    Sum binary_relevance_at_rank divided by log2(rank + 1) for ranks 1..K.
+  IDCG@K: >-
+    Sum 1 divided by log2(rank + 1) for ranks
+    1..min(K, count(targets(query))).
+  NDCG@K: DCG@K divided by IDCG@K
+  zero_target_query: forbidden_by_evaluation_contract
+
+aggregation:
+  temporal_primary: query_macro_mean
+  temporal_secondary: user_macro_mean_of_each_users_query_mean
+  small_matrix_primary: user_macro_mean
+  report_both_temporal_aggregations: true
+  segment_query_without_segment_target: exclude_from_segment_mean_and_report_count
+
+coverage:
+  Coverage@K: >-
+    Number of unique videos occurring in any TopK divided by the number of
+    unique videos in the union of eligible candidate sets for evaluated queries.
+  report_numerator_and_denominator: true
+  bootstrap_interval_required: false
+
+popularity_segments:
+  count_source: canonical positive targets in the context-specific fit data
+  count_unit: one canonical user-video target
+  order: count_descending_then_video_id_ascending
+  head_definition: >-
+    The smallest ordered prefix whose cumulative count reaches at least
+    80 percent of all fit-target counts.
+  tail_definition: data-warm items outside the head
+  cold_definition: contracts/two_tower_cold_start_v2.yaml
+  membership_count_and_sha256_required: true
+
+segment_metrics:
+  TailRecall@K: >-
+    For queries with at least one tail target, count TopK tail-target hits
+    divided by count tail targets.
+  ColdRecall@K: >-
+    For queries with at least one cold target, count TopK cold-target hits
+    divided by count cold targets.
+  WarmRecall@K: >-
+    For queries with at least one warm target, count TopK warm-target hits
+    divided by count warm targets.
+  required_denominators:
+    - query_count
+    - user_count
+    - target_count
+
+small_matrix_safety:
+  source_contract: contracts/fully_observed_audit_v2.yaml
+  Blocked@K_per_user: >-
+    count(TopK_full_catalog(user) intersect blocked_set(user)) divided by
+    min(K, full_catalog_size).
+  Blocked@K: macro mean over every evaluated Small Matrix user
+  Blocked@K_blocked_users: macro mean over users with nonempty blocked set
+  BlockedUserHitRate@K: >-
+    fraction of evaluated users with at least one blocked item in TopK.
+  direction: lower_is_better
+
+uncertainty:
+  method: paired_user_cluster_bootstrap
+  resampling_unit: user_id
+  include_all_queries_for_sampled_user: true
+  replicates: 2000
+  confidence_level: 0.95
+  interval: percentile
+  seed: 20260721
+  paired_comparison_uses_identical_resamples: true
+  required_for:
+    - Recall@20
+    - Recall@50
+    - Recall@100
+    - NDCG@10
+    - NDCG@20
+    - TailRecall@20
+    - TailRecall@50
+    - TailRecall@100
+    - ColdRecall@20
+    - ColdRecall@50
+    - ColdRecall@100
+
+randomness:
+  random_baseline_seeds: [20260721, 20260722, 20260723, 20260724, 20260725]
+  bpr_training_seeds: [20260721, 20260722, 20260723]
+  random_rank_score: sha256(protocol_seed, query_id, video_id)
+  iteration_or_chunk_order_may_change_random_ranking: false
+
+model_selection:
+  split: validation_only
+  lexicographic_objective:
+    - maximize: Recall@100
+    - maximize: NDCG@20
+    - maximize: Coverage@100
+    - minimize: model_complexity
+    - minimize: canonical_hyperparameter_json
+
+required_result_metadata:
+  - protocol_revision
+  - split_manifest_sha256
+  - metrics_contract_sha256
+  - candidate_catalog_contract_sha256
+  - target_table_sha256
+  - fit_context
+  - code_commit
+  - random_seeds
+  - query_user_target_and_candidate_counts

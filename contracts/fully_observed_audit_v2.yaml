@@ -1,0 +1,113 @@
+contract_id: kuairec-small-matrix-nearly-fully-observed-audit-v2
+protocol_revision: protocol-v2.1.1
+status: active_protocol_only_no_model_or_baseline_executed
+purpose: static_preference_ranking_audit_not_future_forecast
+
+sources:
+  model_fit: big_matrix.csv
+  ground_truth: small_matrix.csv
+  video_type: item_daily_features.csv
+
+label:
+  expression: watch_ratio > 2.0
+  boundary_value_2_is_positive: false
+
+blocked_pairs:
+  catalog: sorted unique video_ids physically present anywhere in small_matrix.csv
+  observed_pair_set: O_u = unique pairs physically present for user u
+  blocked_or_missing_pair_set: B_u = catalog minus O_u
+  semantics: official_user_blocked_video_or_author
+  inference_granularity: pair_level_only
+  expand_to_other_videos_by_same_author: false
+  allowed_use:
+    - primary_evaluation_candidate_filter
+    - secondary_safety_metric
+  forbidden_use:
+    - training_feature
+    - training_label
+    - feature_construction
+    - user_history
+    - negative_sampling
+    - hyperparameter_selection
+
+video_type_scope:
+  primary_catalog: C_NORMAL = Small Matrix catalog videos with consistent video_type NORMAL
+  primary_task_alignment: contracts/candidate_catalog_v1.yaml
+  ad_catalog: C_AD = Small Matrix catalog videos with consistent video_type AD
+  inconsistent_or_missing_video_type: exclude_and_report
+  ad_rows_videos_users_and_quality_metrics: report_separately
+  pool_ad_with_primary_quality_metrics: forbidden
+
+user_representation:
+  fit_context: small_matrix_audit
+  contract: contracts/fit_contexts_v1.yaml
+  source_splits: [train, validation]
+  cutoff: validation_end_exclusive
+  forbidden_sources: [temporal_final, small_matrix]
+
+primary_evaluation:
+  name: blocked_filtered_normal_only_nearly_fully_observed_ranking
+  candidate_set: (catalog minus B_u) intersect C_NORMAL
+  equivalent_candidate_set: O_u intersect C_NORMAL
+  relevance_set: observed NORMAL pairs with watch_ratio > 2.0
+  observed_nonpositive_pairs_remain_candidates: true
+  users_without_positive_ground_truth: exclude_and_report
+  full_3327_claim: false
+  metrics_contract: contracts/metrics_v1.yaml
+
+separate_ad_quality_diagnostic:
+  candidate_set: O_u intersect C_AD
+  relevance_set: observed AD pairs with watch_ratio > 2.0
+  metrics: [Recall@20, Recall@50, Recall@100, NDCG@10, NDCG@20]
+  users_without_positive_ad_ground_truth: exclude_and_report
+  combine_with_primary_quality_metrics: forbidden
+
+secondary_safety_audit:
+  name: full_3327_catalog_blocked_safety_audit
+  candidate_set: all_3327_small_matrix_catalog_videos
+  purpose: measure whether an unfiltered scorer would surface blocked items
+  model_quality_claim_from_secondary_audit: forbidden
+  blocked_relevance_label: undefined_not_negative
+  required_metrics:
+    - Blocked@10
+    - Blocked@20
+    - Blocked@50
+    - Blocked@100
+    - Blocked@10_blocked_users
+    - Blocked@20_blocked_users
+    - Blocked@50_blocked_users
+    - Blocked@100_blocked_users
+    - BlockedUserHitRate@10
+    - BlockedUserHitRate@20
+    - BlockedUserHitRate@50
+    - BlockedUserHitRate@100
+
+blocked_metrics:
+  Blocked@K_per_user: >-
+    count(TopK_full_catalog(u) intersect B_u) divided by
+    min(K, full_catalog_size)
+  Blocked@K: macro mean of Blocked@K_per_user over all evaluated users
+  Blocked@K_blocked_users: >-
+    macro mean over users with at least one blocked or missing pair
+  BlockedUserHitRate@K: >-
+    fraction of all evaluated users with at least one B_u item in
+    TopK_full_catalog(u)
+  direction: lower_is_better
+  ideal: 0.0
+
+time_claim:
+  future_forecast: false
+  static_catalog: true
+  upload_time_filter_applied: false
+
+time_decayed_popularity:
+  static_score_timestamp: validation_end_exclusive
+  state_source: frozen train+validation fit state
+  small_matrix_event_replay: forbidden
+  small_matrix_state_update: forbidden
+
+lock:
+  locked_by_default: true
+  ordinary_baseline_entrypoint_access: forbidden
+  explicit_audit_entrypoint_required: true
+  non_overwritable_receipt_required: true

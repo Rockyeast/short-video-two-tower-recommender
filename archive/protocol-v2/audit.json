@@ -1,0 +1,2716 @@
+{
+  "schema_version": 2,
+  "protocol_revision": "protocol-v2",
+  "generated_at_utc": "2026-07-21T17:17:46.276639+00:00",
+  "phase": "phase_0_data_and_evaluation_audit_only",
+  "model_or_baseline_executed": false,
+  "final_ranking_evaluation_executed": false,
+  "config_sha256": "473a0aaf717ee6aeb603efb67bb41f247f77bc149588196bcbf1dc3c090c1f6c",
+  "files": {
+    "big_matrix.csv": {
+      "path": "data/raw/KuaiRec 2.0/data/big_matrix.csv",
+      "size_bytes": 1083521226,
+      "rows": 12530806,
+      "columns": 8,
+      "fields": [
+        {
+          "name": "user_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "video_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "play_duration",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "video_duration",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "time",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "date",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "timestamp",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "watch_ratio",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        }
+      ],
+      "interaction": {
+        "users": 7176,
+        "videos": 10728,
+        "dates": [
+          20200705,
+          20200706,
+          20200707,
+          20200708,
+          20200709,
+          20200710,
+          20200711,
+          20200712,
+          20200801,
+          20200802,
+          20200803,
+          20200804,
+          20200805,
+          20200806,
+          20200807,
+          20200808,
+          20200809,
+          20200810,
+          20200827,
+          20200828,
+          20200829,
+          20200830,
+          20200831,
+          20200901,
+          20200902,
+          20200903,
+          20200904,
+          20200905
+        ],
+        "date_min": 20200705,
+        "date_max": 20200905,
+        "timestamp_min": 1592872451.373,
+        "timestamp_max": 1599694332.427,
+        "timestamp_min_utc": "2020-06-23T00:34:11.373000+00:00",
+        "timestamp_max_utc": "2020-09-09T23:32:12.427000+00:00",
+        "timestamp_min_asia_shanghai": "2020-06-23T08:34:11.373000+08:00",
+        "timestamp_max_asia_shanghai": "2020-09-10T07:32:12.427000+08:00",
+        "date_field_consistency": {
+          "comparison": "date versus timestamp converted to Asia/Shanghai calendar date",
+          "comparable_rows": 12530806,
+          "mismatch_count": 15530,
+          "mismatch_fraction": 0.0012393456574142157,
+          "split_uses_raw_date_field": false
+        },
+        "watch_ratio": {
+          "mean": 0.944505920574188,
+          "min": 0.0,
+          "max": 573.4571428571429,
+          "buckets": {
+            "missing": 0,
+            "watch_ratio < 0": 0,
+            "0 <= watch_ratio < 0.25": 2607852,
+            "0.25 <= watch_ratio < 0.5": 1891163,
+            "0.5 <= watch_ratio < 1": 3793563,
+            "1 <= watch_ratio <= 2": 3301838,
+            "watch_ratio > 2": 936390
+          }
+        },
+        "positive_count": 936390,
+        "positive_fraction": 0.07472703671256263,
+        "quick_skip_count": 2307003,
+        "quick_skip_fraction": 0.18410651318039717,
+        "events_per_user": {
+          "count": 7176,
+          "mean": 1746.2104236343366,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 100.0,
+            "p25": 883.0,
+            "p50": 1846.5,
+            "p75": 2461.0,
+            "p90": 2912.5,
+            "p95": 3244.5,
+            "p99": 4021.25,
+            "p100": 16015.0
+          }
+        },
+        "positives_per_user": {
+          "count": 7176,
+          "mean": 130.4891304347826,
+          "zero_count": 1,
+          "zero_fraction": 0.00013935340022296544,
+          "quantiles": {
+            "p00": 0.0,
+            "p25": 46.0,
+            "p50": 97.0,
+            "p75": 178.0,
+            "p90": 281.0,
+            "p95": 361.25,
+            "p99": 537.75,
+            "p100": 2244.0
+          }
+        }
+      }
+    },
+    "small_matrix.csv": {
+      "path": "data/raw/KuaiRec 2.0/data/small_matrix.csv",
+      "size_bytes": 406155844,
+      "rows": 4676570,
+      "columns": 8,
+      "fields": [
+        {
+          "name": "user_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "video_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "play_duration",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "video_duration",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "time",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 181992,
+          "missing_fraction": 0.0389157010372987
+        },
+        {
+          "name": "date",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 181992,
+          "missing_fraction": 0.0389157010372987
+        },
+        {
+          "name": "timestamp",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 181992,
+          "missing_fraction": 0.0389157010372987
+        },
+        {
+          "name": "watch_ratio",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        }
+      ],
+      "interaction": {
+        "users": 1411,
+        "videos": 3327,
+        "dates": [
+          20200705,
+          20200706,
+          20200707,
+          20200708,
+          20200709,
+          20200710,
+          20200711,
+          20200712,
+          20200713,
+          20200714,
+          20200715,
+          20200716,
+          20200717,
+          20200718,
+          20200719,
+          20200720,
+          20200721,
+          20200722,
+          20200723,
+          20200724,
+          20200725,
+          20200726,
+          20200727,
+          20200728,
+          20200729,
+          20200730,
+          20200731,
+          20200801,
+          20200802,
+          20200803,
+          20200804,
+          20200805,
+          20200806,
+          20200807,
+          20200808,
+          20200809,
+          20200810,
+          20200811,
+          20200812,
+          20200813,
+          20200814,
+          20200815,
+          20200816,
+          20200817,
+          20200818,
+          20200819,
+          20200820,
+          20200821,
+          20200822,
+          20200823,
+          20200824,
+          20200825,
+          20200826,
+          20200827,
+          20200828,
+          20200829,
+          20200830,
+          20200831,
+          20200901,
+          20200902,
+          20200903,
+          20200904,
+          20200905
+        ],
+        "date_min": 20200705,
+        "date_max": 20200905,
+        "timestamp_min": 1593800606.06,
+        "timestamp_max": 1599321443.683,
+        "timestamp_min_utc": "2020-07-03T18:23:26.060000+00:00",
+        "timestamp_max_utc": "2020-09-05T15:57:23.683000+00:00",
+        "timestamp_min_asia_shanghai": "2020-07-04T02:23:26.060000+08:00",
+        "timestamp_max_asia_shanghai": "2020-09-05T23:57:23.683000+08:00",
+        "date_field_consistency": {
+          "comparison": "date versus timestamp converted to Asia/Shanghai calendar date",
+          "comparable_rows": 4494578,
+          "mismatch_count": 1213,
+          "mismatch_fraction": 0.00026988073185068765,
+          "split_uses_raw_date_field": false
+        },
+        "watch_ratio": {
+          "mean": 0.9070694783381411,
+          "min": 0.0,
+          "max": 571.5214280603849,
+          "buckets": {
+            "missing": 0,
+            "watch_ratio < 0": 0,
+            "0 <= watch_ratio < 0.25": 594959,
+            "0.25 <= watch_ratio < 0.5": 680138,
+            "0.5 <= watch_ratio < 1": 1886423,
+            "1 <= watch_ratio <= 2": 1297875,
+            "watch_ratio > 2": 217175
+          }
+        },
+        "positive_count": 217175,
+        "positive_fraction": 0.04643894991414648,
+        "quick_skip_count": 362931,
+        "quick_skip_fraction": 0.0776062370498036,
+        "events_per_user": {
+          "count": 1411,
+          "mean": 3314.3656980864635,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 3295.0,
+            "p25": 3309.0,
+            "p50": 3315.0,
+            "p75": 3320.0,
+            "p90": 3323.0,
+            "p95": 3324.0,
+            "p99": 3326.0,
+            "p100": 3327.0
+          }
+        },
+        "positives_per_user": {
+          "count": 1411,
+          "mean": 153.9156626506024,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 6.0,
+            "p25": 44.0,
+            "p50": 95.0,
+            "p75": 222.5,
+            "p90": 376.0,
+            "p95": 458.0,
+            "p99": 671.3000000000006,
+            "p100": 993.0
+          }
+        }
+      }
+    },
+    "item_categories.csv": {
+      "path": "data/raw/KuaiRec 2.0/data/item_categories.csv",
+      "size_bytes": 113130,
+      "rows": 10728,
+      "columns": 2,
+      "fields": [
+        {
+          "name": "video_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "feat",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        }
+      ]
+    },
+    "item_daily_features.csv": {
+      "path": "data/raw/KuaiRec 2.0/data/item_daily_features.csv",
+      "size_bytes": 85855213,
+      "rows": 343341,
+      "columns": 58,
+      "fields": [
+        {
+          "name": "video_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "date",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "author_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "video_type",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "upload_dt",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "upload_type",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "visible_status",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "video_duration",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 10598,
+          "missing_fraction": 0.030867271895870286
+        },
+        {
+          "name": "video_width",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "video_height",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "music_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "video_tag_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "video_tag_name",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 32434,
+          "missing_fraction": 0.0944658517334079
+        },
+        {
+          "name": "show_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "show_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "play_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "play_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "play_duration",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "complete_play_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "complete_play_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "valid_play_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "valid_play_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "long_time_play_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "long_time_play_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "short_time_play_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "short_time_play_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "play_progress",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "comment_stay_duration",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "like_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "like_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "click_like_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "double_click_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "cancel_like_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "cancel_like_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "comment_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "comment_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "direct_comment_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "reply_comment_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "delete_comment_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "delete_comment_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "comment_like_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "comment_like_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "follow_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "follow_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "cancel_follow_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "cancel_follow_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "share_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "share_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "download_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "download_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "report_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "report_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "reduce_similar_cnt",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "reduce_similar_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "collect_cnt",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 69683,
+          "missing_fraction": 0.20295566215511693
+        },
+        {
+          "name": "collect_user_num",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 69683,
+          "missing_fraction": 0.20295566215511693
+        },
+        {
+          "name": "cancel_collect_cnt",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 69683,
+          "missing_fraction": 0.20295566215511693
+        },
+        {
+          "name": "cancel_collect_user_num",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 69683,
+          "missing_fraction": 0.20295566215511693
+        }
+      ]
+    },
+    "user_features.csv": {
+      "path": "data/raw/KuaiRec 2.0/data/user_features.csv",
+      "size_bytes": 744174,
+      "rows": 7176,
+      "columns": 31,
+      "fields": [
+        {
+          "name": "user_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "user_active_degree",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "is_lowactive_period",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "is_live_streamer",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "is_video_author",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "follow_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "follow_user_num_range",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "fans_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "fans_user_num_range",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "friend_user_num",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "friend_user_num_range",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "register_days",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "register_days_range",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat0",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat1",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat2",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat3",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat4",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 201,
+          "missing_fraction": 0.028010033444816052
+        },
+        {
+          "name": "onehot_feat5",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat6",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat7",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat8",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat9",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat10",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat11",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "onehot_feat12",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 77,
+          "missing_fraction": 0.010730211817168338
+        },
+        {
+          "name": "onehot_feat13",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 75,
+          "missing_fraction": 0.010451505016722408
+        },
+        {
+          "name": "onehot_feat14",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 75,
+          "missing_fraction": 0.010451505016722408
+        },
+        {
+          "name": "onehot_feat15",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 74,
+          "missing_fraction": 0.010312151616499442
+        },
+        {
+          "name": "onehot_feat16",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 74,
+          "missing_fraction": 0.010312151616499442
+        },
+        {
+          "name": "onehot_feat17",
+          "observed_dtypes": [
+            "float64"
+          ],
+          "missing_count": 74,
+          "missing_fraction": 0.010312151616499442
+        }
+      ]
+    },
+    "social_network.csv": {
+      "path": "data/raw/KuaiRec 2.0/data/social_network.csv",
+      "size_bytes": 6910,
+      "rows": 472,
+      "columns": 2,
+      "fields": [
+        {
+          "name": "user_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "friend_list",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        }
+      ]
+    },
+    "kuairec_caption_category.csv": {
+      "path": "data/raw/KuaiRec 2.0/data/kuairec_caption_category.csv",
+      "size_bytes": 1964578,
+      "rows": 10728,
+      "columns": 10,
+      "fields": [
+        {
+          "name": "video_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "manual_cover_text",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "caption",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 1355,
+          "missing_fraction": 0.12630499627143923
+        },
+        {
+          "name": "topic_tag",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "first_level_category_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "first_level_category_name",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "second_level_category_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "second_level_category_name",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "third_level_category_id",
+          "observed_dtypes": [
+            "int64"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        },
+        {
+          "name": "third_level_category_name",
+          "observed_dtypes": [
+            "object"
+          ],
+          "missing_count": 0,
+          "missing_fraction": 0.0
+        }
+      ],
+      "parser_note": {
+        "bare_carriage_return_bytes": 4,
+        "record_terminator": "LF only",
+        "reason": "The default pandas C parser overflows and the Python parser misreads embedded bare CR bytes as extra records."
+      }
+    }
+  },
+  "splits": {
+    "train": {
+      "timestamp_start_inclusive": 1592872451.373,
+      "timestamp_end_inclusive": 1597015523.497,
+      "time_start_asia_shanghai": "2020-06-23T08:34:11.373000+08:00",
+      "time_end_asia_shanghai": "2020-08-10T07:25:23.497000+08:00",
+      "rows": 8771564,
+      "users": 7174,
+      "videos": 7896,
+      "positive_count": 658907,
+      "eligible_positive_count": 533835,
+      "interaction_before_declared_upload_date_count": 1025,
+      "interaction_same_day_upload_time_unverifiable_count": 699059,
+      "positive_before_declared_upload_date_count": 212,
+      "positive_same_day_upload_time_unverifiable_count": 65995,
+      "positive_missing_upload_count": 0,
+      "positive_previously_seen_count": 42281,
+      "positive_missing_catalog_metadata_count": 0,
+      "positive_without_prior_status_count": 16473,
+      "positive_ad_video_count": 91,
+      "positive_not_public_count": 20,
+      "unique_eligible_target_count": 497117,
+      "target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 533835,
+        "exact_duplicate_positive_rows_removed": 36593,
+        "exact_duplicate_positive_key_count": 36593,
+        "same_key_nonexact_positive_rows_removed": 125,
+        "same_key_nonexact_positive_key_count": 124,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 1,
+        "canonical_target_count": 497117,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 5119,
+          "extras_per_affected_user": {
+            "count": 5119,
+            "mean": 7.172885329165853,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 2.0,
+              "p50": 4.0,
+              "p75": 9.0,
+              "p90": 17.0,
+              "p95": 23.0,
+              "p99": 44.0,
+              "p100": 132.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 2814,
+              "extra_count": 132
+            },
+            {
+              "user_id": 1424,
+              "extra_count": 130
+            },
+            {
+              "user_id": 1916,
+              "extra_count": 111
+            },
+            {
+              "user_id": 952,
+              "extra_count": 86
+            },
+            {
+              "user_id": 2963,
+              "extra_count": 86
+            },
+            {
+              "user_id": 3878,
+              "extra_count": 85
+            },
+            {
+              "user_id": 1476,
+              "extra_count": 82
+            },
+            {
+              "user_id": 4613,
+              "extra_count": 75
+            },
+            {
+              "user_id": 2298,
+              "extra_count": 71
+            },
+            {
+              "user_id": 3200,
+              "extra_count": 68
+            },
+            {
+              "user_id": 6916,
+              "extra_count": 65
+            },
+            {
+              "user_id": 4696,
+              "extra_count": 64
+            },
+            {
+              "user_id": 3421,
+              "extra_count": 62
+            },
+            {
+              "user_id": 4200,
+              "extra_count": 62
+            },
+            {
+              "user_id": 2465,
+              "extra_count": 60
+            },
+            {
+              "user_id": 5126,
+              "extra_count": 60
+            },
+            {
+              "user_id": 5848,
+              "extra_count": 59
+            },
+            {
+              "user_id": 1313,
+              "extra_count": 58
+            },
+            {
+              "user_id": 2679,
+              "extra_count": 58
+            },
+            {
+              "user_id": 2825,
+              "extra_count": 58
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-07-06": 3,
+            "2020-07-07": 4,
+            "2020-07-08": 4,
+            "2020-07-09": 1,
+            "2020-07-10": 4,
+            "2020-07-11": 10,
+            "2020-07-31": 2,
+            "2020-08-01": 4,
+            "2020-08-02": 3,
+            "2020-08-03": 21,
+            "2020-08-04": 31,
+            "2020-08-05": 36558,
+            "2020-08-06": 37,
+            "2020-08-07": 8,
+            "2020-08-08": 27,
+            "2020-08-09": 1
+          }
+        }
+      },
+      "pre_catalog_target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 549976,
+        "exact_duplicate_positive_rows_removed": 36603,
+        "exact_duplicate_positive_key_count": 36603,
+        "same_key_nonexact_positive_rows_removed": 131,
+        "same_key_nonexact_positive_key_count": 129,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 1,
+        "canonical_target_count": 513242,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 5119,
+          "extras_per_affected_user": {
+            "count": 5119,
+            "mean": 7.176010939636647,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 2.0,
+              "p50": 4.0,
+              "p75": 9.0,
+              "p90": 17.0,
+              "p95": 23.0,
+              "p99": 44.0,
+              "p100": 132.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 2814,
+              "extra_count": 132
+            },
+            {
+              "user_id": 1424,
+              "extra_count": 130
+            },
+            {
+              "user_id": 1916,
+              "extra_count": 111
+            },
+            {
+              "user_id": 952,
+              "extra_count": 86
+            },
+            {
+              "user_id": 2963,
+              "extra_count": 86
+            },
+            {
+              "user_id": 3878,
+              "extra_count": 85
+            },
+            {
+              "user_id": 1476,
+              "extra_count": 82
+            },
+            {
+              "user_id": 4613,
+              "extra_count": 75
+            },
+            {
+              "user_id": 2298,
+              "extra_count": 71
+            },
+            {
+              "user_id": 3200,
+              "extra_count": 68
+            },
+            {
+              "user_id": 6916,
+              "extra_count": 65
+            },
+            {
+              "user_id": 4696,
+              "extra_count": 64
+            },
+            {
+              "user_id": 3421,
+              "extra_count": 62
+            },
+            {
+              "user_id": 4200,
+              "extra_count": 62
+            },
+            {
+              "user_id": 2465,
+              "extra_count": 60
+            },
+            {
+              "user_id": 5126,
+              "extra_count": 60
+            },
+            {
+              "user_id": 5848,
+              "extra_count": 59
+            },
+            {
+              "user_id": 1313,
+              "extra_count": 58
+            },
+            {
+              "user_id": 2679,
+              "extra_count": 58
+            },
+            {
+              "user_id": 2825,
+              "extra_count": 58
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-07-05": 6,
+            "2020-07-06": 3,
+            "2020-07-07": 4,
+            "2020-07-08": 4,
+            "2020-07-09": 1,
+            "2020-07-10": 4,
+            "2020-07-11": 10,
+            "2020-07-31": 2,
+            "2020-08-01": 4,
+            "2020-08-02": 3,
+            "2020-08-03": 21,
+            "2020-08-04": 31,
+            "2020-08-05": 36568,
+            "2020-08-06": 37,
+            "2020-08-07": 8,
+            "2020-08-08": 27,
+            "2020-08-09": 1
+          }
+        }
+      },
+      "positive_fraction": 0.07511853074320611,
+      "temporal_query_count": 497117,
+      "multi_target_query_count": 0,
+      "multi_target_query_fraction": 0.0,
+      "targets_per_query": {
+        "count": 497117,
+        "mean": 1.0,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 1.0,
+          "p50": 1.0,
+          "p75": 1.0,
+          "p90": 1.0,
+          "p95": 1.0,
+          "p99": 1.0,
+          "p100": 1.0
+        }
+      },
+      "positives_per_active_user": {
+        "count": 7174,
+        "mean": 91.84652913298021,
+        "zero_count": 12,
+        "zero_fraction": 0.0016727069974909396,
+        "quantiles": {
+          "p00": 0.0,
+          "p25": 31.0,
+          "p50": 66.0,
+          "p75": 123.0,
+          "p90": 203.0,
+          "p95": 259.0,
+          "p99": 407.2699999999995,
+          "p100": 1794.0
+        }
+      },
+      "events_per_active_user": {
+        "count": 7174,
+        "mean": 1222.688040144968,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 53.0,
+          "p25": 563.0,
+          "p50": 1276.0,
+          "p75": 1759.0,
+          "p90": 2117.0,
+          "p95": 2377.399999999998,
+          "p99": 2920.6999999999953,
+          "p100": 12141.0
+        }
+      },
+      "new_user_count": null,
+      "new_user_fraction_of_split_users": null,
+      "new_video_count": null,
+      "new_video_fraction_of_split_videos": null
+    },
+    "validation": {
+      "timestamp_start_inclusive": 1597015523.563,
+      "timestamp_end_inclusive": 1598783760.167,
+      "time_start_asia_shanghai": "2020-08-10T07:25:23.563000+08:00",
+      "time_end_asia_shanghai": "2020-08-30T18:36:00.167000+08:00",
+      "rows": 1879621,
+      "users": 7094,
+      "videos": 5431,
+      "positive_count": 136711,
+      "eligible_positive_count": 99274,
+      "interaction_before_declared_upload_date_count": 8,
+      "interaction_same_day_upload_time_unverifiable_count": 153560,
+      "positive_before_declared_upload_date_count": 1,
+      "positive_same_day_upload_time_unverifiable_count": 16154,
+      "positive_missing_upload_count": 0,
+      "positive_previously_seen_count": 21252,
+      "positive_missing_catalog_metadata_count": 0,
+      "positive_without_prior_status_count": 16,
+      "positive_ad_video_count": 8,
+      "positive_not_public_count": 6,
+      "unique_eligible_target_count": 99248,
+      "target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 99274,
+        "exact_duplicate_positive_rows_removed": 1,
+        "exact_duplicate_positive_key_count": 1,
+        "same_key_nonexact_positive_rows_removed": 25,
+        "same_key_nonexact_positive_key_count": 25,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 0,
+        "canonical_target_count": 99248,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 7,
+          "extras_per_affected_user": {
+            "count": 7,
+            "mean": 3.7142857142857144,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 1.0,
+              "p50": 1.0,
+              "p75": 1.5,
+              "p90": 8.800000000000006,
+              "p95": 13.899999999999988,
+              "p99": 17.97999999999999,
+              "p100": 19.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 2783,
+              "extra_count": 19
+            },
+            {
+              "user_id": 6359,
+              "extra_count": 2
+            },
+            {
+              "user_id": 684,
+              "extra_count": 1
+            },
+            {
+              "user_id": 2033,
+              "extra_count": 1
+            },
+            {
+              "user_id": 2809,
+              "extra_count": 1
+            },
+            {
+              "user_id": 3376,
+              "extra_count": 1
+            },
+            {
+              "user_id": 5642,
+              "extra_count": 1
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-08-27": 22,
+            "2020-08-28": 1,
+            "2020-08-29": 2,
+            "2020-08-30": 1
+          }
+        }
+      },
+      "pre_catalog_target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 99296,
+        "exact_duplicate_positive_rows_removed": 1,
+        "exact_duplicate_positive_key_count": 1,
+        "same_key_nonexact_positive_rows_removed": 25,
+        "same_key_nonexact_positive_key_count": 25,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 0,
+        "canonical_target_count": 99270,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 7,
+          "extras_per_affected_user": {
+            "count": 7,
+            "mean": 3.7142857142857144,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 1.0,
+              "p50": 1.0,
+              "p75": 1.5,
+              "p90": 8.800000000000006,
+              "p95": 13.899999999999988,
+              "p99": 17.97999999999999,
+              "p100": 19.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 2783,
+              "extra_count": 19
+            },
+            {
+              "user_id": 6359,
+              "extra_count": 2
+            },
+            {
+              "user_id": 684,
+              "extra_count": 1
+            },
+            {
+              "user_id": 2033,
+              "extra_count": 1
+            },
+            {
+              "user_id": 2809,
+              "extra_count": 1
+            },
+            {
+              "user_id": 3376,
+              "extra_count": 1
+            },
+            {
+              "user_id": 5642,
+              "extra_count": 1
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-08-27": 22,
+            "2020-08-28": 1,
+            "2020-08-29": 2,
+            "2020-08-30": 1
+          }
+        }
+      },
+      "positive_fraction": 0.07273327974096906,
+      "temporal_query_count": 99248,
+      "multi_target_query_count": 0,
+      "multi_target_query_fraction": 0.0,
+      "targets_per_query": {
+        "count": 99248,
+        "mean": 1.0,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 1.0,
+          "p50": 1.0,
+          "p75": 1.0,
+          "p90": 1.0,
+          "p95": 1.0,
+          "p99": 1.0,
+          "p100": 1.0
+        }
+      },
+      "positives_per_active_user": {
+        "count": 7094,
+        "mean": 19.27135607555681,
+        "zero_count": 263,
+        "zero_fraction": 0.0370735833098393,
+        "quantiles": {
+          "p00": 0.0,
+          "p25": 5.0,
+          "p50": 12.0,
+          "p75": 27.0,
+          "p90": 45.0,
+          "p95": 60.0,
+          "p99": 97.0,
+          "p100": 322.0
+        }
+      },
+      "events_per_active_user": {
+        "count": 7094,
+        "mean": 264.9592613476177,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 100.0,
+          "p50": 230.0,
+          "p75": 380.0,
+          "p90": 531.0,
+          "p95": 624.0,
+          "p99": 818.0,
+          "p100": 2065.0
+        }
+      },
+      "new_user_count": 2,
+      "new_user_fraction_of_split_users": 0.000281928390188892,
+      "new_video_count": 1495,
+      "new_video_fraction_of_split_videos": 0.27527158902596205
+    },
+    "temporal_final": {
+      "timestamp_start_inclusive": 1598783760.238,
+      "timestamp_end_inclusive": 1599694332.427,
+      "time_start_asia_shanghai": "2020-08-30T18:36:00.238000+08:00",
+      "time_end_asia_shanghai": "2020-09-10T07:32:12.427000+08:00",
+      "rows": 1879621,
+      "users": 6911,
+      "videos": 5246,
+      "positive_count": 140772,
+      "eligible_positive_count": 99566,
+      "interaction_before_declared_upload_date_count": 13,
+      "interaction_same_day_upload_time_unverifiable_count": 192873,
+      "positive_before_declared_upload_date_count": 3,
+      "positive_same_day_upload_time_unverifiable_count": 23557,
+      "positive_missing_upload_count": 0,
+      "positive_previously_seen_count": 17568,
+      "positive_missing_catalog_metadata_count": 0,
+      "positive_without_prior_status_count": 25,
+      "positive_ad_video_count": 13,
+      "positive_not_public_count": 40,
+      "unique_eligible_target_count": 83661,
+      "target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 99566,
+        "exact_duplicate_positive_rows_removed": 15879,
+        "exact_duplicate_positive_key_count": 15879,
+        "same_key_nonexact_positive_rows_removed": 26,
+        "same_key_nonexact_positive_key_count": 26,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 0,
+        "canonical_target_count": 83661,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 4160,
+          "extras_per_affected_user": {
+            "count": 4160,
+            "mean": 3.8233173076923075,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 1.0,
+              "p50": 2.0,
+              "p75": 5.0,
+              "p90": 8.0,
+              "p95": 12.0,
+              "p99": 22.0,
+              "p100": 73.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 762,
+              "extra_count": 73
+            },
+            {
+              "user_id": 6161,
+              "extra_count": 69
+            },
+            {
+              "user_id": 3444,
+              "extra_count": 48
+            },
+            {
+              "user_id": 2989,
+              "extra_count": 38
+            },
+            {
+              "user_id": 5530,
+              "extra_count": 37
+            },
+            {
+              "user_id": 6620,
+              "extra_count": 37
+            },
+            {
+              "user_id": 4118,
+              "extra_count": 36
+            },
+            {
+              "user_id": 5206,
+              "extra_count": 36
+            },
+            {
+              "user_id": 6966,
+              "extra_count": 36
+            },
+            {
+              "user_id": 1441,
+              "extra_count": 35
+            },
+            {
+              "user_id": 6452,
+              "extra_count": 35
+            },
+            {
+              "user_id": 4185,
+              "extra_count": 34
+            },
+            {
+              "user_id": 2783,
+              "extra_count": 33
+            },
+            {
+              "user_id": 2512,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3493,
+              "extra_count": 31
+            },
+            {
+              "user_id": 5199,
+              "extra_count": 31
+            },
+            {
+              "user_id": 6961,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3412,
+              "extra_count": 30
+            },
+            {
+              "user_id": 3986,
+              "extra_count": 29
+            },
+            {
+              "user_id": 190,
+              "extra_count": 28
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-08-30": 12,
+            "2020-08-31": 15882,
+            "2020-09-01": 2,
+            "2020-09-02": 5,
+            "2020-09-03": 3,
+            "2020-09-04": 1
+          }
+        }
+      },
+      "pre_catalog_target_deduplication_audit": {
+        "formal_rule": "drop exact duplicate rows; exclude (user_id, video_id, timestamp) keys with conflicting binary watch_ratio>2 labels; collapse every remaining positive key to one canonical target",
+        "raw_eligible_positive_rows": 99637,
+        "exact_duplicate_positive_rows_removed": 15910,
+        "exact_duplicate_positive_key_count": 15910,
+        "same_key_nonexact_positive_rows_removed": 26,
+        "same_key_nonexact_positive_key_count": 26,
+        "binary_label_conflict_keys_excluded": 0,
+        "positive_rows_in_conflict_keys_excluded": 0,
+        "numeric_watch_ratio_disagreement_keys": 0,
+        "canonical_target_count": 83701,
+        "reconciliation_ok": true,
+        "difference_distribution": {
+          "affected_users": 4161,
+          "extras_per_affected_user": {
+            "count": 4161,
+            "mean": 3.8298485940879594,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 1.0,
+              "p25": 1.0,
+              "p50": 2.0,
+              "p75": 5.0,
+              "p90": 8.0,
+              "p95": 12.0,
+              "p99": 22.0,
+              "p100": 73.0
+            }
+          },
+          "top_users": [
+            {
+              "user_id": 762,
+              "extra_count": 73
+            },
+            {
+              "user_id": 6161,
+              "extra_count": 69
+            },
+            {
+              "user_id": 3444,
+              "extra_count": 48
+            },
+            {
+              "user_id": 2989,
+              "extra_count": 38
+            },
+            {
+              "user_id": 5530,
+              "extra_count": 37
+            },
+            {
+              "user_id": 6620,
+              "extra_count": 37
+            },
+            {
+              "user_id": 4118,
+              "extra_count": 36
+            },
+            {
+              "user_id": 5206,
+              "extra_count": 36
+            },
+            {
+              "user_id": 6966,
+              "extra_count": 36
+            },
+            {
+              "user_id": 1441,
+              "extra_count": 35
+            },
+            {
+              "user_id": 6452,
+              "extra_count": 35
+            },
+            {
+              "user_id": 4185,
+              "extra_count": 34
+            },
+            {
+              "user_id": 2783,
+              "extra_count": 33
+            },
+            {
+              "user_id": 2512,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3412,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3493,
+              "extra_count": 31
+            },
+            {
+              "user_id": 5199,
+              "extra_count": 31
+            },
+            {
+              "user_id": 6961,
+              "extra_count": 31
+            },
+            {
+              "user_id": 3986,
+              "extra_count": 29
+            },
+            {
+              "user_id": 190,
+              "extra_count": 28
+            }
+          ],
+          "by_asia_shanghai_date": {
+            "2020-08-30": 12,
+            "2020-08-31": 15913,
+            "2020-09-01": 2,
+            "2020-09-02": 5,
+            "2020-09-03": 3,
+            "2020-09-04": 1
+          }
+        }
+      },
+      "positive_fraction": 0.0748938216800089,
+      "temporal_query_count": 83661,
+      "multi_target_query_count": 0,
+      "multi_target_query_fraction": 0.0,
+      "targets_per_query": {
+        "count": 83661,
+        "mean": 1.0,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 1.0,
+          "p50": 1.0,
+          "p75": 1.0,
+          "p90": 1.0,
+          "p95": 1.0,
+          "p99": 1.0,
+          "p100": 1.0
+        }
+      },
+      "positives_per_active_user": {
+        "count": 6911,
+        "mean": 20.369266386919403,
+        "zero_count": 188,
+        "zero_fraction": 0.027203009694689625,
+        "quantiles": {
+          "p00": 0.0,
+          "p25": 6.0,
+          "p50": 14.0,
+          "p75": 27.0,
+          "p90": 44.0,
+          "p95": 58.0,
+          "p99": 97.0,
+          "p100": 2224.0
+        }
+      },
+      "events_per_active_user": {
+        "count": 6911,
+        "mean": 271.97525683692663,
+        "zero_count": 0,
+        "zero_fraction": 0.0,
+        "quantiles": {
+          "p00": 1.0,
+          "p25": 119.0,
+          "p50": 226.0,
+          "p75": 382.5,
+          "p90": 524.0,
+          "p95": 620.5,
+          "p99": 880.2999999999975,
+          "p100": 5875.0
+        }
+      },
+      "new_user_count": 0,
+      "new_user_fraction_of_split_users": 0.0,
+      "new_video_count": 1337,
+      "new_video_fraction_of_split_videos": 0.25486084635913075
+    }
+  },
+  "small_matrix_observation_coverage": {
+    "users": 1411,
+    "catalog_videos": 3327,
+    "expected_complete_pairs": 4694397,
+    "observed_unique_pairs": 4676570,
+    "duplicate_rows": 0,
+    "missing_pairs": 17827,
+    "blocked_or_missing_pairs": 17827,
+    "observed_pair_fraction": 0.9962024941648523,
+    "missing_pairs_per_user": {
+      "count": 1411,
+      "mean": 12.634301913536499,
+      "zero_count": 8,
+      "zero_fraction": 0.005669737774627924,
+      "quantiles": {
+        "p00": 0.0,
+        "p25": 7.0,
+        "p50": 12.0,
+        "p75": 18.0,
+        "p90": 23.0,
+        "p95": 26.0,
+        "p99": 29.0,
+        "p100": 32.0
+      }
+    },
+    "primary_candidate_size_per_user": {
+      "count": 1411,
+      "mean": 3314.3656980864635,
+      "zero_count": 0,
+      "zero_fraction": 0.0,
+      "quantiles": {
+        "p00": 3295.0,
+        "p25": 3309.0,
+        "p50": 3315.0,
+        "p75": 3320.0,
+        "p90": 3323.0,
+        "p95": 3324.0,
+        "p99": 3326.0,
+        "p100": 3327.0
+      }
+    },
+    "secondary_full_catalog_size": 3327,
+    "official_missing_pair_semantics": "user blocked the video or its author; inferred only at pair level",
+    "primary_policy": "exclude each user's blocked/missing pairs; rank only physically observed pairs, including observed nonpositive pairs",
+    "secondary_safety_policy": "rank all 3327 videos only to report Blocked@K and BlockedUserHitRate@K; never claim it as primary model quality",
+    "blocked_information_forbidden_uses": [
+      "training",
+      "features",
+      "user_history",
+      "negative_sampling",
+      "hyperparameter_selection"
+    ]
+  },
+  "candidate_catalog_audit": {
+    "policy_id": "normal-public-prior-day-status-v1",
+    "query_timezone": "Asia/Shanghai",
+    "snapshot_rule": "latest item_daily_features row with date < query local date",
+    "upload_rule": "upload_dt local date < query local date",
+    "primary_video_type": "NORMAL",
+    "advertisement_policy": "exclude AD from the primary recommendation task",
+    "unknown_or_no_prior_snapshot_policy": "exclude",
+    "video_count": 10728,
+    "snapshot_rows": 343341,
+    "snapshot_date_min": 20200705,
+    "snapshot_date_max": 20200905,
+    "duplicate_video_date_rows": 0,
+    "per_video_inconsistent_fields": {
+      "upload_dt": 0,
+      "video_type": 0
+    },
+    "video_type_video_counts": {
+      "NORMAL": 10699,
+      "AD": 29
+    },
+    "visible_status_row_counts": {
+      "public": 340782,
+      "private": 2515,
+      "only friends": 44
+    },
+    "videos_by_distinct_visible_status_count": {
+      "1": 9886,
+      "2": 838,
+      "3": 4
+    },
+    "visible_status_transition_counts": {
+      "only friends->private": 3,
+      "only friends->public": 1,
+      "private->only friends": 3,
+      "private->public": 190,
+      "public->only friends": 4,
+      "public->private": 926
+    },
+    "daily_primary_catalog_size": {
+      "20200623": 0,
+      "20200624": 0,
+      "20200625": 0,
+      "20200626": 0,
+      "20200627": 0,
+      "20200628": 0,
+      "20200629": 0,
+      "20200630": 0,
+      "20200701": 0,
+      "20200702": 0,
+      "20200703": 0,
+      "20200704": 0,
+      "20200705": 0,
+      "20200706": 1364,
+      "20200707": 1631,
+      "20200708": 1897,
+      "20200709": 2113,
+      "20200710": 2344,
+      "20200711": 2529,
+      "20200712": 2735,
+      "20200713": 2877,
+      "20200714": 2964,
+      "20200715": 3042,
+      "20200716": 3146,
+      "20200717": 3232,
+      "20200718": 3316,
+      "20200719": 3412,
+      "20200720": 3500,
+      "20200721": 3587,
+      "20200722": 3679,
+      "20200723": 3766,
+      "20200724": 3846,
+      "20200725": 3942,
+      "20200726": 4030,
+      "20200727": 4127,
+      "20200728": 4252,
+      "20200729": 4370,
+      "20200730": 4480,
+      "20200731": 4642,
+      "20200801": 4907,
+      "20200802": 5208,
+      "20200803": 5471,
+      "20200804": 5744,
+      "20200805": 5990,
+      "20200806": 6206,
+      "20200807": 6442,
+      "20200808": 6718,
+      "20200809": 6930,
+      "20200810": 7166,
+      "20200811": 7303,
+      "20200812": 7364,
+      "20200813": 7413,
+      "20200814": 7458,
+      "20200815": 7484,
+      "20200816": 7518,
+      "20200817": 7567,
+      "20200818": 7614,
+      "20200819": 7635,
+      "20200820": 7677,
+      "20200821": 7727,
+      "20200822": 7755,
+      "20200823": 7795,
+      "20200824": 7837,
+      "20200825": 7865,
+      "20200826": 7896,
+      "20200827": 8037,
+      "20200828": 8248,
+      "20200829": 8453,
+      "20200830": 8633,
+      "20200831": 8800,
+      "20200901": 9008,
+      "20200902": 9198,
+      "20200903": 9388,
+      "20200904": 9590,
+      "20200905": 9808,
+      "20200906": 9905,
+      "20200907": 9905,
+      "20200908": 9905,
+      "20200909": 9905,
+      "20200910": 9905
+    }
+  },
+  "candidate_size_audit": {
+    "rule": "per-query causal NORMAL/public/uploaded catalog; remove all items observed strictly before query; score before consuming equal timestamp",
+    "per_split": {
+      "train": {
+        "available_candidate_size": {
+          "count": 497117,
+          "mean": 4838.364193942271,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 1364.0,
+            "p01": 1364.0,
+            "p05": 1631.0,
+            "p10": 1897.0,
+            "p50": 5471.0,
+            "p90": 6718.0,
+            "p95": 6930.0,
+            "p99": 7166.0,
+            "p100": 7166.0
+          }
+        },
+        "available_unseen_candidate_size": {
+          "count": 497117,
+          "mean": 4206.620278525981,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 1195.0,
+            "p01": 1310.0,
+            "p05": 1550.0,
+            "p10": 1806.0,
+            "p50": 4828.0,
+            "p90": 5667.0,
+            "p95": 5896.0,
+            "p99": 6379.0,
+            "p100": 7090.0
+          }
+        },
+        "uniform_pool_excluding_targets_size": {
+          "count": 497117,
+          "mean": 4205.620278525981,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 1194.0,
+            "p01": 1309.0,
+            "p05": 1549.0,
+            "p10": 1805.0,
+            "p50": 4827.0,
+            "p90": 5666.0,
+            "p95": 5895.0,
+            "p99": 6378.0,
+            "p100": 7089.0
+          }
+        },
+        "target_missing_from_candidate_count": 0
+      },
+      "validation": {
+        "available_candidate_size": {
+          "count": 99248,
+          "mean": 8045.95705706916,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 7166.0,
+            "p01": 7166.0,
+            "p05": 7166.0,
+            "p10": 7166.0,
+            "p50": 8248.0,
+            "p90": 8633.0,
+            "p95": 8633.0,
+            "p99": 8633.0,
+            "p100": 8633.0
+          }
+        },
+        "available_unseen_candidate_size": {
+          "count": 99248,
+          "mean": 6693.534559890376,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 4580.0,
+            "p01": 5170.0,
+            "p05": 5500.0,
+            "p10": 5690.0,
+            "p50": 6713.0,
+            "p90": 7641.0,
+            "p95": 7876.0,
+            "p99": 8270.0,
+            "p100": 8543.0
+          }
+        },
+        "uniform_pool_excluding_targets_size": {
+          "count": 99248,
+          "mean": 6692.534559890376,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 4579.0,
+            "p01": 5169.0,
+            "p05": 5499.0,
+            "p10": 5689.0,
+            "p50": 6712.0,
+            "p90": 7640.0,
+            "p95": 7875.0,
+            "p99": 8269.0,
+            "p100": 8542.0
+          }
+        },
+        "target_missing_from_candidate_count": 0
+      },
+      "temporal_final": {
+        "available_candidate_size": {
+          "count": 83661,
+          "mean": 9233.849631249925,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 8633.0,
+            "p01": 8633.0,
+            "p05": 8800.0,
+            "p10": 8800.0,
+            "p50": 9198.0,
+            "p90": 9808.0,
+            "p95": 9808.0,
+            "p99": 9808.0,
+            "p100": 9905.0
+          }
+        },
+        "available_unseen_candidate_size": {
+          "count": 83661,
+          "mean": 7702.948494519549,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 5858.0,
+            "p01": 6449.6,
+            "p05": 6769.0,
+            "p10": 6931.0,
+            "p50": 7609.0,
+            "p90": 8664.0,
+            "p95": 9032.0,
+            "p99": 9446.0,
+            "p100": 9738.0
+          }
+        },
+        "uniform_pool_excluding_targets_size": {
+          "count": 83661,
+          "mean": 7701.948494519549,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 5857.0,
+            "p01": 6448.6,
+            "p05": 6768.0,
+            "p10": 6930.0,
+            "p50": 7608.0,
+            "p90": 8663.0,
+            "p95": 9031.0,
+            "p99": 9445.0,
+            "p100": 9737.0
+          }
+        },
+        "target_missing_from_candidate_count": 0
+      }
+    }
+  },
+  "hard_negative_pool_audit": {
+    "status": "aggregate_pool_audit_only_no_sampler_or_model_executed",
+    "fit_context": "selection_train_only",
+    "future_window": "query_time < event_time <= query_time+30m and event_time < train_end; same session; never reads validation for a train query",
+    "query_count": 497117,
+    "queries_with_nonempty_pool": 201222,
+    "query_pool_coverage": 0.40477794965772645,
+    "same_session_window_quick_skip_event_count_before_candidate_filters": 877178,
+    "unique_hard_query_item_pairs": 686008,
+    "pool_size_per_query": {
+      "count": 497117,
+      "mean": 1.3799729238790868,
+      "zero_count": 295895,
+      "zero_fraction": 0.5952220503422736,
+      "quantiles": {
+        "p00": 0.0,
+        "p01": 0.0,
+        "p05": 0.0,
+        "p10": 0.0,
+        "p50": 0.0,
+        "p90": 4.0,
+        "p95": 6.0,
+        "p99": 15.0,
+        "p100": 152.0
+      }
+    },
+    "filter_counts": {
+      "not_candidate_at_query": 39538,
+      "not_quick_skip": 4049248,
+      "outside_same_session": 0,
+      "seen_at_query": 59748
+    },
+    "false_negative_risk": {
+      "diagnostic_only_not_used_to_filter_or_tune": true,
+      "pair_denominator": 686008,
+      "query_denominator": 201222,
+      "pair_counts": {
+        "remaining_session": 4503,
+        "within_1d": 4588,
+        "within_7d": 4858,
+        "before_fit_cutoff": 6261
+      },
+      "pair_fractions": {
+        "remaining_session": 0.006564063392846731,
+        "within_1d": 0.006687968653426782,
+        "within_7d": 0.007081550069386946,
+        "before_fit_cutoff": 0.009126715723431796
+      },
+      "query_any_risk_counts": {
+        "remaining_session": 3851,
+        "within_1d": 3923,
+        "within_7d": 4159,
+        "before_fit_cutoff": 5454
+      },
+      "query_any_risk_fractions": {
+        "remaining_session": 0.019138066414209183,
+        "within_1d": 0.019495880172148174,
+        "within_7d": 0.020668714156503763,
+        "before_fit_cutoff": 0.0271043921638787
+      }
+    }
+  },
+  "cold_start_context_audit": {
+    "validation": {
+      "reference_splits": [
+        "train"
+      ],
+      "reference_item_count": 7896,
+      "reference_membership_sha256": "765a33ca4362ef7f008fa80ef57ee70707bea7b1331880d0858b8d5afbbec8b6",
+      "target_item_count": 3904,
+      "warm_target_item_count": 2881,
+      "cold_target_item_count": 1023,
+      "cold_target_membership_sha256": "e008f627a96409c856d4d9e258c5e7caf193c78f7d72c4f36746118504af382e",
+      "data_warm_definition": "at least one Big Matrix interaction in the context reference",
+      "id_embedding_actually_trained_is_separate": true
+    },
+    "temporal_final": {
+      "reference_splits": [
+        "train",
+        "validation"
+      ],
+      "reference_item_count": 9391,
+      "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
+      "target_item_count": 2694,
+      "warm_target_item_count": 1889,
+      "cold_target_item_count": 805,
+      "cold_target_membership_sha256": "94285130e4228282ede296a226be765070d664f2120571d0434bdda28ea42c7d",
+      "data_warm_definition": "at least one Big Matrix interaction in the context reference",
+      "id_embedding_actually_trained_is_separate": true
+    },
+    "small_matrix": {
+      "reference_splits": [
+        "train",
+        "validation"
+      ],
+      "reference_item_count": 9391,
+      "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
+      "target_item_count": 3327,
+      "warm_target_item_count": 3326,
+      "cold_target_item_count": 1,
+      "cold_target_membership_sha256": "bbdbf2d46750dd8d042a84228deb69440f58e16192916415a6af722d697b343f",
+      "data_warm_definition": "at least one Big Matrix interaction in the context reference",
+      "id_embedding_actually_trained_is_separate": true
+    },
+    "untrained_id_policy": "an ID embedding may be used only if optimization actually touched it; otherwise use the content-only/UNK fallback"
+  },
+  "metadata_coverage": {
+    "catalog_definition": "union of video_id in big_matrix and small_matrix",
+    "item_categories_feat": {
+      "covered_videos": 10728,
+      "catalog_videos": 10728,
+      "coverage": 1.0
+    },
+    "caption": {
+      "covered_videos": 9372,
+      "catalog_videos": 10728,
+      "coverage": 0.8736017897091722
+    },
+    "manual_cover_text": {
+      "covered_videos": 10727,
+      "catalog_videos": 10728,
+      "coverage": 0.9999067859806114
+    },
+    "topic_tag": {
+      "covered_videos": 10728,
+      "catalog_videos": 10728,
+      "coverage": 1.0
+    },
+    "first_level_category": {
+      "covered_videos": 10728,
+      "catalog_videos": 10728,
+      "coverage": 1.0
+    },
+    "second_level_category": {
+      "covered_videos": 10728,
+      "catalog_videos": 10728,
+      "coverage": 1.0
+    },
+    "third_level_category": {
+      "covered_videos": 10728,
+      "catalog_videos": 10728,
+      "coverage": 1.0
+    },
+    "upload_time": {
+      "covered_videos": 10728,
+      "catalog_videos": 10728,
+      "coverage": 1.0
+    },
+    "upload_time_min": "2019-05-18T00:00:00",
+    "upload_time_max": "2020-09-05T00:00:00"
+  },
+  "history_distributions": {
+    "validation_history_from_train": {
+      "count": 7094,
+      "mean": 1219.5352410487735,
+      "zero_count": 2,
+      "zero_fraction": 0.000281928390188892,
+      "quantiles": {
+        "p00": 0.0,
+        "p25": 553.25,
+        "p50": 1273.5,
+        "p75": 1759.75,
+        "p90": 2115.7,
+        "p95": 2373.3499999999995,
+        "p99": 2918.699999999997,
+        "p100": 12141.0
+      }
+    },
+    "temporal_final_history_from_train_and_validation": {
+      "count": 6911,
+      "mean": 1463.1413688322964,
+      "zero_count": 0,
+      "zero_fraction": 0.0,
+      "quantiles": {
+        "p00": 92.0,
+        "p25": 684.0,
+        "p50": 1549.0,
+        "p75": 2111.0,
+        "p90": 2508.0,
+        "p95": 2798.5,
+        "p99": 3366.699999999999,
+        "p100": 14206.0
+      }
+    },
+    "small_audit_history_from_big_first_85_percent": {
+      "count": 1411,
+      "mean": 313.3529411764706,
+      "zero_count": 0,
+      "zero_fraction": 0.0,
+      "quantiles": {
+        "p00": 102.0,
+        "p25": 258.5,
+        "p50": 301.0,
+        "p75": 356.0,
+        "p90": 413.0,
+        "p95": 462.5,
+        "p99": 595.2000000000007,
+        "p100": 1047.0
+      }
+    }
+  },
+  "baseline_cost_estimates": {
+    "disclaimer": "Planning estimates only; no baseline was executed in Phase 0. Temporal query count uses exact (user_id, next-positive timestamp) groups.",
+    "validation_temporal_queries": 99248,
+    "big_candidate_catalog_upper_bound": 10728,
+    "validation_dense_score_pair_upper_bound": 1064732544,
+    "small_matrix_primary_observed_pairs": 4676570,
+    "small_matrix_secondary_full_ranking_pairs": 4694397,
+    "baselines": {
+      "random": {
+        "fit_scale": "none",
+        "evaluation_scale": "up to 1,064,732,544 candidate pairs",
+        "expected_compute": "under 5 CPU minutes with direct seeded top-K sampling"
+      },
+      "global_popularity": {
+        "fit_scale": "one pass over 8,771,564 train interactions",
+        "evaluation_scale": "one shared ranking plus per-user seen filtering",
+        "expected_compute": "roughly 1-5 CPU minutes"
+      },
+      "time_decayed_popularity": {
+        "fit_scale": "one chronological pass over 8,771,564 interactions",
+        "evaluation_scale": "state update plus shared ranking at query times",
+        "expected_compute": "roughly 3-15 CPU minutes"
+      },
+      "itemcf": {
+        "fit_scale": "sparse co-occurrence from 658,907 strong positives over at most 10,728 videos",
+        "evaluation_scale": "history-neighbor aggregation for every temporal query",
+        "expected_compute": "roughly 10-60 CPU minutes and 1-4 GB working memory"
+      },
+      "bpr_mf": {
+        "fit_scale": "pre-registered 10 epochs = about 6,589,070 positive-pair updates before batching",
+        "evaluation_scale": "up to 1,064,732,544 dot products",
+        "expected_compute": "roughly 30-120 CPU minutes or 5-20 GPU minutes"
+      }
+    }
+  }
+}

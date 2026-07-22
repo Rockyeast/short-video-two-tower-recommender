@@ -1,0 +1,57 @@
+contract_id: kuairec-canonical-behavior-events-v1
+protocol_revision: protocol-v2.1.1
+status: active_protocol_only_no_model_or_baseline_executed
+
+source: big_matrix.csv
+source_columns:
+  - user_id
+  - video_id
+  - play_duration
+  - video_duration
+  - time
+  - date
+  - timestamp
+  - watch_ratio
+event_key: [user_id, video_id, timestamp]
+
+canonicalization:
+  exact_duplicate_definition: all_8_source_fields_equal_after_normalized_serialization
+  exact_duplicates: retain_one_row_and_report_removed_rows
+  same_key_nonexact_definition: same_event_key_but_at_least_one_other_source_field_differs
+  strong_positive_expression: watch_ratio > 2.0
+  quick_skip_expression: play_duration < min(3000, video_duration)
+  representative_for_same_key: >-
+    Smallest typed tuple after ordering by the event key and then the remaining
+    source fields: numeric fields compare numerically, text fields compare
+    lexicographically, and nulls sort last. CSV row or chunk order is never a
+    tie-break.
+  binary_label_conflict: >-
+    Keep one deterministic canonical event for history and seen filtering, but
+    exclude the key from positive targets as required by the target contract.
+  positive_and_quick_skip_conflict: >-
+    Keep one deterministic canonical event for history and seen filtering, but
+    exclude the entire key from quick-skip hard-negative pools and report it as
+    an ambiguity. Positive-target eligibility remains governed only by
+    watch_ratio and the binary-label-conflict target contract; this condition
+    does not itself remove a positive target.
+  output_uniqueness: exactly_one_canonical_event_per_event_key
+
+required_consumers:
+  split_assignment: >-
+    Apply the frozen protocol-v2 train and validation boundary timestamps to
+    canonical events. Do not recompute time cutoffs from canonical row counts.
+  temporal_history: canonical events strictly before query timestamp
+  seen_filter: canonical events strictly before query timestamp
+  last_50_history: last 50 canonical events after timestamp ordering
+  sessionization: canonical events with equal timestamps kept atomic
+  quick_skip_pool: nonconflicting canonical quick-skip events only
+  popularity: canonical positive events or canonical eligible targets only
+  raw_rows_for_any_consumer_above: forbidden
+
+required_audit:
+  exact_and_same_key_nonexact_counts: [global, per_user, per_asia_shanghai_date]
+  split_boundary_sensitivity:
+    compare: [raw_row_boundaries, canonical_event_boundaries]
+    report: [boundary_timestamps, split_event_counts, changed_event_membership_counts]
+    protocol_choice: frozen_protocol_v2_raw_count_boundary_timestamps
+    rationale: preserve the already frozen and disclosed holdout membership

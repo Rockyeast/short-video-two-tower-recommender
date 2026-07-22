@@ -1,8 +1,8 @@
 {
   "locked": true,
-  "protocol_revision": "protocol-v2.1.1",
+  "protocol_revision": "protocol-v2.1",
   "manifest": "manifests/split_manifest.json",
-  "manifest_sha256": "e271c45d34651387926e7572e18b8605654fd7dc8720e1f5e9b34a40378eea91",
+  "manifest_sha256": "c8562306bf61ca266e70a5cea5258f58078594048298dbe90d58c100f26e822f",
   "protected": [
     "temporal_final",
     "small_matrix_audit"

@@ -9,12 +9,16 @@ cost estimates, and final-holdout lock files.
 from __future__ import annotations
 
 import argparse
+import bisect
 import hashlib
 import json
 import math
 import os
+import shutil
 import stat
+import tempfile
 from collections import Counter
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,15 +31,72 @@ import yaml
 
 CHUNK_SIZE = 250_000
 QUANTILES = (0.0, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 1.0)
+EVENT_COLUMNS = [
+    "user_id",
+    "video_id",
+    "play_duration",
+    "video_duration",
+    "time",
+    "date",
+    "timestamp",
+    "watch_ratio",
+]
+EVENT_KEY = ["user_id", "video_id", "timestamp"]
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--mode",
+        choices=("generate", "verify"),
+        default="generate",
+        help=(
+            "generate refuses to overwrite a bundle; verify recomputes the bundle "
+            "in a temporary directory and compares it with committed outputs"
+        ),
+    )
     parser.add_argument("--config", type=Path, default=Path("configs/phase0.yaml"))
     parser.add_argument("--data-root", type=Path, default=Path("data/raw"))
     parser.add_argument("--report-dir", type=Path, default=Path("reports/phase0"))
     parser.add_argument(
         "--manifest", type=Path, default=Path("manifests/split_manifest.json")
+    )
+    parser.add_argument(
+        "--reference-report-dir",
+        type=Path,
+        default=Path("reports/phase0"),
+        help="Committed report bundle used by --mode verify",
+    )
+    parser.add_argument(
+        "--reference-manifest",
+        type=Path,
+        default=Path("manifests/split_manifest.json"),
+        help="Committed split manifest used by --mode verify",
+    )
+    parser.add_argument(
+        "--supersede-protocol-v1",
+        action="store_true",
+        help=(
+            "One-time reviewed migration: archive the existing schema-v1 bundle "
+            "and generate protocol-v2 outputs. Never use for ordinary reruns."
+        ),
+    )
+    parser.add_argument(
+        "--supersede-protocol-v2",
+        action="store_true",
+        help=(
+            "One-time reviewed migration: archive the complete protocol-v2 bundle "
+            "and generate protocol-v2.1 outputs. Never use for ordinary reruns."
+        ),
+    )
+    parser.add_argument(
+        "--supersede-protocol-v2-1",
+        action="store_true",
+        help=(
+            "One-time reviewed migration: archive the complete protocol-v2.1 "
+            "bundle and generate protocol-v2.1.1 outputs. Never use for "
+            "ordinary reruns."
+        ),
     )
     return parser.parse_args()
 
@@ -179,9 +240,14 @@ def scan_csv(path: Path, interaction: bool) -> dict[str, Any]:
             timestamp_min = min(timestamp_min, float(timestamp.min()))
             timestamp_max = max(timestamp_max, float(timestamp.max()))
         raw_timestamp = pd.to_numeric(chunk["timestamp"], errors="coerce")
-        local_date = pd.to_datetime(
-            raw_timestamp, unit="s", utc=True, errors="coerce"
-        ).dt.tz_convert("Asia/Shanghai").dt.strftime("%Y%m%d")
+        # NumPy 2.x can surface a transient overflow from Pandas' vectorized
+        # seconds-to-nanoseconds conversion after the large Big Matrix scan.
+        # Invalid values are intentionally coerced below, so keep that internal
+        # multiply from making verification depend on the ambient FP mode.
+        with np.errstate(over="ignore", invalid="ignore"):
+            local_date = pd.to_datetime(
+                raw_timestamp, unit="s", utc=True, errors="coerce"
+            ).dt.tz_convert("Asia/Shanghai").dt.strftime("%Y%m%d")
         local_date = pd.to_numeric(local_date, errors="coerce")
         declared_date = pd.to_numeric(chunk["date"], errors="coerce")
         comparable = local_date.notna() & declared_date.notna()
@@ -285,54 +351,105 @@ def scan_csv(path: Path, interaction: bool) -> dict[str, Any]:
     return result
 
 
-def small_matrix_observation_coverage(path: Path) -> dict[str, Any]:
-    """Measure how close Small Matrix is to a complete user-item matrix."""
+def small_matrix_observation_coverage(
+    path: Path, item_daily_features_path: Path
+) -> dict[str, Any]:
+    """Audit blocked/missing pairs and enforce NORMAL/AD task separation."""
+
+    daily = pd.read_csv(
+        item_daily_features_path,
+        usecols=["video_id", "video_type"],
+        low_memory=False,
+    )
+    daily["video_id"] = pd.to_numeric(daily["video_id"], errors="coerce")
+    if daily["video_id"].isna().any():
+        raise RuntimeError("item_daily_features video_id is invalid")
+    daily["video_id"] = daily["video_id"].astype(int)
+    normalized_type = daily["video_type"].astype("string").str.strip().str.upper()
+    normalized_type = normalized_type.mask(normalized_type.eq(""), pd.NA)
+    daily = daily.assign(_normalized_video_type=normalized_type)
+
+    normal_catalog: set[int] = set()
+    ad_catalog: set[int] = set()
+    inconsistent_type: set[int] = set()
+    missing_type: set[int] = set()
+    other_type: set[int] = set()
+    for video_id, group in daily.groupby("video_id", sort=False):
+        values = set(group["_normalized_video_type"].dropna().astype(str))
+        has_missing = bool(group["_normalized_video_type"].isna().any())
+        video_id = int(video_id)
+        if has_missing and values:
+            inconsistent_type.add(video_id)
+        elif has_missing:
+            missing_type.add(video_id)
+        elif values == {"NORMAL"}:
+            normal_catalog.add(video_id)
+        elif values == {"AD"}:
+            ad_catalog.add(video_id)
+        elif len(values) > 1:
+            inconsistent_type.add(video_id)
+        else:
+            other_type.add(video_id)
 
     users: set[int] = set()
     catalog: set[int] = set()
     unique_pairs_per_user: dict[int, int] = {}
     duplicate_rows = 0
-    carry_user: int | None = None
-    carry_seen_videos: set[int] = set()
-    previous_user: int | None = None
-
-    for chunk in pd.read_csv(
-        path, usecols=["user_id", "video_id"], chunksize=CHUNK_SIZE
-    ):
-        user = pd.to_numeric(chunk["user_id"], errors="coerce")
-        video = pd.to_numeric(chunk["video_id"], errors="coerce")
-        if user.isna().any() or video.isna().any():
-            raise RuntimeError("small_matrix user_id or video_id is invalid")
-        user = user.astype(int)
-        video = video.astype(int)
-        user_values = user.to_numpy()
-        if (user_values[1:] < user_values[:-1]).any() or (
-            previous_user is not None and int(user_values[0]) < previous_user
-        ):
-            raise RuntimeError("small_matrix must remain grouped by user_id")
-
-        grouped = pd.DataFrame({"user_id": user, "video_id": video}).groupby(
-            "user_id", sort=False
+    scope_state: dict[str, dict[str, Any]] = {
+        name: {
+            "catalog": scoped_catalog,
+            "observed_pairs": 0,
+            "videos": set(),
+            "users": set(),
+            "positive_count": 0,
+            "zero_positive_users": 0,
+            "candidate_sizes": [],
+            "relevant_items": set(),
+        }
+        for name, scoped_catalog in (
+            ("NORMAL", normal_catalog),
+            ("AD", ad_catalog),
         )
-        group_ids = list(grouped.indices)
-        for position, (user_id, group) in enumerate(grouped):
-            user_id = int(user_id)
-            values = group["video_id"].astype(int).tolist()
-            if user_id == carry_user:
-                seen = carry_seen_videos
-            else:
-                seen = set()
-            before = len(seen)
-            seen.update(values)
-            duplicate_rows += len(values) - (len(seen) - before)
-            unique_pairs_per_user[user_id] = len(seen)
-            if position == len(group_ids) - 1:
-                carry_user = user_id
-                carry_seen_videos = seen
+    }
 
-        users.update(user.unique().tolist())
-        catalog.update(video.unique().tolist())
-        previous_user = int(user_values[-1])
+    for user_id, user_frame in iter_user_frames(
+        path, ["user_id", "video_id", "watch_ratio"]
+    ):
+        videos = pd.to_numeric(user_frame["video_id"], errors="coerce")
+        ratios = pd.to_numeric(user_frame["watch_ratio"], errors="coerce")
+        if videos.isna().any():
+            raise RuntimeError("small_matrix video_id is invalid")
+        pair_frame = pd.DataFrame(
+            {
+                "video_id": videos.astype(int),
+                "is_positive": ratios > 2.0,
+            }
+        )
+        positive_by_video = pair_frame.groupby("video_id", sort=False)[
+            "is_positive"
+        ].any()
+        observed_videos = set(int(value) for value in positive_by_video.index)
+        users.add(int(user_id))
+        catalog.update(observed_videos)
+        unique_pairs_per_user[int(user_id)] = len(observed_videos)
+        duplicate_rows += int(len(user_frame) - len(observed_videos))
+
+        for state in scope_state.values():
+            scoped_videos = observed_videos & state["catalog"]
+            scoped_positives = {
+                video_id
+                for video_id in scoped_videos
+                if bool(positive_by_video.loc[video_id])
+            }
+            state["candidate_sizes"].append(len(scoped_videos))
+            state["observed_pairs"] += len(scoped_videos)
+            state["videos"].update(scoped_videos)
+            state["relevant_items"].update(scoped_positives)
+            state["positive_count"] += len(scoped_positives)
+            if scoped_videos:
+                state["users"].add(int(user_id))
+                if not scoped_positives:
+                    state["zero_positive_users"] += 1
 
     expected_pairs = len(users) * len(catalog)
     observed_unique_pairs = sum(unique_pairs_per_user.values())
@@ -340,6 +457,25 @@ def small_matrix_observation_coverage(path: Path) -> dict[str, Any]:
     per_user_missing = [
         len(catalog) - unique_pairs_per_user.get(user_id, 0) for user_id in users
     ]
+    type_breakdown: dict[str, Any] = {}
+    for name, state in scope_state.items():
+        relevant_items = set(state["relevant_items"])
+        type_breakdown[name] = {
+            "observed_pairs": int(state["observed_pairs"]),
+            "videos": len(state["videos"]),
+            "users": len(state["users"]),
+            "positive_count": int(state["positive_count"]),
+            "zero_positive_users": int(state["zero_positive_users"]),
+            "candidate_size_per_user": distribution(state["candidate_sizes"]),
+            "relevant_item_count": len(relevant_items),
+            "relevant_item_membership_sha256": _stable_int_set_hash(
+                relevant_items
+            ),
+        }
+    classified_observed_pairs = sum(
+        value["observed_pairs"] for value in type_breakdown.values()
+    )
+    unclassified_catalog = catalog - normal_catalog - ad_catalog
     return {
         "users": len(users),
         "catalog_videos": len(catalog),
@@ -347,16 +483,60 @@ def small_matrix_observation_coverage(path: Path) -> dict[str, Any]:
         "observed_unique_pairs": observed_unique_pairs,
         "duplicate_rows": duplicate_rows,
         "missing_pairs": missing_pairs,
+        "blocked_or_missing_pairs": missing_pairs,
         "observed_pair_fraction": (
             observed_unique_pairs / expected_pairs if expected_pairs else 0.0
         ),
         "missing_pairs_per_user": distribution(per_user_missing),
-        "primary_ranking_catalog_size": len(catalog),
-        "missing_feedback_policy": (
-            "retain all catalog items; an unobserved pair is unjudged and never a "
-            "training negative; primary binary metrics use only observed strong-positive "
-            "items as the relevance set"
+        "video_type_catalog": {
+            "normal_videos": len(catalog & normal_catalog),
+            "ad_videos": len(catalog & ad_catalog),
+            "inconsistent_video_type_videos": len(catalog & inconsistent_type),
+            "missing_video_type_videos": len(
+                (catalog - set(daily["video_id"].unique())) | (catalog & missing_type)
+            ),
+            "other_video_type_videos": len(catalog & other_type),
+            "unclassified_videos": len(unclassified_catalog),
+        },
+        "video_type_breakdown": type_breakdown,
+        "normal_plus_ad_observed_pairs": classified_observed_pairs,
+        "unclassified_observed_pairs": observed_unique_pairs
+        - classified_observed_pairs,
+        "normal_plus_ad_reconciles_observed_pairs": (
+            classified_observed_pairs == observed_unique_pairs
         ),
+        "primary_candidate_definition": "O_u intersect C_NORMAL",
+        "primary_candidate_size_per_user": type_breakdown["NORMAL"][
+            "candidate_size_per_user"
+        ],
+        "secondary_full_catalog_size": len(catalog),
+        "official_missing_pair_semantics": (
+            "user blocked the video or its author; inferred only at pair level"
+        ),
+        "primary_policy": (
+            "exclude each user's blocked/missing pairs; rank only physically "
+            "observed NORMAL-video pairs, including observed nonpositive pairs"
+        ),
+        "primary_video_type": "NORMAL",
+        "advertisement_policy": (
+            "exclude AD from primary quality metrics; report AD only as a "
+            "separate diagnostic"
+        ),
+        "secondary_safety_policy": (
+            "rank all 3327 videos only to report Blocked@K and "
+            "BlockedUserHitRate@K; never claim it as primary model quality"
+        ),
+        "blocked_information_forbidden_uses": [
+            "training",
+            "features",
+            "user_history",
+            "negative_sampling",
+            "hyperparameter_selection",
+        ],
+        "_normal_relevant_item_ids": sorted(
+            scope_state["NORMAL"]["relevant_items"]
+        ),
+        "_ad_relevant_item_ids": sorted(scope_state["AD"]["relevant_items"]),
     }
 
 
@@ -383,6 +563,53 @@ def timestamp_quantile_boundaries(
         "train_end_exclusive": train_end,
         "validation_end_exclusive": validation_end,
     }
+
+
+def validate_split_fractions(split: Mapping[str, Any]) -> tuple[float, float, float]:
+    """Validate the three configured temporal fractions as one complete partition."""
+
+    expected_names = (
+        "train_fraction",
+        "validation_fraction",
+        "temporal_final_fraction",
+    )
+    policy = split.get("fraction_validation")
+    if not isinstance(policy, Mapping):
+        raise RuntimeError("split.fraction_validation policy is required")
+    names = tuple(str(name) for name in policy.get("keys", ()))
+    if names != expected_names:
+        raise RuntimeError(
+            "split.fraction_validation.keys must exactly match "
+            f"{list(expected_names)} in order"
+        )
+    if policy.get("each_fraction_strictly_between_zero_and_one") is not True:
+        raise RuntimeError("Split fraction range validation must remain enabled")
+    try:
+        required_sum = float(policy["required_sum"])
+        absolute_tolerance = float(policy["absolute_tolerance"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(f"Invalid split fraction validation policy: {error}") from error
+    if not math.isfinite(required_sum) or not math.isfinite(absolute_tolerance):
+        raise RuntimeError("Split fraction sum policy must be finite")
+    if absolute_tolerance < 0.0:
+        raise RuntimeError("Split fraction absolute tolerance cannot be negative")
+    try:
+        values = tuple(float(split[name]) for name in names)
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(f"Invalid temporal split fractions: {error}") from error
+    if any(not math.isfinite(value) or value <= 0.0 or value >= 1.0 for value in values):
+        raise RuntimeError(
+            "Each temporal split fraction must be finite and strictly between 0 and 1"
+        )
+    if not math.isclose(
+        sum(values), required_sum, rel_tol=0.0, abs_tol=absolute_tolerance
+    ):
+        raise RuntimeError(
+            "Temporal split fractions violate configured required_sum/tolerance; "
+            f"expected {required_sum:.17g} +/- {absolute_tolerance:.17g}, "
+            f"got {sum(values):.17g}"
+        )
+    return values
 
 
 def choose_timestamp_boundaries(
@@ -436,11 +663,539 @@ def load_upload_availability_epochs(
     )
 
 
+def timestamp_to_local_date(value: float) -> int:
+    return int(
+        datetime.fromtimestamp(float(value), tz=ZoneInfo("Asia/Shanghai")).strftime(
+            "%Y%m%d"
+        )
+    )
+
+
+def _bool_array_to_mask(values: np.ndarray) -> int:
+    """Encode a small catalog boolean vector as a Python integer bitset."""
+
+    packed = np.packbits(values.astype(np.uint8), bitorder="little")
+    return int.from_bytes(packed.tobytes(), byteorder="little", signed=False)
+
+
+def _stable_int_set_hash(values: set[int]) -> str:
+    body = "".join(f"{value}\n" for value in sorted(values)).encode()
+    return sha256_bytes(body)
+
+
+def _stable_target_hash(frame: pd.DataFrame) -> str:
+    if frame.empty:
+        return sha256_bytes(b"")
+    ordered = frame.sort_values(
+        ["user_id", "timestamp", "video_id"], kind="mergesort"
+    )
+    body = "".join(
+        f"{int(row.user_id)},{float(row.timestamp):.6f},{int(row.video_id)}\n"
+        for row in ordered.itertuples(index=False)
+    ).encode()
+    return sha256_bytes(body)
+
+
+def load_candidate_catalog_policy(
+    path: Path, timestamp_min: float, timestamp_max: float
+) -> dict[str, Any]:
+    """Build causal daily candidate masks and audit item metadata.
+
+    KuaiRec exposes only daily item snapshots.  For a query on Shanghai date
+    ``D`` we therefore use the latest snapshot with ``snapshot_date < D``.
+    Same-day status is deliberately unavailable.  The primary task contains
+    only NORMAL, public videos whose upload date is also strictly before ``D``.
+    """
+
+    columns = ["video_id", "date", "upload_dt", "video_type", "visible_status"]
+    frame = pd.read_csv(path, usecols=columns, low_memory=False)
+    frame["video_id"] = pd.to_numeric(frame["video_id"], errors="raise").astype(int)
+    frame["date"] = pd.to_numeric(frame["date"], errors="raise").astype(int)
+    frame["upload_dt_parsed"] = pd.to_datetime(frame["upload_dt"], errors="coerce")
+    frame["upload_date"] = pd.to_numeric(
+        frame["upload_dt_parsed"].dt.strftime("%Y%m%d"), errors="coerce"
+    )
+
+    duplicate_video_date_rows = int(
+        frame.duplicated(["video_id", "date"], keep=False).sum()
+    )
+    if duplicate_video_date_rows:
+        raise RuntimeError(
+            "item_daily_features contains duplicate (video_id, date) snapshots"
+        )
+
+    invariant_fields = ("upload_dt", "video_type")
+    inconsistent = {
+        field: int((frame.groupby("video_id")[field].nunique(dropna=False) > 1).sum())
+        for field in invariant_fields
+    }
+    if any(inconsistent.values()):
+        raise RuntimeError(f"Per-video invariant metadata changed: {inconsistent}")
+
+    video_ids = sorted(frame["video_id"].unique().tolist())
+    index = {int(video_id): position for position, video_id in enumerate(video_ids)}
+    upload_by_video = (
+        frame.drop_duplicates("video_id")
+        .set_index("video_id")["upload_date"]
+        .to_dict()
+    )
+    type_by_video = (
+        frame.drop_duplicates("video_id")
+        .set_index("video_id")["video_type"]
+        .astype(str)
+        .to_dict()
+    )
+
+    ordered = frame.sort_values(["date", "video_id"], kind="mergesort")
+    snapshots_by_date = {
+        int(date): group
+        for date, group in ordered.groupby("date", sort=True)
+    }
+    snapshot_dates = sorted(snapshots_by_date)
+    start_date = datetime.fromtimestamp(
+        timestamp_min, tz=ZoneInfo("Asia/Shanghai")
+    ).date()
+    end_date = datetime.fromtimestamp(
+        timestamp_max, tz=ZoneInfo("Asia/Shanghai")
+    ).date()
+    query_dates = [
+        int(value.strftime("%Y%m%d"))
+        for value in pd.date_range(start_date, end_date, freq="D")
+    ]
+
+    known = np.zeros(len(video_ids), dtype=bool)
+    public = np.zeros(len(video_ids), dtype=bool)
+    normal = np.zeros(len(video_ids), dtype=bool)
+    current_status: dict[int, str] = {}
+    current_type: dict[int, str] = {}
+    cursor = 0
+    state_by_date: dict[int, dict[str, Any]] = {}
+    for query_date in query_dates:
+        while cursor < len(snapshot_dates) and snapshot_dates[cursor] < query_date:
+            snapshot = snapshots_by_date[snapshot_dates[cursor]]
+            for row in snapshot.itertuples(index=False):
+                video_id = int(row.video_id)
+                position = index[video_id]
+                status = str(row.visible_status)
+                video_type = str(row.video_type)
+                known[position] = True
+                public[position] = status == "public"
+                normal[position] = video_type == "NORMAL"
+                current_status[video_id] = status
+                current_type[video_id] = video_type
+            cursor += 1
+
+        uploaded = np.asarray(
+            [
+                pd.notna(upload_by_video[video_id])
+                and int(upload_by_video[video_id]) < query_date
+                for video_id in video_ids
+            ],
+            dtype=bool,
+        )
+        eligible = known & public & normal & uploaded
+        state_by_date[query_date] = {
+            "known": known.copy(),
+            "public": public.copy(),
+            "normal": normal.copy(),
+            "uploaded": uploaded,
+            "eligible": eligible,
+            "eligible_mask": _bool_array_to_mask(eligible),
+            "eligible_count": int(eligible.sum()),
+        }
+
+    transitions: Counter[str] = Counter()
+    for _, group in ordered.groupby("video_id", sort=False):
+        statuses = group.sort_values("date", kind="mergesort")[
+            "visible_status"
+        ].astype(str).tolist()
+        for before, after in zip(statuses, statuses[1:]):
+            if before != after:
+                transitions[f"{before}->{after}"] += 1
+
+    per_video_status_count = frame.groupby("video_id")["visible_status"].nunique()
+    audit = {
+        "policy_id": "normal-public-prior-day-status-v1",
+        "query_timezone": "Asia/Shanghai",
+        "snapshot_rule": "latest item_daily_features row with date < query local date",
+        "upload_rule": "upload_dt local date < query local date",
+        "primary_video_type": "NORMAL",
+        "advertisement_policy": "exclude AD from the primary recommendation task",
+        "unknown_or_no_prior_snapshot_policy": "exclude",
+        "video_count": len(video_ids),
+        "snapshot_rows": int(len(frame)),
+        "snapshot_date_min": int(frame["date"].min()),
+        "snapshot_date_max": int(frame["date"].max()),
+        "duplicate_video_date_rows": duplicate_video_date_rows,
+        "per_video_inconsistent_fields": inconsistent,
+        "video_type_video_counts": {
+            str(key): int(value)
+            for key, value in Counter(type_by_video.values()).items()
+        },
+        "visible_status_row_counts": {
+            str(key): int(value)
+            for key, value in frame["visible_status"].astype(str).value_counts().items()
+        },
+        "videos_by_distinct_visible_status_count": {
+            str(int(key)): int(value)
+            for key, value in per_video_status_count.value_counts().sort_index().items()
+        },
+        "visible_status_transition_counts": dict(sorted(transitions.items())),
+        "daily_primary_catalog_size": {
+            str(date): state["eligible_count"] for date, state in state_by_date.items()
+        },
+    }
+    return {
+        "video_ids": video_ids,
+        "video_index": index,
+        "state_by_date": state_by_date,
+        "audit": audit,
+    }
+
+
+def _catalog_flags(
+    video: pd.Series, timestamp: pd.Series, catalog: dict[str, Any]
+) -> dict[str, pd.Series]:
+    positions = video.map(catalog["video_index"])
+    dates = pd.to_datetime(timestamp, unit="s", utc=True).dt.tz_convert(
+        "Asia/Shanghai"
+    ).dt.strftime("%Y%m%d").astype(int)
+    flags = {
+        name: pd.Series(False, index=video.index, dtype=bool)
+        for name in ("known", "public", "normal", "uploaded", "eligible")
+    }
+    valid_position = positions.notna()
+    for query_date in dates.unique().tolist():
+        state = catalog["state_by_date"].get(int(query_date))
+        selection = dates.eq(query_date) & valid_position
+        if state is None or not selection.any():
+            continue
+        integer_positions = positions.loc[selection].astype(int).to_numpy()
+        for name in flags:
+            flags[name].loc[selection] = state[name][integer_positions]
+    flags["metadata_present"] = valid_position
+    return flags
+
+
+def _count_distribution_by_user_and_date(
+    weighted_keys: pd.DataFrame,
+) -> dict[str, Any]:
+    if weighted_keys.empty:
+        return {
+            "affected_users": 0,
+            "extras_per_affected_user": distribution([]),
+            "by_user": {},
+            "top_users": [],
+            "by_asia_shanghai_date": {},
+        }
+    by_user = (
+        weighted_keys.groupby("user_id", sort=False)["extra_count"].sum().astype(int)
+    )
+    local_dates = pd.to_datetime(
+        weighted_keys["timestamp"], unit="s", utc=True
+    ).dt.tz_convert("Asia/Shanghai").dt.strftime("%Y-%m-%d")
+    by_date = (
+        weighted_keys.assign(local_date=local_dates)
+        .groupby("local_date", sort=True)["extra_count"]
+        .sum()
+        .astype(int)
+    )
+    top = sorted(
+        ((int(user_id), int(count)) for user_id, count in by_user.items()),
+        key=lambda item: (-item[1], item[0]),
+    )[:20]
+    return {
+        "affected_users": int(len(by_user)),
+        "extras_per_affected_user": distribution(by_user.to_numpy()),
+        "by_user": {
+            str(int(user_id)): int(count)
+            for user_id, count in sorted(
+                by_user.items(), key=lambda item: int(item[0])
+            )
+        },
+        "top_users": [
+            {"user_id": user_id, "extra_count": count} for user_id, count in top
+        ],
+        "by_asia_shanghai_date": {
+            str(date): int(count) for date, count in by_date.items()
+        },
+    }
+
+
+def canonicalize_behavior_events(
+    frame: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, Any], pd.DataFrame, pd.DataFrame]:
+    """Collapse a user's raw Big Matrix rows to one deterministic event key.
+
+    The canonical key is ``(user_id, video_id, timestamp)``. Full eight-field
+    duplicates are removed first; remaining non-identical rows sharing the key
+    collapse deterministically. Derived strong-positive and quick-skip flags are
+    aggregated across the key so a representative row cannot hide a label
+    conflict. A quick-skip/strong-positive conflict is never a hard negative.
+
+    The returned weighted frames contain duplicate *extras* and are intentionally
+    small; callers aggregate them into the user/date audit without retaining raw
+    behavior logs in memory.
+    """
+
+    missing = [column for column in EVENT_COLUMNS if column not in frame.columns]
+    if missing:
+        raise RuntimeError(f"Big Matrix event columns are missing: {missing}")
+    if frame.empty:
+        empty = frame.loc[:, EVENT_COLUMNS].copy()
+        for name in (
+            "_is_strong_positive",
+            "_is_quick_skip",
+            "_binary_positive_conflict",
+            "_quick_skip_strong_conflict",
+        ):
+            empty[name] = pd.Series(dtype=bool)
+        weighted = pd.DataFrame(columns=EVENT_KEY + ["extra_count"])
+        return empty, {
+            "raw_rows": 0,
+            "exact_duplicate_rows_removed": 0,
+            "exact_duplicate_full_row_group_count": 0,
+            "same_key_nonexact_rows_removed": 0,
+            "same_key_nonexact_key_count": 0,
+            "binary_positive_conflict_key_count": 0,
+            "quick_skip_strong_positive_conflict_key_count": 0,
+            "canonical_event_count": 0,
+            "reconciliation_ok": True,
+        }, weighted.copy(), weighted.copy()
+
+    context = frame.loc[:, EVENT_COLUMNS].copy()
+    for column in (
+        "user_id",
+        "video_id",
+        "play_duration",
+        "video_duration",
+        "date",
+        "timestamp",
+        "watch_ratio",
+    ):
+        context[column] = pd.to_numeric(context[column], errors="coerce")
+    if context[["user_id", "video_id", "timestamp"]].isna().any().any():
+        raise RuntimeError("Canonical behavior identity contains missing values")
+    context["user_id"] = context["user_id"].astype(int)
+    context["video_id"] = context["video_id"].astype(int)
+
+    exact_sizes = context.groupby(
+        EVENT_COLUMNS, sort=False, dropna=False
+    ).size().rename("row_count")
+    exact_duplicate_groups = exact_sizes[exact_sizes > 1].reset_index()
+    exact_weighted = exact_duplicate_groups.loc[:, EVENT_KEY].copy()
+    exact_weighted["extra_count"] = (
+        exact_duplicate_groups["row_count"].astype(int) - 1
+    )
+    exact = context.drop_duplicates(EVENT_COLUMNS, keep="first").copy()
+
+    play = pd.to_numeric(exact["play_duration"], errors="coerce")
+    duration = pd.to_numeric(exact["video_duration"], errors="coerce")
+    exact["_row_strong_positive"] = (
+        pd.to_numeric(exact["watch_ratio"], errors="coerce") > 2.0
+    )
+    exact["_row_quick_skip"] = play < np.minimum(3000.0, duration)
+    grouped = exact.groupby(EVENT_KEY, sort=False, dropna=False)
+    key_flags = grouped.agg(
+        _strong_any=("_row_strong_positive", "any"),
+        _strong_all=("_row_strong_positive", "all"),
+        _quick_any=("_row_quick_skip", "any"),
+        _key_row_count=("video_id", "size"),
+    ).reset_index()
+    key_flags["_binary_positive_conflict"] = (
+        key_flags["_strong_any"] & ~key_flags["_strong_all"]
+    )
+    key_flags["_quick_skip_strong_conflict"] = (
+        key_flags["_quick_any"] & key_flags["_strong_any"]
+    )
+    key_flags["_is_strong_positive"] = (
+        key_flags["_strong_any"] & ~key_flags["_binary_positive_conflict"]
+    )
+    key_flags["_is_quick_skip"] = (
+        key_flags["_quick_any"] & ~key_flags["_quick_skip_strong_conflict"]
+    )
+
+    nonexact_groups = key_flags.loc[key_flags["_key_row_count"] > 1].copy()
+    nonexact_weighted = nonexact_groups.loc[:, EVENT_KEY].copy()
+    nonexact_weighted["extra_count"] = (
+        nonexact_groups["_key_row_count"].astype(int) - 1
+    )
+
+    sort_columns = EVENT_KEY + [
+        column for column in EVENT_COLUMNS if column not in EVENT_KEY
+    ]
+    representative = (
+        exact.sort_values(sort_columns, kind="mergesort", na_position="last")
+        .drop_duplicates(EVENT_KEY, keep="first")
+        .drop(columns=["_row_strong_positive", "_row_quick_skip"])
+    )
+    canonical = representative.merge(
+        key_flags[
+            EVENT_KEY
+            + [
+                "_is_strong_positive",
+                "_is_quick_skip",
+                "_binary_positive_conflict",
+                "_quick_skip_strong_conflict",
+            ]
+        ],
+        on=EVENT_KEY,
+        how="left",
+        validate="one_to_one",
+    ).sort_values(["timestamp", "video_id"], kind="mergesort")
+    canonical = canonical.reset_index(drop=True)
+
+    exact_removed = int(len(context) - len(exact))
+    nonexact_removed = int(len(exact) - len(canonical))
+    reconciled = len(context) - exact_removed - nonexact_removed == len(canonical)
+    if not reconciled:
+        raise RuntimeError("Canonical behavior-event accounting did not reconcile")
+    return canonical, {
+        "raw_rows": int(len(context)),
+        "exact_duplicate_rows_removed": exact_removed,
+        "exact_duplicate_full_row_group_count": int(len(exact_duplicate_groups)),
+        "same_key_nonexact_rows_removed": nonexact_removed,
+        "same_key_nonexact_key_count": int(len(nonexact_groups)),
+        "binary_positive_conflict_key_count": int(
+            key_flags["_binary_positive_conflict"].sum()
+        ),
+        "quick_skip_strong_positive_conflict_key_count": int(
+            key_flags["_quick_skip_strong_conflict"].sum()
+        ),
+        "canonical_event_count": int(len(canonical)),
+        "reconciliation_ok": bool(reconciled),
+    }, exact_weighted, nonexact_weighted
+
+
+def canonicalize_eligible_targets(
+    eligible_context: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Turn raw eligible rows into one unambiguous target per (u, i, t).
+
+    Exact duplicate rows are removed first.  A key containing both a strong and
+    a non-strong label is excluded as ambiguous.  All remaining positive rows
+    for one key collapse to one canonical target.  This rule is fixed before
+    any baseline or learned model is developed.
+    """
+
+    key = ["user_id", "video_id", "timestamp"]
+    if eligible_context.empty:
+        empty = eligible_context.loc[:, key].copy()
+        return empty, {
+            "raw_eligible_positive_rows": 0,
+            "exact_duplicate_positive_rows_removed": 0,
+            "exact_duplicate_positive_key_count": 0,
+            "same_key_nonexact_positive_rows_removed": 0,
+            "same_key_nonexact_positive_key_count": 0,
+            "binary_label_conflict_keys_excluded": 0,
+            "positive_rows_in_conflict_keys_excluded": 0,
+            "numeric_watch_ratio_disagreement_keys": 0,
+            "canonical_target_count": 0,
+            "reconciliation_ok": True,
+            "difference_distribution": _count_distribution_by_user_and_date(
+                pd.DataFrame(columns=key + ["extra_count"])
+            ),
+        }
+
+    context = eligible_context.copy()
+    context["watch_ratio"] = pd.to_numeric(
+        context["watch_ratio"], errors="coerce"
+    )
+    context["is_strong_positive"] = context["watch_ratio"] > 2.0
+    original_columns = [
+        column for column in context.columns if column != "is_strong_positive"
+    ]
+    positive = context.loc[context["is_strong_positive"]].copy()
+    raw_positive_rows = int(len(positive))
+    exact_group_sizes = positive.groupby(
+        original_columns, sort=False, dropna=False
+    ).size()
+    exact_duplicate_key_count = int((exact_group_sizes > 1).sum())
+    exact_positive = positive.drop_duplicates(original_columns, keep="first")
+    exact_removed = raw_positive_rows - len(exact_positive)
+
+    exact_context = context.drop_duplicates(original_columns, keep="first")
+    binary_nunique = exact_context.groupby(key, sort=False)[
+        "is_strong_positive"
+    ].nunique()
+    conflict_index = set(binary_nunique[binary_nunique > 1].index.tolist())
+    numeric_nunique = exact_context.groupby(key, sort=False)["watch_ratio"].nunique(
+        dropna=False
+    )
+    numeric_disagreement_count = int((numeric_nunique > 1).sum())
+
+    key_index = pd.MultiIndex.from_frame(exact_positive[key])
+    conflict_mask = np.fromiter(
+        (tuple(value) in conflict_index for value in key_index),
+        dtype=bool,
+        count=len(key_index),
+    )
+    positive_rows_in_conflicts = int(conflict_mask.sum())
+    unambiguous_positive = exact_positive.loc[~conflict_mask].copy()
+    nonexact_key_sizes = unambiguous_positive.groupby(key, sort=False).size()
+    nonexact_key_count = int((nonexact_key_sizes > 1).sum())
+    canonical_sort = key + [
+        column
+        for column in original_columns
+        if column not in key and column != "is_strong_positive"
+    ]
+    unambiguous_positive = unambiguous_positive.sort_values(
+        canonical_sort, kind="mergesort", na_position="last"
+    )
+    canonical = unambiguous_positive.drop_duplicates(key, keep="first")[key].copy()
+    same_key_nonexact_removed = len(unambiguous_positive) - len(canonical)
+
+    key_positive_counts = positive.groupby(key, sort=False).size().rename("positive_rows")
+    weighted = key_positive_counts.reset_index()
+    weighted["is_conflict"] = [
+        tuple(value) in conflict_index
+        for value in pd.MultiIndex.from_frame(weighted[key])
+    ]
+    weighted["extra_count"] = np.where(
+        weighted["is_conflict"],
+        weighted["positive_rows"],
+        weighted["positive_rows"] - 1,
+    ).astype(int)
+    weighted = weighted.loc[weighted["extra_count"] > 0, key + ["extra_count"]]
+
+    reconciled = (
+        raw_positive_rows
+        - exact_removed
+        - same_key_nonexact_removed
+        - positive_rows_in_conflicts
+        == len(canonical)
+    )
+    if not reconciled:
+        raise RuntimeError("Eligible target deduplication accounting did not reconcile")
+    return canonical, {
+        "formal_rule": (
+            "drop exact duplicate rows; exclude (user_id, video_id, timestamp) "
+            "keys with conflicting binary watch_ratio>2 labels; collapse every "
+            "remaining positive key to one canonical target"
+        ),
+        "raw_eligible_positive_rows": raw_positive_rows,
+        "exact_duplicate_positive_rows_removed": int(exact_removed),
+        "exact_duplicate_positive_key_count": exact_duplicate_key_count,
+        "same_key_nonexact_positive_rows_removed": int(
+            same_key_nonexact_removed
+        ),
+        "same_key_nonexact_positive_key_count": nonexact_key_count,
+        "binary_label_conflict_keys_excluded": int(len(conflict_index)),
+        "positive_rows_in_conflict_keys_excluded": positive_rows_in_conflicts,
+        "numeric_watch_ratio_disagreement_keys": numeric_disagreement_count,
+        "canonical_target_count": int(len(canonical)),
+        "reconciliation_ok": bool(reconciled),
+        "difference_distribution": _count_distribution_by_user_and_date(weighted),
+    }
+
+
 def scan_big_splits(
     path: Path,
     boundaries: dict[str, float | int],
     upload_epoch_by_video: dict[int, float],
     available_epoch_by_video: dict[int, float],
+    catalog_policy: dict[str, Any] | None = None,
+    canonical_behavior_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     split_order = ("train", "validation", "temporal_final")
     state: dict[str, dict[str, Any]] = {
@@ -454,11 +1209,16 @@ def scan_big_splits(
             "positive_same_day_upload_time_unverifiable_count": 0,
             "positive_missing_upload_count": 0,
             "positive_previously_seen_count": 0,
+            "positive_missing_catalog_metadata_count": 0,
+            "positive_without_prior_status_count": 0,
+            "positive_ad_video_count": 0,
+            "positive_not_public_count": 0,
             "users": set(),
             "videos": set(),
             "per_user_events": Counter(),
             "per_user_positives": Counter(),
-            "positive_group_parts": [],
+            "eligible_context_parts": [],
+            "pre_catalog_context_parts": [],
             "timestamp_min": math.inf,
             "timestamp_max": -math.inf,
         }
@@ -468,7 +1228,16 @@ def scan_big_splits(
     carry_first_timestamp_by_video: dict[int, float] = {}
     previous_user: int | None = None
     previous_timestamp: float | None = None
-    columns = ["user_id", "video_id", "timestamp", "watch_ratio"]
+    columns = [
+        "user_id",
+        "video_id",
+        "play_duration",
+        "video_duration",
+        "time",
+        "date",
+        "timestamp",
+        "watch_ratio",
+    ]
     for chunk in pd.read_csv(path, usecols=columns, chunksize=CHUNK_SIZE):
         user = pd.to_numeric(chunk["user_id"], errors="coerce")
         video = pd.to_numeric(chunk["video_id"], errors="coerce")
@@ -560,7 +1329,7 @@ def scan_big_splits(
             split_index = frame.index
             split_user = user.loc[split_index]
             split_video = video.loc[split_index]
-            positive = frame["watch_ratio"] > 2.0
+            positive = pd.to_numeric(frame["watch_ratio"], errors="coerce") > 2.0
             upload_epoch = frame["video_id"].map(upload_epoch_by_video)
             available_epoch = frame["video_id"].map(available_epoch_by_video)
             missing_upload = upload_epoch.isna() | available_epoch.isna()
@@ -571,13 +1340,83 @@ def scan_big_splits(
                 & (frame["timestamp"] < available_epoch)
             )
             previously_seen = ~first_interaction_at_query_time.loc[split_index]
-            eligible_positive = (
+            if catalog_policy is None:
+                metadata_present = ~missing_upload
+                prior_status_known = ~missing_upload
+                normal_video = pd.Series(True, index=frame.index)
+                public_video = pd.Series(True, index=frame.index)
+            else:
+                catalog_flags = _catalog_flags(
+                    split_video, frame["timestamp"], catalog_policy
+                )
+                metadata_present = catalog_flags["metadata_present"]
+                prior_status_known = catalog_flags["known"]
+                normal_video = catalog_flags["normal"]
+                public_video = catalog_flags["public"]
+
+            # Reasons use an explicit precedence so they reconcile with the
+            # canonical target input instead of double counting exclusions.
+            missing_catalog = positive & (~metadata_present | missing_upload)
+            before_upload = (
+                positive & ~missing_catalog & before_declared_upload_date
+            )
+            same_day_unknown = (
                 positive
-                & ~missing_upload
+                & ~missing_catalog
+                & ~before_upload
+                & same_day_upload_time_unverifiable
+            )
+            no_prior_status = (
+                positive
+                & ~missing_catalog
+                & ~before_upload
+                & ~same_day_unknown
+                & ~prior_status_known
+            )
+            ad_video = (
+                positive
+                & ~missing_catalog
+                & ~before_upload
+                & ~same_day_unknown
+                & ~no_prior_status
+                & ~normal_video
+            )
+            not_public = (
+                positive
+                & ~missing_catalog
+                & ~before_upload
+                & ~same_day_unknown
+                & ~no_prior_status
+                & ~ad_video
+                & ~public_video
+            )
+            already_seen = (
+                positive
+                & ~missing_catalog
+                & ~before_upload
+                & ~same_day_unknown
+                & ~no_prior_status
+                & ~ad_video
+                & ~not_public
+                & previously_seen
+            )
+            eligible_context = (
+                ~missing_upload
+                & ~before_declared_upload_date
+                & ~same_day_upload_time_unverifiable
+                & metadata_present
+                & prior_status_known
+                & normal_video
+                & public_video
+                & ~previously_seen
+            )
+            pre_catalog_context = (
+                ~missing_upload
                 & ~before_declared_upload_date
                 & ~same_day_upload_time_unverifiable
                 & ~previously_seen
             )
+            eligible_positive = positive & eligible_context
             positive_user = frame.loc[positive, "user_id"].astype(int)
             current = state[split_name]
             current["rows"] += len(frame)
@@ -599,23 +1438,27 @@ def scan_big_splits(
                 (positive & missing_upload).sum()
             )
             current["positive_previously_seen_count"] += int(
-                (
-                    positive
-                    & ~missing_upload
-                    & ~before_declared_upload_date
-                    & ~same_day_upload_time_unverifiable
-                    & previously_seen
-                ).sum()
+                already_seen.sum()
             )
+            current["positive_missing_catalog_metadata_count"] += int(
+                missing_catalog.sum()
+            )
+            current["positive_without_prior_status_count"] += int(
+                no_prior_status.sum()
+            )
+            current["positive_ad_video_count"] += int(ad_video.sum())
+            current["positive_not_public_count"] += int(not_public.sum())
             current["users"].update(split_user.unique().tolist())
             current["videos"].update(split_video.unique().tolist())
             add_counts(current["per_user_events"], split_user.value_counts())
             add_counts(current["per_user_positives"], positive_user.value_counts())
-            if eligible_positive.any():
-                current["positive_group_parts"].append(
-                    frame.loc[
-                        eligible_positive, ["user_id", "video_id", "timestamp"]
-                    ].copy()
+            if eligible_context.any():
+                current["eligible_context_parts"].append(
+                    frame.loc[eligible_context, columns].copy()
+                )
+            if pre_catalog_context.any():
+                current["pre_catalog_context_parts"].append(
+                    frame.loc[pre_catalog_context, columns].copy()
                 )
             current["timestamp_min"] = min(
                 current["timestamp_min"], float(frame["timestamp"].min())
@@ -648,17 +1491,34 @@ def scan_big_splits(
         new_videos = videos - reference_videos if reference_videos else set()
         timestamp_min = float(current["timestamp_min"])
         timestamp_max = float(current["timestamp_max"])
-        if current["positive_group_parts"]:
-            positive_events = pd.concat(
-                current["positive_group_parts"], ignore_index=True
-            ).drop_duplicates(["user_id", "timestamp", "video_id"])
+        if current["eligible_context_parts"]:
+            eligible_context = pd.concat(
+                current["eligible_context_parts"], ignore_index=True
+            )
+            positive_events, duplicate_audit = canonicalize_eligible_targets(
+                eligible_context
+            )
             target_group_sizes = (
                 positive_events.groupby(["user_id", "timestamp"], sort=False)
                 .size()
                 .to_numpy()
             )
         else:
+            positive_events, duplicate_audit = canonicalize_eligible_targets(
+                pd.DataFrame(columns=columns)
+            )
             target_group_sizes = np.asarray([], dtype=np.int64)
+        if current["pre_catalog_context_parts"]:
+            pre_catalog_context = pd.concat(
+                current["pre_catalog_context_parts"], ignore_index=True
+            )
+            _, pre_catalog_duplicate_audit = canonicalize_eligible_targets(
+                pre_catalog_context
+            )
+        else:
+            _, pre_catalog_duplicate_audit = canonicalize_eligible_targets(
+                pd.DataFrame(columns=columns)
+            )
         output[split_name] = {
             "timestamp_start_inclusive": timestamp_min,
             "timestamp_end_inclusive": timestamp_max,
@@ -687,7 +1547,19 @@ def scan_big_splits(
             "positive_previously_seen_count": int(
                 current["positive_previously_seen_count"]
             ),
+            "positive_missing_catalog_metadata_count": int(
+                current["positive_missing_catalog_metadata_count"]
+            ),
+            "positive_without_prior_status_count": int(
+                current["positive_without_prior_status_count"]
+            ),
+            "positive_ad_video_count": int(current["positive_ad_video_count"]),
+            "positive_not_public_count": int(
+                current["positive_not_public_count"]
+            ),
             "unique_eligible_target_count": int(target_group_sizes.sum()),
+            "target_deduplication_audit": duplicate_audit,
+            "pre_catalog_target_deduplication_audit": pre_catalog_duplicate_audit,
             "positive_fraction": (
                 current["positive_count"] / current["rows"] if current["rows"] else 0.0
             ),
@@ -713,8 +1585,697 @@ def scan_big_splits(
             "video_ids": sorted(videos),
             "per_user_events": dict(current["per_user_events"]),
             "per_user_positives": dict(current["per_user_positives"]),
+            "_canonical_targets": positive_events,
         }
+        if canonical_behavior_audit is not None:
+            canonical_split = canonical_behavior_audit["per_frozen_split"][
+                split_name
+            ]
+            # Keep raw target-quality counters above for transparent
+            # reconciliation, but all sequence/history-facing counters below
+            # come from one row per canonical event key.
+            output[split_name]["raw_behavior_event_count"] = int(
+                current["rows"]
+            )
+            output[split_name]["canonical_behavior_event_count"] = int(
+                canonical_split["canonical_event_count"]
+            )
+            output[split_name]["behavior_event_source"] = (
+                "canonical (user_id,video_id,timestamp) events"
+            )
+            output[split_name]["events_per_active_user"] = distribution(
+                list(canonical_split["per_user_events"].values())
+            )
+            output[split_name]["per_user_events"] = dict(
+                canonical_split["per_user_events"]
+            )
     return output
+
+
+def _candidate_distribution(values: list[int]) -> dict[str, Any]:
+    array = np.asarray(values, dtype=np.float64)
+    if array.size == 0:
+        return {"count": 0}
+    percentiles = (0, 1, 5, 10, 50, 90, 95, 99, 100)
+    quantiles = np.percentile(array, percentiles)
+    return {
+        "count": int(array.size),
+        "mean": float(array.mean()),
+        "zero_count": int((array == 0).sum()),
+        "zero_fraction": float((array == 0).mean()),
+        "quantiles": {
+            f"p{percentile:02d}": float(value)
+            for percentile, value in zip(percentiles, quantiles, strict=True)
+        },
+    }
+
+
+def iter_user_frames(path: Path, columns: list[str]):
+    """Yield complete user frames even when a user crosses a CSV chunk edge."""
+
+    carry = pd.DataFrame(columns=columns)
+    previous_user: int | None = None
+    for chunk in pd.read_csv(path, usecols=columns, chunksize=CHUNK_SIZE):
+        if not carry.empty:
+            chunk = pd.concat([carry, chunk], ignore_index=True)
+            carry = pd.DataFrame(columns=columns)
+        user = pd.to_numeric(chunk["user_id"], errors="raise").astype(int)
+        if (user.to_numpy()[1:] < user.to_numpy()[:-1]).any():
+            raise RuntimeError("big_matrix must remain grouped by user_id")
+        last_user = int(user.iloc[-1])
+        complete = chunk.loc[user.ne(last_user)]
+        carry = chunk.loc[user.eq(last_user)].copy()
+        for user_id, frame in complete.groupby("user_id", sort=False):
+            user_id = int(user_id)
+            if previous_user is not None and user_id <= previous_user:
+                raise RuntimeError("user frame iterator observed duplicate/out-of-order user")
+            previous_user = user_id
+            yield user_id, frame.reset_index(drop=True)
+    if not carry.empty:
+        user_id = int(carry["user_id"].iloc[0])
+        if previous_user is not None and user_id <= previous_user:
+            raise RuntimeError("user frame iterator ended out of order")
+        yield user_id, carry.reset_index(drop=True)
+
+
+def _split_name_for_timestamp(
+    value: float, boundaries: Mapping[str, float | int]
+) -> str:
+    if value < float(boundaries["train_end_exclusive"]):
+        return "train"
+    if value < float(boundaries["validation_end_exclusive"]):
+        return "validation"
+    return "temporal_final"
+
+
+def audit_canonical_behavior_events(
+    path: Path,
+    raw_boundaries: Mapping[str, float | int],
+    *,
+    train_fraction: float,
+    validation_fraction: float,
+) -> dict[str, Any]:
+    """Audit all Big Matrix rows and summarize canonical history inputs.
+
+    Protocol-v2.1 deliberately preserves the already disclosed protocol-v2
+    cutoffs, which were selected from raw row counts. All event-consuming
+    inputs use the canonical event table. We also calculate the counterfactual
+    canonical-count cutoffs and quantify event reassignment rather than silently
+    redefining the frozen holdout.
+    """
+
+    aggregate: Counter[str] = Counter()
+    exact_weighted_parts: list[pd.DataFrame] = []
+    nonexact_weighted_parts: list[pd.DataFrame] = []
+    canonical_timestamp_parts: list[np.ndarray] = []
+    raw_split_rows: Counter[str] = Counter()
+    canonical_split_rows: Counter[str] = Counter()
+    per_split: dict[str, dict[str, Any]] = {
+        name: {
+            "users": set(),
+            "videos": set(),
+            "per_user_events": Counter(),
+            "per_user_strong_positives": Counter(),
+        }
+        for name in ("train", "validation", "temporal_final")
+    }
+    canonical_digest = hashlib.sha256()
+
+    for user_id, raw_frame in iter_user_frames(path, EVENT_COLUMNS):
+        raw_times = pd.to_numeric(raw_frame["timestamp"], errors="raise").to_numpy(
+            dtype=np.float64
+        )
+        for value in raw_times:
+            raw_split_rows[_split_name_for_timestamp(float(value), raw_boundaries)] += 1
+
+        canonical, partial, exact_weighted, nonexact_weighted = (
+            canonicalize_behavior_events(raw_frame)
+        )
+        for name, value in partial.items():
+            if name.endswith("count") or name.endswith("rows") or name.endswith(
+                "removed"
+            ):
+                aggregate[name] += int(value)
+        if not exact_weighted.empty:
+            exact_weighted_parts.append(exact_weighted)
+        if not nonexact_weighted.empty:
+            nonexact_weighted_parts.append(nonexact_weighted)
+
+        timestamps = canonical["timestamp"].to_numpy(dtype=np.float64)
+        canonical_timestamp_parts.append(timestamps)
+        for row in canonical.itertuples(index=False):
+            values = [getattr(row, column) for column in EVENT_COLUMNS]
+            canonical_digest.update(
+                json.dumps(values, ensure_ascii=False, separators=(",", ":"), default=str).encode()
+            )
+            canonical_digest.update(b"\n")
+        for split_name in ("train", "validation", "temporal_final"):
+            if split_name == "train":
+                mask = timestamps < float(raw_boundaries["train_end_exclusive"])
+            elif split_name == "validation":
+                mask = (
+                    timestamps >= float(raw_boundaries["train_end_exclusive"])
+                ) & (
+                    timestamps
+                    < float(raw_boundaries["validation_end_exclusive"])
+                )
+            else:
+                mask = timestamps >= float(
+                    raw_boundaries["validation_end_exclusive"]
+                )
+            if not mask.any():
+                continue
+            selected = canonical.loc[mask]
+            current = per_split[split_name]
+            canonical_split_rows[split_name] += int(len(selected))
+            current["users"].add(int(user_id))
+            current["videos"].update(selected["video_id"].astype(int).tolist())
+            current["per_user_events"][int(user_id)] += int(len(selected))
+            strong_count = int(selected["_is_strong_positive"].sum())
+            if strong_count:
+                current["per_user_strong_positives"][int(user_id)] += strong_count
+
+    canonical_timestamps = (
+        np.concatenate(canonical_timestamp_parts)
+        if canonical_timestamp_parts
+        else np.asarray([], dtype=np.float64)
+    )
+    canonical_boundaries = timestamp_quantile_boundaries(
+        canonical_timestamps, train_fraction, validation_fraction
+    )
+    frozen_assignment = np.where(
+        canonical_timestamps < float(raw_boundaries["train_end_exclusive"]),
+        "train",
+        np.where(
+            canonical_timestamps
+            < float(raw_boundaries["validation_end_exclusive"]),
+            "validation",
+            "temporal_final",
+        ),
+    )
+    counterfactual_assignment = np.where(
+        canonical_timestamps
+        < float(canonical_boundaries["train_end_exclusive"]),
+        "train",
+        np.where(
+            canonical_timestamps
+            < float(canonical_boundaries["validation_end_exclusive"]),
+            "validation",
+            "temporal_final",
+        ),
+    )
+    transitions = Counter(
+        f"{before}->{after}"
+        for before, after in zip(
+            frozen_assignment, counterfactual_assignment, strict=True
+        )
+    )
+    frozen_assignment_counts = Counter(str(value) for value in frozen_assignment)
+    counterfactual_assignment_counts = Counter(
+        str(value) for value in counterfactual_assignment
+    )
+    changed = int((frozen_assignment != counterfactual_assignment).sum())
+
+    empty_weighted = pd.DataFrame(columns=EVENT_KEY + ["extra_count"])
+    exact_weighted_all = (
+        pd.concat(exact_weighted_parts, ignore_index=True)
+        if exact_weighted_parts
+        else empty_weighted
+    )
+    nonexact_weighted_all = (
+        pd.concat(nonexact_weighted_parts, ignore_index=True)
+        if nonexact_weighted_parts
+        else empty_weighted
+    )
+    split_payload: dict[str, Any] = {}
+    for name, current in per_split.items():
+        split_payload[name] = {
+            "raw_rows_assigned": int(raw_split_rows[name]),
+            "canonical_event_count": int(canonical_split_rows[name]),
+            "users": len(current["users"]),
+            "videos": len(current["videos"]),
+            "user_ids": sorted(current["users"]),
+            "video_ids": sorted(current["videos"]),
+            "per_user_events": dict(current["per_user_events"]),
+            "per_user_strong_positives": dict(
+                current["per_user_strong_positives"]
+            ),
+        }
+
+    raw_rows = int(aggregate["raw_rows"])
+    canonical_count = int(aggregate["canonical_event_count"])
+    reconciliation_ok = (
+        raw_rows
+        - int(aggregate["exact_duplicate_rows_removed"])
+        - int(aggregate["same_key_nonexact_rows_removed"])
+        == canonical_count
+    )
+    if not reconciliation_ok:
+        raise RuntimeError("Global canonical behavior-event accounting failed")
+    return {
+        "canonical_key": EVENT_KEY,
+        "exact_duplicate_definition": EVENT_COLUMNS,
+        "canonical_representative_rule": (
+            "remove full eight-field exact duplicates, then sort each "
+            "(user_id,video_id,timestamp) key by a typed tuple of all remaining "
+            "fields (numeric values numerically, text lexicographically, nulls "
+            "last) and retain one; "
+            "aggregate label flags across the complete key"
+        ),
+        "raw_rows": raw_rows,
+        "exact_duplicate_rows_removed": int(
+            aggregate["exact_duplicate_rows_removed"]
+        ),
+        "exact_duplicate_full_row_group_count": int(
+            aggregate["exact_duplicate_full_row_group_count"]
+        ),
+        "same_key_nonexact_rows_removed": int(
+            aggregate["same_key_nonexact_rows_removed"]
+        ),
+        "same_key_nonexact_key_count": int(
+            aggregate["same_key_nonexact_key_count"]
+        ),
+        "binary_positive_conflict_key_count": int(
+            aggregate["binary_positive_conflict_key_count"]
+        ),
+        "quick_skip_strong_positive_conflict_key_count": int(
+            aggregate["quick_skip_strong_positive_conflict_key_count"]
+        ),
+        "canonical_event_count": canonical_count,
+        "canonical_event_sha256": canonical_digest.hexdigest(),
+        "reconciliation_ok": reconciliation_ok,
+        "exact_duplicate_distribution": _count_distribution_by_user_and_date(
+            exact_weighted_all
+        ),
+        "same_key_nonexact_distribution": _count_distribution_by_user_and_date(
+            nonexact_weighted_all
+        ),
+        "downstream_event_inputs": {
+            "split_cutoffs": (
+                "retain frozen protocol-v2 raw-count cutoffs; apply them to "
+                "canonical events"
+            ),
+            "history": "canonical events strictly before query timestamp",
+            "seen_filter": "canonical events strictly before query timestamp",
+            "last_50": "last 50 canonical events, not raw duplicate rows",
+            "quick_skip": (
+                "canonical key flag; exclude any key containing both quick-skip "
+                "and strong-positive evidence"
+            ),
+            "popularity": "count canonical events once per event key",
+        },
+        "boundary_sensitivity": {
+            "decision": "preserve previously frozen raw-count cutoffs",
+            "reason": (
+                "protocol-v2 aggregate final statistics were disclosed before "
+                "protocol-v2.1; moving the cutoff would silently redefine holdout"
+            ),
+            "frozen_raw_count_boundaries": {
+                "train_end_exclusive": float(
+                    raw_boundaries["train_end_exclusive"]
+                ),
+                "validation_end_exclusive": float(
+                    raw_boundaries["validation_end_exclusive"]
+                ),
+            },
+            "counterfactual_canonical_count_boundaries": {
+                "train_end_exclusive": float(
+                    canonical_boundaries["train_end_exclusive"]
+                ),
+                "validation_end_exclusive": float(
+                    canonical_boundaries["validation_end_exclusive"]
+                ),
+            },
+            "frozen_boundary_canonical_event_counts": {
+                name: int(frozen_assignment_counts[name])
+                for name in ("train", "validation", "temporal_final")
+            },
+            "counterfactual_boundary_canonical_event_counts": {
+                name: int(counterfactual_assignment_counts[name])
+                for name in ("train", "validation", "temporal_final")
+            },
+            "canonical_events_with_changed_assignment": changed,
+            "canonical_event_changed_fraction": (
+                changed / canonical_count if canonical_count else 0.0
+            ),
+            "assignment_transition_counts": dict(sorted(transitions.items())),
+        },
+        "per_frozen_split": split_payload,
+        "_canonical_count_boundaries": canonical_boundaries,
+    }
+
+
+def audit_candidate_sizes_and_hard_negatives(
+    path: Path,
+    canonical_targets: dict[str, pd.DataFrame],
+    catalog_policy: dict[str, Any],
+    boundaries: dict[str, float | int],
+    *,
+    session_gap_minutes: float,
+    hard_window_minutes: float,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Replay candidate sizes and audit train-only future quick-skip pools.
+
+    This computes no scores and runs no baseline.  Future positive labels are
+    consulted only for aggregate false-negative diagnostics; they never alter
+    the pool or any future sampler.
+    """
+
+    query_map: dict[int, dict[float, dict[str, Any]]] = {}
+    for split_name, targets in canonical_targets.items():
+        for (user_id, timestamp), group in targets.groupby(
+            ["user_id", "timestamp"], sort=False
+        ):
+            query_map.setdefault(int(user_id), {})[float(timestamp)] = {
+                "split": split_name,
+                "targets": set(group["video_id"].astype(int).tolist()),
+            }
+
+    sizes: dict[str, dict[str, list[int]]] = {
+        split: {"available": [], "unseen": [], "uniform_pool": []}
+        for split in ("train", "validation", "temporal_final")
+    }
+    target_missing_from_candidate: Counter[str] = Counter()
+    hard_query_count = 0
+    hard_queries_with_pool = 0
+    hard_event_count = 0
+    hard_unique_pair_count = 0
+    hard_pool_sizes: list[int] = []
+    false_negative_pair_counts: Counter[str] = Counter()
+    false_negative_query_counts: Counter[str] = Counter()
+    skipped_reasons: Counter[str] = Counter()
+    gap_seconds = float(session_gap_minutes) * 60.0
+    hard_window_seconds = float(hard_window_minutes) * 60.0
+    train_cutoff = float(boundaries["train_end_exclusive"])
+    item_index = catalog_policy["video_index"]
+    catalog_video_ids = list(
+        catalog_policy.get(
+            "video_ids", sorted(item_index, key=lambda value: item_index[value])
+        )
+    )
+    if catalog_video_ids != sorted(catalog_video_ids):
+        raise RuntimeError("Candidate catalog video_ids must be in stable sorted order")
+    membership_width_bytes = (len(catalog_video_ids) + 7) // 8
+    membership_digests = {
+        split: hashlib.sha256()
+        for split in ("train", "validation", "temporal_final")
+    }
+    membership_query_counts: Counter[str] = Counter()
+    risk_names = (
+        "remaining_session",
+        "within_1d",
+        "within_7d",
+        "before_fit_cutoff",
+    )
+
+    for user_id, raw_frame in iter_user_frames(path, EVENT_COLUMNS):
+        user_queries = query_map.get(user_id)
+        if not user_queries:
+            continue
+        frame, _, _, _ = canonicalize_behavior_events(raw_frame)
+        video_values = pd.to_numeric(
+            frame["video_id"], errors="raise"
+        ).to_numpy(dtype=np.int64)
+        timestamps = pd.to_numeric(
+            frame["timestamp"], errors="raise"
+        ).to_numpy(dtype=np.float64)
+        strong_values = frame["_is_strong_positive"].to_numpy(dtype=bool)
+        quick_skip_values = frame["_is_quick_skip"].to_numpy(dtype=bool)
+        quick_strong_conflicts = frame[
+            "_quick_skip_strong_conflict"
+        ].to_numpy(dtype=bool)
+        if timestamps.size > 1 and (timestamps[1:] < timestamps[:-1]).any():
+            raise RuntimeError("User timestamps must remain nondecreasing")
+
+        # Compute sessions at array speed. Equal timestamps and a gap of exactly
+        # 30 minutes remain in the same session; only a strictly larger gap cuts.
+        starts_new_session = np.zeros(timestamps.size, dtype=np.int64)
+        if timestamps.size > 1:
+            starts_new_session[1:] = (
+                np.diff(timestamps) > gap_seconds
+            ).astype(np.int64)
+        session_ids = np.cumsum(starts_new_session)
+        session_end_by_id: dict[int, float] = {}
+        for session_id, event_time in zip(session_ids, timestamps, strict=True):
+            session_end_by_id[int(session_id)] = float(event_time)
+
+        first_time_by_item: dict[int, float] = {}
+        for video_id, event_time in zip(video_values, timestamps, strict=True):
+            first_time_by_item.setdefault(int(video_id), float(event_time))
+        strong_times_by_item: dict[int, list[float]] = {}
+        for video_id, event_time in zip(
+            video_values[strong_values & (timestamps < train_cutoff)],
+            timestamps[strong_values & (timestamps < train_cutoff)],
+            strict=True,
+        ):
+            strong_times_by_item.setdefault(int(video_id), []).append(
+                float(event_time)
+            )
+
+        position_values = np.fromiter(
+            (item_index.get(int(video_id), -1) for video_id in video_values),
+            dtype=np.int64,
+            count=len(video_values),
+        )
+        seen_mask = 0
+        history_cursor = 0
+        for query_time, query in sorted(user_queries.items()):
+            query_time = float(query_time)
+            query_left = int(np.searchsorted(timestamps, query_time, side="left"))
+            if query_left >= len(timestamps) or timestamps[query_left] != query_time:
+                raise RuntimeError(
+                    "Canonical query timestamp is absent from canonical history"
+                )
+
+            # Consume every event strictly before the query. The current
+            # timestamp group remains unseen until a later query.
+            if query_left > history_cursor:
+                prior_positions = position_values[history_cursor:query_left]
+                for position in np.unique(prior_positions[prior_positions >= 0]):
+                    seen_mask |= 1 << int(position)
+                history_cursor = query_left
+
+            query_date = timestamp_to_local_date(query_time)
+            state = catalog_policy["state_by_date"].get(query_date)
+            candidate_mask = int(state["eligible_mask"]) if state else 0
+            available_count = candidate_mask.bit_count()
+            unseen_mask = candidate_mask & ~seen_mask
+            unseen_count = unseen_mask.bit_count()
+            target_group = sorted(int(target) for target in query["targets"])
+            identity = (
+                f"membership-bitset-v1|{query['split']}|{user_id}|"
+                f"{query_time:.6f}|{','.join(map(str, target_group))}|"
+            ).encode()
+            membership_digest = membership_digests[query["split"]]
+            membership_digest.update(identity)
+            membership_digest.update(
+                unseen_mask.to_bytes(
+                    membership_width_bytes, byteorder="little", signed=False
+                )
+            )
+            membership_digest.update(b"\n")
+            membership_query_counts[query["split"]] += 1
+            target_count_in_pool = 0
+            for target in query["targets"]:
+                position = item_index.get(int(target))
+                if position is not None and ((unseen_mask >> position) & 1):
+                    target_count_in_pool += 1
+                else:
+                    target_missing_from_candidate[query["split"]] += 1
+            uniform_pool_count = unseen_count - target_count_in_pool
+            if uniform_pool_count < 0:
+                raise RuntimeError("Uniform negative pool size became negative")
+            split_sizes = sizes[query["split"]]
+            split_sizes["available"].append(available_count)
+            split_sizes["unseen"].append(unseen_count)
+            split_sizes["uniform_pool"].append(uniform_pool_count)
+
+            if query["split"] != "train":
+                continue
+            hard_query_count += 1
+            left = int(np.searchsorted(timestamps, query_time, side="right"))
+            right = min(
+                int(
+                    np.searchsorted(
+                        timestamps,
+                        query_time + hard_window_seconds,
+                        side="right",
+                    )
+                ),
+                int(np.searchsorted(timestamps, train_cutoff, side="left")),
+            )
+            query_session = int(session_ids[query_left])
+            window = np.arange(left, right, dtype=np.int64)
+            if window.size:
+                same_session = session_ids[window] == query_session
+                skipped_reasons["outside_same_session"] += int(
+                    window.size - same_session.sum()
+                )
+                window = window[same_session]
+            if window.size:
+                conflict = quick_strong_conflicts[window]
+                skipped_reasons["quick_skip_strong_positive_conflict"] += int(
+                    conflict.sum()
+                )
+                window = window[~conflict]
+            if window.size:
+                quick_skip = quick_skip_values[window]
+                skipped_reasons["not_quick_skip"] += int(
+                    window.size - quick_skip.sum()
+                )
+                window = window[quick_skip]
+            hard_event_count += int(window.size)
+
+            first_event_by_item: dict[int, float] = {}
+            for row_position in window:
+                video_id = int(video_values[row_position])
+                event_time = float(timestamps[row_position])
+                catalog_position = int(position_values[row_position])
+                if catalog_position < 0 or not (
+                    (candidate_mask >> catalog_position) & 1
+                ):
+                    skipped_reasons["not_candidate_at_query"] += 1
+                    continue
+                if first_time_by_item[video_id] < query_time:
+                    skipped_reasons["seen_at_query"] += 1
+                    continue
+                if video_id in query["targets"]:
+                    skipped_reasons["current_target"] += 1
+                    continue
+                first_event_by_item.setdefault(video_id, event_time)
+
+            hard_unique_pair_count += len(first_event_by_item)
+            hard_pool_sizes.append(len(first_event_by_item))
+            if first_event_by_item:
+                hard_queries_with_pool += 1
+            query_risks = {name: False for name in risk_names}
+            session_end = min(
+                session_end_by_id.get(query_session, query_time), train_cutoff
+            )
+            for video_id, hard_time in first_event_by_item.items():
+                later = strong_times_by_item.get(video_id, [])
+                bounds = {
+                    "remaining_session": session_end,
+                    "within_1d": min(query_time + 86400.0, train_cutoff),
+                    "within_7d": min(query_time + 7 * 86400.0, train_cutoff),
+                    "before_fit_cutoff": train_cutoff,
+                }
+                start = bisect.bisect_right(later, hard_time)
+                for name, bound in bounds.items():
+                    later_timestamp = later[start] if start < len(later) else None
+                    within_bound = (
+                        later_timestamp is not None
+                        and later_timestamp < train_cutoff
+                        and (
+                            later_timestamp < bound
+                            if bound == train_cutoff
+                            else later_timestamp <= bound
+                        )
+                    )
+                    if within_bound:
+                        false_negative_pair_counts[name] += 1
+                        query_risks[name] = True
+            for name, has_risk in query_risks.items():
+                if has_risk:
+                    false_negative_query_counts[name] += 1
+
+    candidate_output = {
+        "rule": (
+            "per-query causal NORMAL/public/uploaded catalog; remove all items "
+            "observed strictly before query; score before consuming equal timestamp"
+        ),
+        "per_split": {
+            split: {
+                "available_candidate_size": _candidate_distribution(
+                    values["available"]
+                ),
+                "available_unseen_candidate_size": _candidate_distribution(
+                    values["unseen"]
+                ),
+                "uniform_pool_excluding_targets_size": _candidate_distribution(
+                    values["uniform_pool"]
+                ),
+                "target_missing_from_candidate_count": int(
+                    target_missing_from_candidate[split]
+                ),
+                "candidate_membership_sha256": membership_digests[
+                    split
+                ].hexdigest(),
+                "candidate_membership_query_count": int(
+                    membership_query_counts[split]
+                ),
+            }
+            for split, values in sizes.items()
+        },
+        "membership_hash_format": {
+            "algorithm": "sha256",
+            "version": "membership-bitset-v1",
+            "query_order": "ascending (user_id, timestamp) over canonical target groups",
+            "query_identity": (
+                "split|user_id|timestamp formatted to 6 decimals|sorted target IDs"
+            ),
+            "candidate_membership": (
+                "fixed-width little-endian bitset over globally ascending video_ids; "
+                "causal NORMAL/public/uploaded and unseen strictly before query; "
+                "current target group remains included"
+            ),
+            "catalog_video_id_order_sha256": _stable_int_set_hash(
+                set(catalog_video_ids)
+            ),
+            "bitset_width_bytes": membership_width_bytes,
+        },
+    }
+    pair_denominator = hard_unique_pair_count
+    hard_output = {
+        "status": "aggregate_pool_audit_only_no_sampler_or_model_executed",
+        "fit_context": "selection_train_only",
+        "future_window": (
+            "query_time < event_time <= query_time+30m and event_time < "
+            "train_end; same session; never reads validation for a train query"
+        ),
+        "later_positive_diagnostic_cutoff": (
+            "every later positive must satisfy later_timestamp < "
+            "train_end_exclusive, including remaining_session"
+        ),
+        "seen_definition": "first canonical event timestamp < query_time",
+        "quick_skip_conflict_policy": (
+            "exclude a (user,item,timestamp) key if any row is quick-skip and "
+            "any row is strong-positive"
+        ),
+        "query_count": hard_query_count,
+        "queries_with_nonempty_pool": hard_queries_with_pool,
+        "query_pool_coverage": (
+            hard_queries_with_pool / hard_query_count if hard_query_count else 0.0
+        ),
+        "same_session_window_quick_skip_event_count_before_candidate_filters": hard_event_count,
+        "unique_hard_query_item_pairs": hard_unique_pair_count,
+        "pool_size_per_query": _candidate_distribution(hard_pool_sizes),
+        "filter_counts": dict(sorted(skipped_reasons.items())),
+        "false_negative_risk": {
+            "diagnostic_only_not_used_to_filter_or_tune": True,
+            "pair_denominator": pair_denominator,
+            "query_denominator": hard_queries_with_pool,
+            "pair_counts": {
+                name: int(false_negative_pair_counts[name]) for name in risk_names
+            },
+            "pair_fractions": {
+                name: false_negative_pair_counts[name] / pair_denominator
+                if pair_denominator
+                else 0.0
+                for name in risk_names
+            },
+            "query_any_risk_counts": {
+                name: int(false_negative_query_counts[name]) for name in risk_names
+            },
+            "query_any_risk_fractions": {
+                name: false_negative_query_counts[name] / hard_queries_with_pool
+                if hard_queries_with_pool
+                else 0.0
+                for name in risk_names
+            },
+        },
+    }
+    return candidate_output, hard_output
 
 
 def metadata_coverage(
@@ -803,11 +2364,91 @@ def history_distributions(
     }
 
 
-def baseline_cost_estimates(
-    split_stats: dict[str, Any], small_complete_pairs: int, big_video_count: int
+def cold_start_context_audit(
+    split_stats: dict[str, Any],
+    canonical_targets: dict[str, pd.DataFrame],
+    small_normal_relevant_items: set[int],
+    small_ad_relevant_items: set[int],
 ) -> dict[str, Any]:
-    train_rows = split_stats["train"]["rows"]
-    train_positive = split_stats["train"]["positive_count"]
+    train_items = set(int(value) for value in split_stats["train"]["video_ids"])
+    through_validation_items = train_items | set(
+        int(value) for value in split_stats["validation"]["video_ids"]
+    )
+
+    def context_row(
+        reference_splits: list[str],
+        reference_items: set[int],
+        target_items: set[int],
+        *,
+        target_definition: str,
+    ) -> dict[str, Any]:
+        cold = target_items - reference_items
+        warm = target_items & reference_items
+        return {
+            "reference_splits": reference_splits,
+            "reference_item_count": len(reference_items),
+            "reference_membership_sha256": _stable_int_set_hash(reference_items),
+            "target_item_count": len(target_items),
+            "target_definition": target_definition,
+            "warm_target_item_count": len(warm),
+            "cold_target_item_count": len(cold),
+            "cold_target_membership_sha256": _stable_int_set_hash(cold),
+            "data_warm_definition": (
+                "at least one Big Matrix interaction in the context reference"
+            ),
+            "id_embedding_actually_trained_is_separate": True,
+        }
+
+    validation_targets = set(
+        canonical_targets["validation"]["video_id"].astype(int).tolist()
+    )
+    final_targets = set(
+        canonical_targets["temporal_final"]["video_id"].astype(int).tolist()
+    )
+    return {
+        "validation": context_row(
+            ["train"],
+            train_items,
+            validation_targets,
+            target_definition="canonical validation relevant target items",
+        ),
+        "temporal_final": context_row(
+            ["train", "validation"],
+            through_validation_items,
+            final_targets,
+            target_definition="canonical temporal-final relevant target items",
+        ),
+        "small_matrix": context_row(
+            ["train", "validation"],
+            through_validation_items,
+            small_normal_relevant_items,
+            target_definition=(
+                "observed NORMAL Small Matrix items with watch_ratio > 2.0"
+            ),
+        ),
+        "small_matrix_ad_diagnostic": context_row(
+            ["train", "validation"],
+            through_validation_items,
+            small_ad_relevant_items,
+            target_definition=(
+                "observed AD Small Matrix items with watch_ratio > 2.0; "
+                "reported separately from primary"
+            ),
+        ),
+        "untrained_id_policy": (
+            "an ID embedding may be used only if optimization actually touched it; "
+            "otherwise use the content-only/UNK fallback"
+        ),
+    }
+
+
+def baseline_cost_estimates(
+    split_stats: dict[str, Any],
+    small_primary_pairs: int,
+    small_secondary_pairs: int,
+    big_video_count: int,
+) -> dict[str, Any]:
+    train_positive = split_stats["train"]["unique_eligible_target_count"]
     validation_queries = split_stats["validation"]["temporal_query_count"]
     dense_validation_upper = validation_queries * big_video_count
     bpr_epochs = 10
@@ -819,7 +2460,11 @@ def baseline_cost_estimates(
         "validation_temporal_queries": validation_queries,
         "big_candidate_catalog_upper_bound": big_video_count,
         "validation_dense_score_pair_upper_bound": dense_validation_upper,
-        "small_matrix_full_ranking_pairs": small_complete_pairs,
+        "small_matrix_primary_observed_pairs": small_primary_pairs,
+        "small_matrix_secondary_full_ranking_pairs": small_secondary_pairs,
+        "canonical_train_targets": int(train_positive),
+        "bpr_reference_epochs": bpr_epochs,
+        "bpr_positive_updates_before_batching": int(train_positive * bpr_epochs),
         "baselines": {
             "random": {
                 "fit_scale": "none",
@@ -827,12 +2472,17 @@ def baseline_cost_estimates(
                 "expected_compute": "under 5 CPU minutes with direct seeded top-K sampling",
             },
             "global_popularity": {
-                "fit_scale": f"one pass over {train_rows:,} train interactions",
+                "fit_scale": (
+                    f"one pass over {train_positive:,} canonical train targets"
+                ),
                 "evaluation_scale": "one shared ranking plus per-user seen filtering",
                 "expected_compute": "roughly 1-5 CPU minutes",
             },
             "time_decayed_popularity": {
-                "fit_scale": f"one chronological pass over {train_rows:,} interactions",
+                "fit_scale": (
+                    f"one causal chronological stream over {train_positive:,} "
+                    "canonical train targets"
+                ),
                 "evaluation_scale": "state update plus shared ranking at query times",
                 "expected_compute": "roughly 3-15 CPU minutes",
             },
@@ -871,6 +2521,17 @@ def strip_heavy_internal_fields(data: dict[str, Any]) -> dict[str, Any]:
     for split in copied.get("splits", {}).values():
         for field in ("user_ids", "video_ids", "per_user_events", "per_user_positives"):
             split.pop(field, None)
+    behavior = copied.get("big_matrix_behavior_event_audit")
+    if isinstance(behavior, dict):
+        behavior.pop("_canonical_count_boundaries", None)
+        for split in behavior.get("per_frozen_split", {}).values():
+            for field in (
+                "user_ids",
+                "video_ids",
+                "per_user_events",
+                "per_user_strong_positives",
+            ):
+                split.pop(field, None)
     return copied
 
 
@@ -899,6 +2560,120 @@ def ensure_phase0_outputs_absent(paths: list[Path]) -> None:
             "Phase 0 outputs are immutable as one protocol bundle. Refusing to "
             f"scan or overwrite existing outputs: {existing}"
         )
+
+
+def archive_protocol_v1_bundle(
+    paths: list[Path], archive_root: Path
+) -> dict[str, Any]:
+    """Archive a complete schema-v1 bundle before the reviewed v2 migration."""
+
+    missing = [str(path) for path in paths if not path.exists()]
+    if missing:
+        raise RuntimeError(
+            "Protocol-v1 supersession requires a complete existing bundle; "
+            f"missing: {missing}"
+        )
+    manifest_path = next(path for path in paths if path.name == "split_manifest.json")
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get("schema_version") != 1:
+        raise RuntimeError("Only the reviewed schema-v1 bundle may be superseded")
+    archive_root.mkdir(parents=True, exist_ok=True)
+    archived: dict[str, str] = {}
+    for path in paths:
+        destination = archive_root / path.name
+        if destination.exists():
+            if sha256_file(destination) != sha256_file(path):
+                raise RuntimeError(
+                    f"Existing protocol-v1 archive differs from {path}: {destination}"
+                )
+        else:
+            shutil.copy2(path, destination)
+        archived[str(path)] = sha256_file(path)
+    for path in paths:
+        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        path.unlink()
+    return {
+        "parent_manifest_sha256": archived[str(manifest_path)],
+        "archive_directory": str(archive_root),
+        "archived_file_sha256": archived,
+    }
+
+
+def archive_protocol_v2_bundle(
+    paths: list[Path], archive_root: Path
+) -> dict[str, Any]:
+    """Archive the complete immutable protocol-v2 bundle before v2.1."""
+
+    missing = [str(path) for path in paths if not path.exists()]
+    if missing:
+        raise RuntimeError(
+            "Protocol-v2 supersession requires a complete existing bundle; "
+            f"missing: {missing}"
+        )
+    manifest_path = next(path for path in paths if path.name == "split_manifest.json")
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get("protocol_revision") != "protocol-v2":
+        raise RuntimeError("Only the reviewed protocol-v2 bundle may be superseded")
+    archive_root.mkdir(parents=True, exist_ok=True)
+    archived: dict[str, str] = {}
+    for path in paths:
+        destination = archive_root / path.name
+        if destination.exists():
+            if sha256_file(destination) != sha256_file(path):
+                raise RuntimeError(
+                    f"Existing protocol-v2 archive differs from {path}: {destination}"
+                )
+        else:
+            shutil.copy2(path, destination)
+        archived[str(path)] = sha256_file(path)
+    for path in paths:
+        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        path.unlink()
+    return {
+        "parent_manifest_sha256": archived[str(manifest_path)],
+        "archive_directory": str(archive_root),
+        "archived_file_sha256": archived,
+    }
+
+
+def archive_protocol_v2_1_bundle(
+    paths: list[Path], archive_root: Path
+) -> dict[str, Any]:
+    """Archive the complete immutable protocol-v2.1 bundle before v2.1.1."""
+
+    missing = [str(path) for path in paths if not path.exists()]
+    if missing:
+        raise RuntimeError(
+            "Protocol-v2.1 supersession requires a complete existing bundle; "
+            f"missing: {missing}"
+        )
+    manifest_path = next(path for path in paths if path.name == "split_manifest.json")
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get("protocol_revision") != "protocol-v2.1":
+        raise RuntimeError(
+            "Only the reviewed protocol-v2.1 bundle may be superseded"
+        )
+    archive_root.mkdir(parents=True, exist_ok=True)
+    archived: dict[str, str] = {}
+    for path in paths:
+        destination = archive_root / path.name
+        if destination.exists():
+            if sha256_file(destination) != sha256_file(path):
+                raise RuntimeError(
+                    f"Existing protocol-v2.1 archive differs from {path}: "
+                    f"{destination}"
+                )
+        else:
+            shutil.copy2(path, destination)
+        archived[str(path)] = sha256_file(path)
+    for path in paths:
+        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        path.unlink()
+    return {
+        "parent_manifest_sha256": archived[str(manifest_path)],
+        "archive_directory": str(archive_root),
+        "archived_file_sha256": archived,
+    }
 
 
 def markdown_report(audit: dict[str, Any]) -> str:
@@ -960,6 +2735,35 @@ def markdown_report(audit: dict[str, Any]) -> str:
     for source_name, source in (("big_matrix", big), ("small_matrix", small)):
         for bucket, count in source["watch_ratio"]["buckets"].items():
             lines.append(f"| `{source_name}` | `{bucket}` | {count:,} |")
+
+    behavior = audit["big_matrix_behavior_event_audit"]
+    sensitivity = behavior["boundary_sensitivity"]
+    lines.extend(
+        [
+            "",
+            "## Canonical Big Matrix behavior events",
+            "",
+            f"- Raw rows: {behavior['raw_rows']:,}; canonical events: "
+            f"{behavior['canonical_event_count']:,}.",
+            f"- Full eight-field exact duplicate extras removed: "
+            f"{behavior['exact_duplicate_rows_removed']:,} across "
+            f"{behavior['exact_duplicate_full_row_group_count']:,} groups.",
+            f"- Non-identical rows sharing `(user,item,timestamp)` removed: "
+            f"{behavior['same_key_nonexact_rows_removed']:,} across "
+            f"{behavior['same_key_nonexact_key_count']:,} keys.",
+            f"- Quick-skip/strong-positive conflict keys excluded from hard negatives: "
+            f"{behavior['quick_skip_strong_positive_conflict_key_count']:,}.",
+            "- Split cutoffs remain the frozen protocol-v2 raw-count cutoffs, while "
+            "history, last-50, seen filtering, quick-skip pools, and popularity use "
+            "canonical events.",
+            f"- Counterfactual canonical-count cutoffs would reassign "
+            f"{sensitivity['canonical_events_with_changed_assignment']:,} canonical "
+            f"events ({sensitivity['canonical_event_changed_fraction']:.6%}); the "
+            "holdout was not silently redefined.",
+            "- Exact and non-exact duplicate extras are reported by affected user and "
+            "Asia/Shanghai date in `audit.json`.",
+        ]
+    )
 
     lines.extend(["", "## Per-user distributions", ""])
     for name, stats in audit["splits"].items():
@@ -1028,10 +2832,19 @@ def markdown_report(audit: dict[str, Any]) -> str:
             "",
             "## Evaluation contracts",
             "",
-            "- Temporal: `contracts/temporal_evaluation_v1.yaml`",
-            "- Fully observed: `contracts/fully_observed_audit_v1.yaml`",
-            "- Negative sampling: `contracts/negative_sampling_v1.yaml`",
-            "- Cold-item fallback: `contracts/two_tower_cold_start_v1.yaml`",
+            "- Event canonicalization: `contracts/event_canonicalization_v1.yaml`",
+            "- Temporal: `contracts/temporal_evaluation_v2.yaml`",
+            "- Small Matrix: `contracts/fully_observed_audit_v2.yaml`",
+            "- Fit contexts: `contracts/fit_contexts_v1.yaml`",
+            "- Candidate catalog: `contracts/candidate_catalog_v1.yaml`",
+            "- Target deduplication: `contracts/target_deduplication_v1.yaml`",
+            "- Metrics: `contracts/metrics_v1.yaml`",
+            "- Baselines: `contracts/baselines_v1.yaml`",
+            "- Negative sampling: `contracts/negative_sampling_v2.yaml`",
+            "- Cold-item fallback: `contracts/two_tower_cold_start_v2.yaml`",
+            "",
+            "The temporal final split is not claimed to be untouched. It is frozen",
+            "after this Phase 0 aggregate audit; no ranking metric was computed.",
             "",
             "Equal-timestamp strong positives are one multi-target query with shared",
             "history ending strictly before that timestamp.",
@@ -1039,11 +2852,11 @@ def markdown_report(audit: dict[str, Any]) -> str:
             "A target must also be unseen before its query timestamp and certainly uploaded.",
             "Because `upload_dt` has date precision only, an item becomes eligible at the",
             "next Asia/Shanghai midnight; same-day events are excluded as unverifiable.",
-            "The following exclusion counts are event-level; unique target videos are",
-            "deduplicated inside each `(user_id, timestamp)` query group.",
+            "The following exclusion counts are event-level. Formal targets then use",
+            "the locked 8-field duplicate/conflict rule shown below.",
             "",
-            "| split | raw positives | eligible events | unique targets | before declared date | same-day time unknown | missing upload | previously seen |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|",
+            "| split | raw positives | eligible rows | canonical targets | before date | same-day unknown | no prior status | AD | not public | previously seen |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
     for name, stats in audit["splits"].items():
@@ -1053,9 +2866,78 @@ def markdown_report(audit: dict[str, Any]) -> str:
             f"{stats['unique_eligible_target_count']:,} | "
             f"{stats['positive_before_declared_upload_date_count']:,} | "
             f"{stats['positive_same_day_upload_time_unverifiable_count']:,} | "
-            f"{stats['positive_missing_upload_count']:,} | "
+            f"{stats['positive_without_prior_status_count']:,} | "
+            f"{stats['positive_ad_video_count']:,} | "
+            f"{stats['positive_not_public_count']:,} | "
             f"{stats['positive_previously_seen_count']:,} |"
         )
+    lines.extend(
+        [
+            "",
+            "### Pre-catalog duplicate anomaly reconciliation",
+            "",
+            "This reproduces the original upload/unseen eligible-event stage before",
+            "the new NORMAL/public catalog filter, including the reported final gap.",
+            "",
+            "| split | eligible positive rows | exact duplicate extras | same-key nonexact extras | binary-conflict keys | canonical keys |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for name, stats in audit["splits"].items():
+        dedup = stats["pre_catalog_target_deduplication_audit"]
+        lines.append(
+            f"| `{name}` | {dedup['raw_eligible_positive_rows']:,} | "
+            f"{dedup['exact_duplicate_positive_rows_removed']:,} | "
+            f"{dedup['same_key_nonexact_positive_rows_removed']:,} | "
+            f"{dedup['binary_label_conflict_keys_excluded']:,} | "
+            f"{dedup['canonical_target_count']:,} |"
+        )
+        difference = dedup["difference_distribution"]
+        if difference["affected_users"]:
+            user_q = difference["extras_per_affected_user"]["quantiles"]
+            top_date, top_date_count = max(
+                difference["by_asia_shanghai_date"].items(),
+                key=lambda item: (item[1], item[0]),
+            )
+            lines.append(
+                f"  - `{name}`: {difference['affected_users']:,} affected users; "
+                f"extras/user p50/p90/p99/max={user_q['p50']:.0f}/"
+                f"{user_q['p90']:.0f}/{user_q['p99']:.0f}/{user_q['p100']:.0f}; "
+                f"largest date `{top_date}`={top_date_count:,}."
+            )
+    lines.extend(
+        [
+            "",
+            "### Formal catalog-eligible target reconciliation",
+            "",
+            "| split | eligible positive rows | exact duplicate extras | same-key nonexact extras | binary-conflict keys | positives excluded by conflict | canonical targets |",
+            "|---|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for name, stats in audit["splits"].items():
+        dedup = stats["target_deduplication_audit"]
+        lines.append(
+            f"| `{name}` | {dedup['raw_eligible_positive_rows']:,} | "
+            f"{dedup['exact_duplicate_positive_rows_removed']:,} | "
+            f"{dedup['same_key_nonexact_positive_rows_removed']:,} | "
+            f"{dedup['binary_label_conflict_keys_excluded']:,} | "
+            f"{dedup['positive_rows_in_conflict_keys_excluded']:,} | "
+            f"{dedup['canonical_target_count']:,} |"
+        )
+        difference = dedup["difference_distribution"]
+        if difference["affected_users"]:
+            user_q = difference["extras_per_affected_user"]["quantiles"]
+            top_date, top_date_count = max(
+                difference["by_asia_shanghai_date"].items(),
+                key=lambda item: (item[1], item[0]),
+            )
+            lines.append(
+                f"  - `{name}` duplicate/conflict extras affect "
+                f"{difference['affected_users']:,} users; extras/user "
+                f"p50/p90/p99/max={user_q['p50']:.0f}/{user_q['p90']:.0f}/"
+                f"{user_q['p99']:.0f}/{user_q['p100']:.0f}; largest date is "
+                f"`{top_date}` with {top_date_count:,}. Full user/date counts are in audit.json."
+            )
     lines.extend(
         [
             "",
@@ -1072,6 +2954,8 @@ def markdown_report(audit: dict[str, Any]) -> str:
         )
     small_coverage = audit["small_matrix_observation_coverage"]
     missing_quantiles = small_coverage["missing_pairs_per_user"]["quantiles"]
+    small_normal = small_coverage["video_type_breakdown"]["NORMAL"]
+    small_ad = small_coverage["video_type_breakdown"]["AD"]
     lines.extend(
         [
             "",
@@ -1081,13 +2965,84 @@ def markdown_report(audit: dict[str, Any]) -> str:
             f"each of {small_coverage['users']:,} users "
             f"({small_coverage['expected_complete_pairs']:,} scored pairs).",
             f"- Observed feedback pairs: {small_coverage['observed_unique_pairs']:,} "
-            f"({small_coverage['observed_pair_fraction']:.4%}); missing/unjudged pairs: "
+            f"({small_coverage['observed_pair_fraction']:.4%}); blocked/missing pairs: "
             f"{small_coverage['missing_pairs']:,}.",
+            f"- Primary `O_u ∩ C_NORMAL`: {small_normal['observed_pairs']:,} "
+            f"observed pairs, {small_normal['videos']:,} videos, "
+            f"{small_normal['users']:,} users, {small_normal['positive_count']:,} "
+            f"positive pairs, and {small_normal['zero_positive_users']:,} "
+            "zero-positive users.",
+            f"- Separate `O_u ∩ C_AD` diagnostic: {small_ad['observed_pairs']:,} "
+            f"observed pairs, {small_ad['videos']:,} videos, "
+            f"{small_ad['users']:,} users, {small_ad['positive_count']:,} "
+            f"positive pairs, and {small_ad['zero_positive_users']:,} "
+            "zero-positive users.",
+            f"- NORMAL + AD observed-pair reconciliation: "
+            f"{small_coverage['normal_plus_ad_observed_pairs']:,} / "
+            f"{small_coverage['observed_unique_pairs']:,}; "
+            f"unclassified={small_coverage['unclassified_observed_pairs']:,}.",
             f"- Missing pairs per user p50/p90/p99/max: "
             f"{missing_quantiles['p50']:.0f}/{missing_quantiles['p90']:.0f}/"
             f"{missing_quantiles['p99']:.0f}/{missing_quantiles['p100']:.0f}.",
-            "- Missing pairs remain in the 3,327-item ranking catalog but are unjudged, "
-            "never sampled as training negatives, and never added to the positive set.",
+            "- Officially, missing pairs represent videos/authors blocked by that user.",
+            "- Primary audit ranks each user's observed NORMAL pairs only. Full "
+            f"{small_coverage['secondary_full_catalog_size']:,}-item ranking remains "
+            "secondary only and must report `Blocked@K` and user hit rate.",
+            "- Blocked information never enters training, history, features, negative "
+            "sampling, or hyperparameter selection.",
+            "- Time-decayed popularity uses one static score timestamp at "
+            "`validation_end_exclusive`, with frozen train+validation state and "
+            "no Small Matrix replay or update.",
+        ]
+    )
+    catalog = audit["candidate_catalog_audit"]
+    lines.extend(
+        [
+            "",
+            "## Causal candidate catalog audit",
+            "",
+            f"- Primary type: `NORMAL`; excluded `AD` videos: "
+            f"{catalog['video_type_video_counts'].get('AD', 0):,}.",
+            "- Visibility at query date D uses the latest snapshot with `date < D`; "
+            "same-day or missing status is not treated as visible.",
+            f"- Per-video inconsistent `upload_dt`: "
+            f"{catalog['per_video_inconsistent_fields']['upload_dt']:,}; inconsistent "
+            f"`video_type`: {catalog['per_video_inconsistent_fields']['video_type']:,}.",
+            f"- Visible-status transitions: `{json.dumps(catalog['visible_status_transition_counts'], sort_keys=True)}`.",
+            "",
+            "### Per-query candidate-size distributions",
+            "",
+            "| split | queries | available p50/p90/p99 | unseen p50/p90/p99 | uniform pool p50/p90/p99 | missing targets |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for split, values in audit["candidate_size_audit"]["per_split"].items():
+        available = values["available_candidate_size"]
+        unseen = values["available_unseen_candidate_size"]
+        uniform = values["uniform_pool_excluding_targets_size"]
+        lines.append(
+            f"| `{split}` | {available['count']:,} | "
+            f"{available['quantiles']['p50']:.0f}/{available['quantiles']['p90']:.0f}/{available['quantiles']['p99']:.0f} | "
+            f"{unseen['quantiles']['p50']:.0f}/{unseen['quantiles']['p90']:.0f}/{unseen['quantiles']['p99']:.0f} | "
+            f"{uniform['quantiles']['p50']:.0f}/{uniform['quantiles']['p90']:.0f}/{uniform['quantiles']['p99']:.0f} | "
+            f"{values['target_missing_from_candidate_count']:,} |"
+        )
+    hard = audit["hard_negative_pool_audit"]
+    hard_sizes = hard["pool_size_per_query"]
+    lines.extend(
+        [
+            "",
+            "### Train hard-negative pool audit",
+            "",
+            f"- Nonempty-pool query coverage: {hard['query_pool_coverage']:.4%} "
+            f"({hard['queries_with_nonempty_pool']:,}/{hard['query_count']:,}).",
+            f"- Deduplicated hard `(query,item)` pairs: "
+            f"{hard['unique_hard_query_item_pairs']:,}; pool p50/p90/p99: "
+            f"{hard_sizes['quantiles']['p50']:.0f}/{hard_sizes['quantiles']['p90']:.0f}/"
+            f"{hard_sizes['quantiles']['p99']:.0f}.",
+            "- Future positive labels are used only for aggregate false-negative risk "
+            "diagnostics; they do not filter samples or tune the sampler.",
+            f"- Pair-level risk fractions: `{json.dumps(hard['false_negative_risk']['pair_fractions'], sort_keys=True)}`.",
         ]
     )
     caption_note = audit["files"]["kuairec_caption_category.csv"]["parser_note"]
@@ -1124,7 +3079,8 @@ def markdown_report(audit: dict[str, Any]) -> str:
             f"validation={audit['splits']['validation']['positive_before_declared_upload_date_count']:,}, "
             f"temporal_final={audit['splits']['temporal_final']['positive_before_declared_upload_date_count']:,}.",
             f"- Small Matrix is {small_coverage['observed_pair_fraction']:.4%} observed, "
-            f"not literally complete; {small_coverage['missing_pairs']:,} pairs are unjudged.",
+            f"not literally complete; {small_coverage['missing_pairs']:,} pairs are "
+            "treated as blocked/missing for the primary audit.",
             "",
             "## Baseline scale and estimated cost",
             "",
@@ -1134,6 +3090,11 @@ def markdown_report(audit: dict[str, Any]) -> str:
     lines.append(f"> {cost['disclaimer']}")
     lines.extend(
         [
+            "",
+            f"- Small primary scoring scale: "
+            f"{cost['small_matrix_primary_observed_pairs']:,} observed NORMAL pairs.",
+            f"- Small secondary safety scale: "
+            f"{cost['small_matrix_secondary_full_ranking_pairs']:,} full-catalog pairs.",
             "",
             "| baseline | fit scale | evaluation scale | planning estimate |",
             "|---|---|---|---|",
@@ -1166,8 +3127,12 @@ def markdown_report(audit: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main() -> None:
-    args = parse_args()
+def generate_bundle(
+    args: argparse.Namespace,
+    *,
+    generated_at_override: str | None = None,
+    lineage_override: dict[str, Any] | None = None,
+) -> list[Path]:
     lock_path = args.manifest.parent / "FINAL_HOLDOUT_LOCKED.json"
     report_json_path = args.report_dir / "audit.json"
     report_markdown_path = args.report_dir / "audit.md"
@@ -1176,7 +3141,17 @@ def main() -> None:
     )
     config_bytes = args.config.read_bytes()
     config = yaml.safe_load(config_bytes)
-    if config["label"] != {"field": "watch_ratio", "operator": ">", "threshold": 2.0, "quick_skip_ms": 3000}:
+    protocol_revision = str(config.get("protocol", {}).get("revision", ""))
+    if protocol_revision != "protocol-v2.1.1":
+        raise RuntimeError(
+            "This generator requires the reviewed protocol-v2.1.1 config"
+        )
+    if config["label"] != {
+        "field": "watch_ratio",
+        "operator": ">",
+        "threshold": 2.0,
+        "quick_skip_ms": 3000,
+    }:
         raise RuntimeError("The Phase 0 label contract must remain watch_ratio > 2.0")
 
     archive = args.data_root / "KuaiRec.zip"
@@ -1198,12 +3173,27 @@ def main() -> None:
 
     big_internal = file_audits["big_matrix.csv"]["interaction"]
     small_internal = file_audits["small_matrix.csv"]["interaction"]
+    train_fraction, validation_fraction, temporal_final_fraction = (
+        validate_split_fractions(config["split"])
+    )
     boundaries = choose_timestamp_boundaries(
         files["big_matrix.csv"],
-        float(config["split"]["train_fraction"]),
-        float(config["split"]["validation_fraction"]),
+        train_fraction,
+        validation_fraction,
+    )
+    print("Auditing canonical Big Matrix behavior events...", flush=True)
+    behavior_event_audit = audit_canonical_behavior_events(
+        files["big_matrix.csv"],
+        boundaries,
+        train_fraction=train_fraction,
+        validation_fraction=validation_fraction,
     )
     print("Computing temporal split statistics...", flush=True)
+    catalog_policy = load_candidate_catalog_policy(
+        files["item_daily_features.csv"],
+        float(big_internal["timestamp_min"]),
+        float(big_internal["timestamp_max"]),
+    )
     upload_epoch_by_video, available_epoch_by_video = load_upload_availability_epochs(
         files["item_daily_features.csv"]
     )
@@ -1212,16 +3202,44 @@ def main() -> None:
         boundaries,
         upload_epoch_by_video,
         available_epoch_by_video,
+        catalog_policy,
+        behavior_event_audit,
+    )
+    canonical_targets = {
+        split_name: stats.pop("_canonical_targets")
+        for split_name, stats in split_stats.items()
+    }
+    print("Replaying causal candidate sizes and hard-negative pools...", flush=True)
+    candidate_sizes, hard_negative_audit = audit_candidate_sizes_and_hard_negatives(
+        files["big_matrix.csv"],
+        canonical_targets,
+        catalog_policy,
+        boundaries,
+        session_gap_minutes=float(config["negative_sampling"]["session_gap_minutes"]),
+        hard_window_minutes=float(config["negative_sampling"]["local_window_minutes"]),
     )
     small_coverage = small_matrix_observation_coverage(
-        files["small_matrix.csv"]
+        files["small_matrix.csv"], files["item_daily_features.csv"]
+    )
+    small_normal_relevant_items = set(
+        int(value) for value in small_coverage.pop("_normal_relevant_item_ids")
+    )
+    small_ad_relevant_items = set(
+        int(value) for value in small_coverage.pop("_ad_relevant_item_ids")
     )
 
     catalog_items = set(big_internal["video_ids"]) | set(small_internal["video_ids"])
     coverage = metadata_coverage(files, catalog_items)
     histories = history_distributions(split_stats, set(small_internal["user_ids"]))
+    cold_start = cold_start_context_audit(
+        split_stats,
+        canonical_targets,
+        small_normal_relevant_items,
+        small_ad_relevant_items,
+    )
     costs = baseline_cost_estimates(
         split_stats,
+        small_coverage["video_type_breakdown"]["NORMAL"]["observed_pairs"],
         small_coverage["expected_complete_pairs"],
         len(big_internal["video_ids"]),
     )
@@ -1235,19 +3253,35 @@ def main() -> None:
         }
         for filename, path in files.items()
     }
-    contract_paths = sorted(Path("contracts").glob("*.yaml"))
-    contract_hashes = {str(path): sha256_file(path) for path in contract_paths}
+    project_root = Path(__file__).resolve().parent.parent
+    active_contracts: dict[str, dict[str, str]] = {}
+    for name, relative in config["protocol"]["active_contracts"].items():
+        path = project_root / str(relative)
+        if not path.exists():
+            raise FileNotFoundError(f"Active contract is missing: {path}")
+        active_contracts[name] = {
+            "path": str(relative),
+            "sha256": sha256_file(path),
+        }
 
-    generated_at = datetime.now(tz=timezone.utc).isoformat()
+    generated_at = generated_at_override or datetime.now(tz=timezone.utc).isoformat()
+    lineage = lineage_override or dict(config["protocol"]["lineage"])
     audit = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "protocol_revision": protocol_revision,
         "generated_at_utc": generated_at,
         "phase": "phase_0_data_and_evaluation_audit_only",
         "model_or_baseline_executed": False,
+        "final_ranking_evaluation_executed": False,
         "config_sha256": sha256_bytes(config_bytes),
         "files": file_audits,
+        "big_matrix_behavior_event_audit": behavior_event_audit,
         "splits": split_stats,
         "small_matrix_observation_coverage": small_coverage,
+        "candidate_catalog_audit": catalog_policy["audit"],
+        "candidate_size_audit": candidate_sizes,
+        "hard_negative_pool_audit": hard_negative_audit,
+        "cold_start_context_audit": cold_start,
         "metadata_coverage": coverage,
         "history_distributions": histories,
         "baseline_cost_estimates": costs,
@@ -1262,10 +3296,21 @@ def main() -> None:
             for key, value in stats.items()
             if key not in {"user_ids", "video_ids", "per_user_events", "per_user_positives"}
         }
+        manifest_splits[name]["canonical_target_sha256"] = _stable_target_hash(
+            canonical_targets[name]
+        )
+        manifest_splits[name]["candidate_membership_sha256"] = candidate_sizes[
+            "per_split"
+        ][name]["candidate_membership_sha256"]
+        manifest_splits[name]["candidate_membership_query_count"] = candidate_sizes[
+            "per_split"
+        ][name]["candidate_membership_query_count"]
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "protocol_revision": protocol_revision,
         "created_at_utc": generated_at,
         "immutable": True,
+        "lineage": lineage,
         "dataset": {
             "name": config["dataset"]["name"],
             "zenodo_record": config["dataset"]["zenodo_record"],
@@ -1275,7 +3320,7 @@ def main() -> None:
             "source_files": source_files,
         },
         "config_sha256": sha256_bytes(config_bytes),
-        "contract_sha256": contract_hashes,
+        "active_contracts": active_contracts,
         "generation_code": {
             "path": "scripts/audit_phase0.py",
             "sha256": sha256_file(Path(__file__).resolve()),
@@ -1290,10 +3335,12 @@ def main() -> None:
             "source": "big_matrix.csv",
             "time_field": "timestamp",
             "timezone_for_reporting": "Asia/Shanghai",
-            "sort_unit": "global interaction timestamp",
-            "train_fraction": config["split"]["train_fraction"],
-            "validation_fraction": config["split"]["validation_fraction"],
-            "temporal_final_fraction": config["split"]["temporal_final_fraction"],
+            "sort_unit": "global raw interaction timestamp for frozen cutoff selection",
+            "event_assignment_unit": "canonical (user_id,video_id,timestamp) event",
+            "train_fraction": train_fraction,
+            "validation_fraction": validation_fraction,
+            "temporal_final_fraction": temporal_final_fraction,
+            "fraction_validation": dict(config["split"]["fraction_validation"]),
             "boundary_method": (
                 "floor interaction-count quantile; equal boundary timestamps "
                 "remain atomic in the later split"
@@ -1308,19 +3355,67 @@ def main() -> None:
             ),
             "raw_date_field_used": False,
             "new_entity_fraction_denominator": "unique active entities in the split",
+            "canonical_event_boundary_sensitivity": behavior_event_audit[
+                "boundary_sensitivity"
+            ],
+        },
+        "canonical_behavior_events": {
+            key: value
+            for key, value in behavior_event_audit.items()
+            if key not in {"per_frozen_split", "_canonical_count_boundaries"}
         },
         "splits": manifest_splits,
+        "fit_contexts": config["fit_contexts"],
+        "candidate_catalog": {
+            "policy": catalog_policy["audit"],
+            "per_query_sizes": candidate_sizes,
+            "membership_hash_format": candidate_sizes[
+                "membership_hash_format"
+            ],
+        },
+        "cold_start_contexts": cold_start,
+        "hard_negative_pool_audit": hard_negative_audit,
         "small_matrix_audit": {
             "rows": file_audits["small_matrix.csv"]["rows"],
             "users": small_internal["users"],
             "videos": small_internal["videos"],
-            "positive_count": small_internal["positive_count"],
-            "positive_fraction": small_internal["positive_fraction"],
-            "users_with_zero_positives": small_internal["positives_per_user"]["zero_count"],
-            "users_with_zero_positives_fraction": small_internal["positives_per_user"]["zero_fraction"],
+            "primary_observed_normal_pairs": small_coverage[
+                "video_type_breakdown"
+            ]["NORMAL"]["observed_pairs"],
+            "primary_positive_count": small_coverage["video_type_breakdown"][
+                "NORMAL"
+            ]["positive_count"],
+            "primary_users_with_zero_positives": small_coverage[
+                "video_type_breakdown"
+            ]["NORMAL"]["zero_positive_users"],
+            "video_type_breakdown": small_coverage["video_type_breakdown"],
             "ground_truth_only": True,
             "enters_training_or_history": False,
+            "blocked_information_enters_negative_sampling": False,
+            "primary_candidate_policy": (
+                "rank physically observed pairs only (therefore blocked/missing "
+                "pairs are excluded per user), intersected with the NORMAL-only "
+                "primary task catalog"
+            ),
+            "primary_catalog_video_type": "NORMAL",
+            "advertisement_quality_policy": (
+                "AD items are excluded from primary quality metrics and reported "
+                "only as a separate diagnostic"
+            ),
+            "secondary_candidate_policy": (
+                "rank all 3327 only for Blocked@K safety audit"
+            ),
+            "time_decayed_popularity": {
+                "static_score_timestamp": "validation_end_exclusive",
+                "state_source": "frozen_train_plus_validation",
+                "small_matrix_replay_or_update": False,
+            },
             "observation_coverage": small_coverage,
+        },
+        "holdout_disclosure": {
+            "aggregate_label_query_and_quality_statistics_already_published": True,
+            "untouched_claim": False,
+            "claim": "frozen after Phase 0 aggregate audit",
         },
         "locks": {
             "temporal_final_locked": True,
@@ -1332,10 +3427,13 @@ def main() -> None:
     write_immutable_json(args.manifest, manifest)
     lock_payload = {
         "locked": True,
-        "manifest": str(args.manifest),
+        "protocol_revision": protocol_revision,
+        "manifest": "manifests/split_manifest.json",
         "manifest_sha256": sha256_file(args.manifest),
         "protected": ["temporal_final", "small_matrix_audit"],
         "ordinary_baseline_access": False,
+        "final_entrypoint": "scripts/final_evaluation.py",
+        "final_receipt_overwrite": False,
     }
     write_immutable_json(lock_path, lock_payload)
     write_json(report_json_path, report_payload)
@@ -1344,6 +3442,228 @@ def main() -> None:
     print(f"Wrote {report_markdown_path}")
     print(f"Wrote immutable {args.manifest}")
     print(f"Wrote immutable {lock_path}")
+    return [args.manifest, lock_path, report_json_path, report_markdown_path]
+
+
+def recompute_protocol_derived_hashes(
+    *,
+    config_path: Path,
+    data_root: Path,
+    manifest: Mapping[str, Any],
+) -> dict[str, dict[str, str]]:
+    """Recompute target and candidate hashes without writing or evaluating.
+
+    This is the deliberately expensive, fail-closed hook used by the bundle
+    verifier before baseline data preparation. It performs no scoring, model
+    fitting, hyperparameter selection, or final evaluation.
+    """
+
+    config = yaml.safe_load(config_path.read_text())
+    if config.get("protocol", {}).get("revision") != "protocol-v2.1.1":
+        raise RuntimeError("Derived-hash recomputation requires protocol-v2.1.1")
+    train_fraction, validation_fraction, _ = validate_split_fractions(
+        config["split"]
+    )
+    files = find_dataset_files(data_root, config["dataset"]["expected_files"])
+    boundaries = choose_timestamp_boundaries(
+        files["big_matrix.csv"], train_fraction, validation_fraction
+    )
+    locked_algorithm = manifest.get("split_algorithm", {})
+    for field in ("train_end_exclusive", "validation_end_exclusive"):
+        if float(boundaries[field]) != float(locked_algorithm.get(field, math.nan)):
+            raise RuntimeError(
+                f"Recomputed {field} does not match the locked manifest"
+            )
+
+    manifest_splits = manifest.get("splits", {})
+    timestamp_min = min(
+        float(manifest_splits[name]["timestamp_start_inclusive"])
+        for name in ("train", "validation", "temporal_final")
+    )
+    timestamp_max = max(
+        float(manifest_splits[name]["timestamp_end_inclusive"])
+        for name in ("train", "validation", "temporal_final")
+    )
+    catalog_policy = load_candidate_catalog_policy(
+        files["item_daily_features.csv"], timestamp_min, timestamp_max
+    )
+    upload_epoch_by_video, available_epoch_by_video = load_upload_availability_epochs(
+        files["item_daily_features.csv"]
+    )
+    split_stats = scan_big_splits(
+        files["big_matrix.csv"],
+        boundaries,
+        upload_epoch_by_video,
+        available_epoch_by_video,
+        catalog_policy,
+    )
+    canonical_targets = {
+        split_name: stats["_canonical_targets"]
+        for split_name, stats in split_stats.items()
+    }
+    candidate_sizes, _ = audit_candidate_sizes_and_hard_negatives(
+        files["big_matrix.csv"],
+        canonical_targets,
+        catalog_policy,
+        boundaries,
+        session_gap_minutes=float(config["negative_sampling"]["session_gap_minutes"]),
+        hard_window_minutes=float(config["negative_sampling"]["local_window_minutes"]),
+    )
+    return {
+        "canonical_targets": {
+            name: _stable_target_hash(targets)
+            for name, targets in canonical_targets.items()
+        },
+        "candidate_membership": {
+            name: candidate_sizes["per_split"][name][
+                "candidate_membership_sha256"
+            ]
+            for name in ("train", "validation", "temporal_final")
+        },
+    }
+
+
+def verify_bundle(args: argparse.Namespace) -> None:
+    reference_manifest = json.loads(args.reference_manifest.read_text())
+    config = yaml.safe_load(args.config.read_text())
+    expected_revision = config.get("protocol", {}).get("revision")
+    if expected_revision != "protocol-v2.1.1":
+        raise RuntimeError("Verify mode requires the protocol-v2.1.1 config")
+    if reference_manifest.get("protocol_revision") != expected_revision:
+        raise RuntimeError(
+            "Verify mode requires a committed manifest matching the config revision"
+        )
+    reference_lock = args.reference_manifest.parent / "FINAL_HOLDOUT_LOCKED.json"
+    lock = json.loads(reference_lock.read_text())
+    if lock.get("manifest_sha256") != sha256_file(args.reference_manifest):
+        raise RuntimeError("Committed manifest does not match the holdout lock")
+    reference_paths = {
+        "manifest": args.reference_manifest,
+        "lock": reference_lock,
+        "json": args.reference_report_dir / "audit.json",
+        "markdown": args.reference_report_dir / "audit.md",
+    }
+    for path in reference_paths.values():
+        if not path.exists():
+            raise FileNotFoundError(path)
+
+    with tempfile.TemporaryDirectory(prefix="kuairec-protocol-v2.1.1-verify-") as temp:
+        root = Path(temp)
+        generated_args = argparse.Namespace(
+            config=args.config,
+            data_root=args.data_root,
+            report_dir=root / "reports" / "phase0",
+            manifest=root / "manifests" / "split_manifest.json",
+        )
+        generated = generate_bundle(
+            generated_args,
+            generated_at_override=str(reference_manifest["created_at_utc"]),
+            lineage_override=dict(reference_manifest["lineage"]),
+        )
+        generated_paths = {
+            "manifest": generated_args.manifest,
+            "lock": generated_args.manifest.parent / "FINAL_HOLDOUT_LOCKED.json",
+            "json": generated_args.report_dir / "audit.json",
+            "markdown": generated_args.report_dir / "audit.md",
+        }
+        mismatches = []
+        for name, reference in reference_paths.items():
+            candidate = generated_paths[name]
+            if reference.read_bytes() != candidate.read_bytes():
+                mismatches.append(
+                    {
+                        "artifact": name,
+                        "reference_sha256": sha256_file(reference),
+                        "recomputed_sha256": sha256_file(candidate),
+                    }
+                )
+        if mismatches:
+            raise RuntimeError(
+                "Protocol-v2.1.1 verification failed: "
+                + json.dumps(mismatches, sort_keys=True)
+            )
+    print("Verified protocol-v2.1.1 bundle: all four artifacts match byte-for-byte")
+
+
+def main() -> None:
+    args = parse_args()
+    if args.mode == "verify":
+        if (
+            args.supersede_protocol_v1
+            or args.supersede_protocol_v2
+            or args.supersede_protocol_v2_1
+        ):
+            raise RuntimeError("Verify mode cannot supersede an existing bundle")
+        verify_bundle(args)
+        return
+
+    if sum(
+        (
+            bool(args.supersede_protocol_v1),
+            bool(args.supersede_protocol_v2),
+            bool(args.supersede_protocol_v2_1),
+        )
+    ) > 1:
+        raise RuntimeError("Select at most one protocol supersession source")
+
+    lock_path = args.manifest.parent / "FINAL_HOLDOUT_LOCKED.json"
+    output_paths = [
+        args.manifest,
+        lock_path,
+        args.report_dir / "audit.json",
+        args.report_dir / "audit.md",
+    ]
+    if args.supersede_protocol_v1:
+        archive = archive_protocol_v1_bundle(
+            output_paths, Path("archive/protocol-v1")
+        )
+        config = yaml.safe_load(args.config.read_text())
+        expected_parent = config["protocol"]["lineage"][
+            "parent_manifest_sha256"
+        ]
+        if archive["parent_manifest_sha256"] != expected_parent:
+            raise RuntimeError(
+                "Archived v1 manifest hash does not match configured lineage"
+            )
+    elif args.supersede_protocol_v2:
+        config = yaml.safe_load(args.config.read_text())
+        expected_parent = config["protocol"]["lineage"][
+            "parent_manifest_sha256"
+        ]
+        # Fail before moving the immutable bundle. A lineage mismatch must not
+        # leave the working tree with only an archive and no active manifest.
+        if sha256_file(args.manifest) != expected_parent:
+            raise RuntimeError(
+                "Existing protocol-v2 manifest hash does not match configured "
+                "protocol-v2.1 lineage"
+            )
+        project_root = Path(__file__).resolve().parent.parent
+        archive = archive_protocol_v2_bundle(
+            output_paths, project_root / "archive" / "protocol-v2"
+        )
+        if archive["parent_manifest_sha256"] != expected_parent:
+            raise RuntimeError(
+                "Archived v2 manifest hash does not match configured lineage"
+            )
+    elif args.supersede_protocol_v2_1:
+        config = yaml.safe_load(args.config.read_text())
+        expected_parent = config["protocol"]["lineage"][
+            "parent_manifest_sha256"
+        ]
+        if sha256_file(args.manifest) != expected_parent:
+            raise RuntimeError(
+                "Existing protocol-v2.1 manifest hash does not match configured "
+                "protocol-v2.1.1 lineage"
+            )
+        project_root = Path(__file__).resolve().parent.parent
+        archive = archive_protocol_v2_1_bundle(
+            output_paths, project_root / "archive" / "protocol-v2.1"
+        )
+        if archive["parent_manifest_sha256"] != expected_parent:
+            raise RuntimeError(
+                "Archived v2.1 manifest hash does not match configured lineage"
+            )
+    generate_bundle(args)
 
 
 if __name__ == "__main__":

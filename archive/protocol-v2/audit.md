@@ -1,6 +1,6 @@
 # KuaiRec Phase 0 Audit
 
-Generated: `2026-07-22T00:36:57.873190+00:00`
+Generated: `2026-07-21T17:17:46.276639+00:00`
 
 > No model or baseline was trained or evaluated in Phase 0.
 
@@ -48,28 +48,18 @@ with the localized timestamp on 15,530 Big Matrix rows.
 | `small_matrix` | `1 <= watch_ratio <= 2` | 1,297,875 |
 | `small_matrix` | `watch_ratio > 2` | 217,175 |
 
-## Canonical Big Matrix behavior events
-
-- Raw rows: 12,530,806; canonical events: 11,562,801.
-- Full eight-field exact duplicate extras removed: 965,819 across 965,819 groups.
-- Non-identical rows sharing `(user,item,timestamp)` removed: 2,186 across 2,167 keys.
-- Quick-skip/strong-positive conflict keys excluded from hard negatives: 0.
-- Split cutoffs remain the frozen protocol-v2 raw-count cutoffs, while history, last-50, seen filtering, quick-skip pools, and popularity use canonical events.
-- Counterfactual canonical-count cutoffs would reassign 247,158 canonical events (2.137527%); the holdout was not silently redefined.
-- Exact and non-exact duplicate extras are reported by affected user and Asia/Shanghai date in `audit.json`.
-
 ## Per-user distributions
 
-- **train**: events p50/p90/p99 = 1194/1943/2682; positives p50/p90/p99 = 66/203/407.
+- **train**: events p50/p90/p99 = 1276/2117/2921; positives p50/p90/p99 = 66/203/407.
 - **validation**: events p50/p90/p99 = 230/531/818; positives p50/p90/p99 = 12/45/97.
-- **temporal_final**: events p50/p90/p99 = 181/431/691; positives p50/p90/p99 = 14/44/97.
+- **temporal_final**: events p50/p90/p99 = 226/524/880; positives p50/p90/p99 = 14/44/97.
 - **small_matrix_audit**: positives p50/p90/p99 = 95/376/671.
 
 ### History available at evaluation time
 
-- `validation_history_from_train`: p50/p90/p99 = 1190/1943/2682; zero-history users = 0.0282%.
-- `temporal_final_history_from_train_and_validation`: p50/p90/p99 = 1463/2344/3133; zero-history users = 0.0000%.
-- `small_audit_history_from_big_first_85_percent`: p50/p90/p99 = 288/393/579; zero-history users = 0.0000%.
+- `validation_history_from_train`: p50/p90/p99 = 1274/2116/2919; zero-history users = 0.0282%.
+- `temporal_final_history_from_train_and_validation`: p50/p90/p99 = 1549/2508/3367; zero-history users = 0.0000%.
+- `small_audit_history_from_big_first_85_percent`: p50/p90/p99 = 301/413/595; zero-history users = 0.0000%.
 
 ## Metadata coverage
 
@@ -93,7 +83,6 @@ with the localized timestamp on 15,530 Big Matrix rows.
 
 ## Evaluation contracts
 
-- Event canonicalization: `contracts/event_canonicalization_v1.yaml`
 - Temporal: `contracts/temporal_evaluation_v2.yaml`
 - Small Matrix: `contracts/fully_observed_audit_v2.yaml`
 - Fit contexts: `contracts/fit_contexts_v1.yaml`
@@ -157,14 +146,10 @@ the new NORMAL/public catalog filter, including the reported final gap.
 
 - Full ranking catalog: 3,327 videos for each of 1,411 users (4,694,397 scored pairs).
 - Observed feedback pairs: 4,676,570 (99.6202%); blocked/missing pairs: 17,827.
-- Primary `O_u ∩ C_NORMAL`: 4,676,570 observed pairs, 3,327 videos, 1,411 users, 217,175 positive pairs, and 0 zero-positive users.
-- Separate `O_u ∩ C_AD` diagnostic: 0 observed pairs, 0 videos, 0 users, 0 positive pairs, and 0 zero-positive users.
-- NORMAL + AD observed-pair reconciliation: 4,676,570 / 4,676,570; unclassified=0.
 - Missing pairs per user p50/p90/p99/max: 12/23/29/32.
 - Officially, missing pairs represent videos/authors blocked by that user.
-- Primary audit ranks each user's observed NORMAL pairs only. Full 3,327-item ranking remains secondary only and must report `Blocked@K` and user hit rate.
+- Primary audit removes each user's blocked/missing pairs. Full 3,327-item ranking is secondary only and must report `Blocked@K` and user hit rate.
 - Blocked information never enters training, history, features, negative sampling, or hyperparameter selection.
-- Time-decayed popularity uses one static score timestamp at `validation_end_exclusive`, with frozen train+validation state and no Small Matrix replay or update.
 
 ## Causal candidate catalog audit
 
@@ -203,16 +188,13 @@ the new NORMAL/public catalog filter, including the reported final gap.
 
 > Planning estimates only; no baseline was executed in Phase 0. Temporal query count uses exact (user_id, next-positive timestamp) groups.
 
-- Small primary scoring scale: 4,676,570 observed NORMAL pairs.
-- Small secondary safety scale: 4,694,397 full-catalog pairs.
-
 | baseline | fit scale | evaluation scale | planning estimate |
 |---|---|---|---|
 | `random` | none | up to 1,064,732,544 candidate pairs | under 5 CPU minutes with direct seeded top-K sampling |
-| `global_popularity` | one pass over 497,117 canonical train targets | one shared ranking plus per-user seen filtering | roughly 1-5 CPU minutes |
-| `time_decayed_popularity` | one causal chronological stream over 497,117 canonical train targets | state update plus shared ranking at query times | roughly 3-15 CPU minutes |
-| `itemcf` | sparse co-occurrence from 497,117 strong positives over at most 10,728 videos | history-neighbor aggregation for every temporal query | roughly 10-60 CPU minutes and 1-4 GB working memory |
-| `bpr_mf` | pre-registered 10 epochs = about 4,971,170 positive-pair updates before batching | up to 1,064,732,544 dot products | roughly 30-120 CPU minutes or 5-20 GPU minutes |
+| `global_popularity` | one pass over 8,771,564 train interactions | one shared ranking plus per-user seen filtering | roughly 1-5 CPU minutes |
+| `time_decayed_popularity` | one chronological pass over 8,771,564 interactions | state update plus shared ranking at query times | roughly 3-15 CPU minutes |
+| `itemcf` | sparse co-occurrence from 658,907 strong positives over at most 10,728 videos | history-neighbor aggregation for every temporal query | roughly 10-60 CPU minutes and 1-4 GB working memory |
+| `bpr_mf` | pre-registered 10 epochs = about 6,589,070 positive-pair updates before batching | up to 1,064,732,544 dot products | roughly 30-120 CPU minutes or 5-20 GPU minutes |
 
 ## Complete schema and missingness
 

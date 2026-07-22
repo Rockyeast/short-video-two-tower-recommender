@@ -1,0 +1,67 @@
+contract_id: kuairec-temporal-next-strong-positive-v2
+protocol_revision: protocol-v2.1.1
+status: active_protocol_only_no_model_or_baseline_executed
+purpose: selection_and_locked_future_recommendation_evaluation
+
+source: big_matrix.csv
+event_canonicalization: contracts/event_canonicalization_v1.yaml
+label:
+  expression: watch_ratio > 2.0
+  boundary_value_2_is_positive: false
+
+query:
+  unit: user_next_strong_positive_timestamp_group
+  query_key: [user_id, timestamp]
+  history_rule: all canonical user events with timestamp strictly less than target timestamp
+  history_truncation: none_in_evaluation_contract
+  same_timestamp_rule: >-
+    Canonical strong-positive videos sharing a timestamp form one multi-target
+    query with shared pre-timestamp history. No same-timestamp event predicts
+    another event in its group.
+
+target:
+  source: canonical eligible target table
+  canonicalization_contract: contracts/target_deduplication_v1.yaml
+  type: set_of_unique_next_strong_positive_videos
+  raw_positive_rows_as_targets: forbidden
+  unseen_rule: no prior interaction by this user at a strictly earlier timestamp
+
+candidate_catalog:
+  contract: contracts/candidate_catalog_v1.yaml
+  filter_seen_items: true
+  target_must_be_eligible: true
+  target_must_remain_in_ranking_set: true
+
+replay:
+  score_before_consume: true
+  consume_same_timestamp_as_one_atomic_group: true
+  runtime_history_may_advance_after_scoring: true
+  learned_parameters_may_advance_during_evaluation: false
+
+metrics:
+  contract: contracts/metrics_v1.yaml
+  multi_target_recall_denominator: number_of_unique_targets
+  ndcg_relevance: binary_strong_positive
+
+fit_contexts:
+  contract: contracts/fit_contexts_v1.yaml
+  validation: selection
+  temporal_final: final
+
+leakage_guards:
+  split_by_global_timestamp: true
+  split_timezone_for_reporting: Asia/Shanghai
+  raw_date_field_is_not_a_split_source: true
+  item_daily_features_lag_days: 1
+  feature_snapshot_must_precede_query_local_date: true
+
+temporal_final:
+  status: phase_0_aggregate_audited_then_frozen
+  untouched_test_claim: forbidden
+  aggregate_statistics_already_published: true
+  ordinary_baseline_entrypoint_access: forbidden
+  explicit_final_entrypoint_required: true
+  frozen_method_and_hyperparameters_required: true
+  refit_from_scratch_on_train_plus_validation: true
+  evaluation_count: exactly_once
+  non_overwritable_receipt_required: true

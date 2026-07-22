@@ -1,0 +1,161 @@
+contract_id: kuairec-five-retrieval-baselines-v1
+protocol_revision: protocol-v2.1.1
+status: active_protocol_only_no_baseline_executed
+
+common:
+  fit_contexts: contracts/fit_contexts_v1.yaml
+  candidate_catalog: contracts/candidate_catalog_v1.yaml
+  canonical_targets: contracts/target_deduplication_v1.yaml
+  canonical_events: contracts/event_canonicalization_v1.yaml
+  metrics: contracts/metrics_v1.yaml
+  training_target_source: canonical eligible strong-positive target table
+  direct_raw_positive_row_training: forbidden
+  raw_behavior_rows_for_split_history_seen_or_popularity: forbidden
+  exact_full_candidate_scoring: true
+  faiss_or_ann: forbidden
+  seen_item_filter: true
+  ranking_tie_break: video_id_ascending
+  small_blocked_pairs_may_enter_fit_history_or_negatives: false
+
+entrypoints:
+  ordinary:
+    allowed_fit_contexts: [selection]
+    allowed_evaluation_splits: [validation]
+    temporal_final_access: forbidden
+    small_matrix_access: forbidden
+  explicit_final:
+    allowed_only_after_protocol_review: true
+    fit_context: final
+    fit_from_scratch: true
+    fit_splits: [train, validation]
+    hyperparameters_and_seeds_frozen: true
+    selection_receipt_required: true
+    temporal_final_evaluation_count: exactly_once
+    non_overwritable_receipt_required: true
+  explicit_small_audit:
+    allowed_only_after_protocol_review: true
+    fit_context: small_matrix_audit
+    artifact: frozen_final_fit_artifact
+    non_overwritable_receipt_required: true
+
+baselines:
+  random:
+    fit: none
+    score: stable_sha256_of_protocol_seed_query_id_video_id
+    seeds: [20260721, 20260722, 20260723, 20260724, 20260725]
+    result: report_per_seed_and_mean
+
+  global_popularity:
+    fit_signal: canonical_fit_positive_targets
+    count_unit: one_canonical_user_video_target
+    score: fit_target_count_by_video
+    evaluation_events_update_counts: false
+    hyperparameters: none
+    zero_count_score: 0
+
+  time_decayed_popularity:
+    fit_signal: canonical_fit_positive_targets
+    score: sum(exp(-ln(2) * age_days / half_life_days))
+    age_reference: query_timestamp
+    half_life_days_grid: [1, 3, 7, 14, 30]
+    tune_on: validation_only
+    zero_count_score: 0
+    variants:
+      fit_frozen:
+        initial_state: canonical positive targets from the current fit splits
+        evaluation_events_update_state: false
+      causal_streaming:
+        initial_state: canonical positive targets from the current fit splits
+        replay_order: timestamp_ascending_equal_timestamps_atomic
+        score_state: events with timestamp strictly before the query timestamp
+        state_update: >-
+          After every equal-timestamp query group is scored, ingest its
+          canonical strong-positive events before later timestamps are scored.
+        current_or_future_event_leakage: forbidden
+        learned_hyperparameters_update_during_replay: false
+    baseline_selection: >-
+      Select the stronger (variant, half_life_days) pair on validation using
+      metrics_v1_model_selection. The selected winner is the required
+      time-decayed-popularity baseline for the frozen final bundle.
+
+  itemcf:
+    fit_matrix:
+      rows: user_id
+      columns: video_id
+      value: binary_user_has_canonical_fit_positive_target
+      repeated_user_video_target: collapse_to_one
+    similarity: cosine
+    shrinkage_formula: cosine_similarity * cooccurrence / (cooccurrence + shrinkage)
+    neighbor_count_grid: [50, 100, 200]
+    shrinkage_grid: [0, 10, 100]
+    tune_on: validation_only
+    query_history: canonical strong-positive videos strictly before query timestamp
+    score: sum_similarity_from_query_history_to_candidate
+    zero_score_fallback:
+      primary: global_popularity_score_from_same_fit_context
+      final_tie_break: video_id_ascending
+
+  bpr_mf:
+    positives: unique_user_video_pairs_from_canonical_fit_targets
+    negative_catalog_time_basis: >-
+      For each canonical positive at time t, rebuild the causal NORMAL/public
+      query-time candidate membership at t. No video first available after t
+      may be sampled.
+    negatives:
+      pool: query_time_candidate_membership minus current_positive_target_set
+      distribution: uniform
+      negatives_per_positive: 1
+      sampled_blocked_small_pair: forbidden
+    loss: negative_log_sigmoid(user_item_positive_score_minus_negative_score)
+    optimizer: Adam
+    batch_size: 4096
+    embedding_dim_grid: [32, 64]
+    learning_rate_grid: [0.001, 0.005]
+    l2_grid: [0.00001, 0.0001]
+    epoch_checkpoints: [5, 10, 20]
+    seeds: [20260721, 20260722, 20260723]
+    tune_on: validation_only
+    hyperparameter_selection_statistic: mean_validation_metric_across_seeds
+    selection_objective: metrics_v1_model_selection
+    unseen_or_untrained_item_id_score: negative_infinity
+    independent_untrained_id_embedding: forbidden
+    untrained_user_fallback:
+      method: selected_time_decayed_popularity_from_same_fit_context
+      personalized_random_user_embedding: forbidden
+      report_fallback_user_and_query_counts: true
+
+planning_scale:
+  canonical_train_targets: 497117
+  bpr_reference_epochs: 10
+  bpr_positive_updates_before_batching: 4971170
+  disclaimer: planning_only_no_baseline_executed
+
+fit_rebuild_rules:
+  selection:
+    all_fitted_statistics_source: train
+  final:
+    all_fitted_statistics_source: train_plus_validation
+    rebuild_every_baseline_from_scratch: true
+    selection_fitted_artifact_reuse: forbidden
+  small_matrix_audit:
+    artifact_source: frozen_final_fit
+    small_feedback_refit: forbidden
+    time_decayed_popularity_static_score_timestamp: validation_end_exclusive
+    frozen_state_source: train_plus_validation
+    evaluation_event_replay_or_state_update: forbidden
+
+required_validation_table:
+  columns:
+    - method
+    - hyperparameters
+    - seed_summary
+    - Recall@20
+    - Recall@50
+    - Recall@100
+    - NDCG@10
+    - NDCG@20
+    - Coverage@100
+    - TailRecall@100
+    - ColdRecall@100
+    - bootstrap_95_percent_intervals
+  no_final_columns_before_explicit_final_run: true

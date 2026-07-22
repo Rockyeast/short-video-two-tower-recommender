@@ -1,0 +1,10 @@
+{
+  "locked": true,
+  "manifest": "manifests/split_manifest.json",
+  "manifest_sha256": "8d84d2b20f9e93352e8e09f7c0fdcb5704d82b209da245bd9a542b2b66adaaf1",
+  "protected": [
+    "temporal_final",
+    "small_matrix_audit"
+  ],
+  "ordinary_baseline_access": false
+}
