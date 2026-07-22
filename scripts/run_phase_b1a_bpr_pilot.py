@@ -279,12 +279,32 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
             )
         )
     selected = report.get("selected_checkpoint")
+    baselines = report["baselines"]
+    random_metrics = baselines["random"]["metrics"]
+    popularity_metrics = baselines["global_popularity"]["metrics"]
     text = "\n".join(
         [
             "# Phase B1A Full BPR Pilot",
             "",
             "Big train fit and Big validation selection only. Small Matrix, "
             "temporal final and Two-Tower were not accessed or run.",
+            "",
+            "## Baselines",
+            "",
+            "| Method | Recall@100 | NDCG@20 | Coverage@100 |",
+            "|---|---:|---:|---:|",
+            "| Random | {r:.6f} | {n:.6f} | {c:.6f} |".format(
+                r=random_metrics["Recall@100"],
+                n=random_metrics["NDCG@20"],
+                c=random_metrics["Coverage@100"],
+            ),
+            "| Global Popularity | {r:.6f} | {n:.6f} | {c:.6f} |".format(
+                r=popularity_metrics["Recall@100"],
+                n=popularity_metrics["NDCG@20"],
+                c=popularity_metrics["Coverage@100"],
+            ),
+            "",
+            "## BPR checkpoints",
             "",
             "| Epoch | Audit loss | Audit win | Recall@20 | Recall@50 | "
             "Recall@100 | NDCG@20 | Coverage@100 |",
@@ -294,6 +314,10 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
             f"Status: `{report['status']}`.",
             f"Selected checkpoint: `{selected}`.",
             f"Stop reason: `{report.get('stop_reason')}`.",
+            "",
+            f"Validation queries: `{report['counts']['validation_queries']}`; "
+            f"targets: `{report['counts']['validation_targets']}`; runtime: "
+            f"`{report['runtime_s'] / 60.0:.2f} minutes`.",
             "",
             "The fixed audit-negative metrics are optimization diagnostics, "
             "not recommendation-effectiveness claims.",

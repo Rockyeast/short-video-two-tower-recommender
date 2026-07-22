@@ -24,13 +24,12 @@ the executable configuration in
 [`configs/fully_observed_v1.yaml`](configs/fully_observed_v1.yaml). It includes
 synthetic-tested dataset/query adapters, fixed candidate filtering, shared
 Recall/NDCG/Coverage evaluation, Popularity and BPR interfaces, exact dot-product
-retrieval, and a deterministic Two-Tower reference encoder. **No full-data
-baseline, model training or effectiveness result has been run or claimed.**
+retrieval, and a deterministic Two-Tower reference encoder.
 Phase B0 adds bounded execution plumbing: a real static-feature loader, lazy
 Two-Tower histories, epoch-resampled BPR negatives/training, blocked Exact
 scoring and a shared cold-user fallback. This is still pre-experiment: full Big
-preprocessing/training, a trainable Two-Tower result, caption-vector generation,
-Small evaluation and FAISS remain unrun.
+Two-Tower training, caption-vector generation, Small evaluation and FAISS remain
+unrun.
 
 The original bounded 100K-interaction plumbing smoke is committed at
 [`reports/phase_b0/smoke_100k.json`](reports/phase_b0/smoke_100k.json). After
@@ -46,6 +45,24 @@ legacy BPR reuse decision is documented at
 [`reports/phase_b0/legacy_bpr_compatibility.md`](reports/phase_b0/legacy_bpr_compatibility.md):
 its negative sampling and cold-item semantics differ, so it is not reused as
 the fully-observed-V1 baseline.
+
+Phase B1A ran exactly one frozen BPR configuration and seed on canonical Big
+train, selecting only on Big validation. The full report is
+[`reports/phase_b1a/full_bpr_pilot.md`](reports/phase_b1a/full_bpr_pilot.md).
+Epoch 20 was selected by Recall@100 with NDCG@20 as the tie-break:
+
+| Method | Recall@100 | NDCG@20 | Coverage@100 |
+|---|---:|---:|---:|
+| Random | 0.012930 | 0.002675 | 1.000000 |
+| Global Popularity | 0.036643 | 0.010615 | 0.080085 |
+| BPR epoch 20 | **0.048439** | **0.012774** | 0.333049 |
+
+The fixed audit-negative win rate rose from 49.94% at initialization to 93.42%
+at epoch 20. That diagnostic proves the optimizer learned its fixed pair task;
+Big-validation Recall/NDCG provide the separate recommendation-effectiveness
+evidence. BPR Data-Cold Recall@100 remained zero, as expected for an ID-only
+model with fixed-zero scores for train-unseen videos. Small Matrix, temporal
+final and Two-Tower were not accessed or run.
 
 The older protocol-v2.1.1 temporal route remains in the repository as an
 optional production-like stress test. Its Phase 0 audit and all **97/97**
