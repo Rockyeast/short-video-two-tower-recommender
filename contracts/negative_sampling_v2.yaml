@@ -1,5 +1,5 @@
 contract_id: kuairec-mixed-negative-sampling-v2
-protocol_revision: protocol-v2.1
+protocol_revision: protocol-v2.1.1
 status: active_design_only_two_tower_not_implemented
 
 fit_contexts: contracts/fit_contexts_v1.yaml

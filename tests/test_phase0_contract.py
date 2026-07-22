@@ -65,6 +65,12 @@ def test_contracts_lock_final_and_group_equal_timestamps():
     assert fully_observed["secondary_safety_audit"][
         "model_quality_claim_from_secondary_audit"
     ] == "forbidden"
+    assert fully_observed["time_decayed_popularity"] == {
+        "static_score_timestamp": "validation_end_exclusive",
+        "state_source": "frozen train+validation fit state",
+        "small_matrix_event_replay": "forbidden",
+        "small_matrix_state_update": "forbidden",
+    }
     assert fully_observed["lock"]["locked_by_default"] is True
     assert cold_start["cold_or_untouched_item_path"][
         "independent_untrained_id_embedding"
@@ -72,6 +78,9 @@ def test_contracts_lock_final_and_group_equal_timestamps():
     assert cold_start["cold_or_untouched_item_path"]["fallback"] == (
         "content_only_video_tower"
     )
+    assert "observed NORMAL" in cold_start["references"]["small_matrix_audit"][
+        "primary_target_items"
+    ]
     assert negative["popular_negatives"]["exclude"] == "current_positive_target_set"
     assert "excluding current targets" in negative[
         "candidate_hard_negative_distribution"
@@ -89,7 +98,7 @@ def test_protocol_v21_contract_scope_is_canonical_and_task_aligned():
     )
     baselines = yaml.safe_load(Path("contracts/baselines_v1.yaml").read_text())
 
-    assert config["protocol"]["revision"] == "protocol-v2.1"
+    assert config["protocol"]["revision"] == "protocol-v2.1.1"
     split = config["split"]
     fraction_keys = split["fraction_validation"]["keys"]
     fractions = [split[key] for key in fraction_keys]
@@ -100,7 +109,7 @@ def test_protocol_v21_contract_scope_is_canonical_and_task_aligned():
 
     for path in config["protocol"]["active_contracts"].values():
         contract = yaml.safe_load(Path(path).read_text())
-        assert contract["protocol_revision"] == "protocol-v2.1"
+        assert contract["protocol_revision"] == "protocol-v2.1.1"
 
     consumers = event["required_consumers"]
     assert "frozen protocol-v2" in consumers["split_assignment"]
@@ -124,12 +133,28 @@ def test_protocol_v21_contract_scope_is_canonical_and_task_aligned():
     decayed = baselines["baselines"]["time_decayed_popularity"]
     assert set(decayed["variants"]) == {"fit_frozen", "causal_streaming"}
     assert "stronger" in decayed["baseline_selection"]
+    assert baselines["fit_rebuild_rules"]["small_matrix_audit"] == {
+        "artifact_source": "frozen_final_fit",
+        "small_feedback_refit": "forbidden",
+        "time_decayed_popularity_static_score_timestamp": (
+            "validation_end_exclusive"
+        ),
+        "frozen_state_source": "train_plus_validation",
+        "evaluation_event_replay_or_state_update": "forbidden",
+    }
     fit_contexts = yaml.safe_load(
         Path("contracts/fit_contexts_v1.yaml").read_text()
     )
     assert "transient runtime state" in fit_contexts["common"][
         "causal_runtime_state_definition"
     ]
+    assert fit_contexts["contexts"]["small_matrix_audit"][
+        "time_decayed_popularity"
+    ] == {
+        "static_score_timestamp": "validation_end_exclusive",
+        "state_source": "frozen_train_plus_validation",
+        "replay_or_update_during_small_audit": "forbidden",
+    }
     bpr = baselines["baselines"]["bpr_mf"]
     assert "time t" in bpr["negative_catalog_time_basis"]
     assert bpr["untrained_user_fallback"]["method"] == (
@@ -244,14 +269,43 @@ def test_small_matrix_reports_unobserved_pairs(tmp_path):
     import pandas as pd
 
     path = tmp_path / "small_matrix.csv"
+    daily_path = tmp_path / "item_daily_features.csv"
     pd.DataFrame(
-        [[0, 10], [0, 11], [0, 11], [1, 10]],
-        columns=["user_id", "video_id"],
+        [
+            [0, 10, 3.0],
+            [0, 11, 1.0],
+            [0, 11, 1.0],
+            [1, 10, 1.0],
+        ],
+        columns=["user_id", "video_id", "watch_ratio"],
     ).to_csv(path, index=False)
+    pd.DataFrame(
+        [
+            [10, "NORMAL"],
+            [10, "NORMAL"],
+            [11, "AD"],
+            [11, "AD"],
+        ],
+        columns=["video_id", "video_type"],
+    ).to_csv(daily_path, index=False)
 
-    coverage = small_matrix_observation_coverage(path)
+    coverage = small_matrix_observation_coverage(path, daily_path)
 
     assert coverage["expected_complete_pairs"] == 4
     assert coverage["observed_unique_pairs"] == 3
     assert coverage["duplicate_rows"] == 1
     assert coverage["missing_pairs"] == 1
+    assert coverage["primary_candidate_definition"] == "O_u intersect C_NORMAL"
+    normal = coverage["video_type_breakdown"]["NORMAL"]
+    assert normal["observed_pairs"] == 2
+    assert normal["videos"] == 1
+    assert normal["users"] == 2
+    assert normal["positive_count"] == 1
+    assert normal["zero_positive_users"] == 1
+    assert normal["relevant_item_count"] == 1
+    assert coverage["video_type_breakdown"]["AD"]["observed_pairs"] == 1
+    assert coverage["video_type_breakdown"]["AD"]["positive_count"] == 0
+    assert coverage["normal_plus_ad_observed_pairs"] == 3
+    assert coverage["normal_plus_ad_reconciles_observed_pairs"] is True
+    assert coverage["primary_candidate_size_per_user"]["quantiles"]["p50"] == 1
+    assert coverage["secondary_full_catalog_size"] == 2

@@ -1,5 +1,5 @@
 contract_id: kuairec-two-tower-cold-start-v2
-protocol_revision: protocol-v2.1
+protocol_revision: protocol-v2.1.1
 status: active_design_only_two_tower_not_implemented
 
 definitions:
@@ -26,6 +26,8 @@ references:
     fit_context: small_matrix_audit
     source_splits: [train, validation]
     cutoff: validation_end_exclusive
+    primary_target_items: observed NORMAL items with watch_ratio > 2.0
+    ad_target_items: observed AD items with watch_ratio > 2.0 reported separately
 
 warm_item_path:
   id_embedding_use_requires:

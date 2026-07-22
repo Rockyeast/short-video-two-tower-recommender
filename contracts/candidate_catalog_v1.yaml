@@ -1,5 +1,5 @@
 contract_id: kuairec-causal-candidate-catalog-v1
-protocol_revision: protocol-v2.1
+protocol_revision: protocol-v2.1.1
 status: active_protocol_only_no_model_or_baseline_executed
 
 sources:

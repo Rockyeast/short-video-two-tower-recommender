@@ -1,5 +1,5 @@
 contract_id: kuairec-small-matrix-nearly-fully-observed-audit-v2
-protocol_revision: protocol-v2.1
+protocol_revision: protocol-v2.1.1
 status: active_protocol_only_no_model_or_baseline_executed
 purpose: static_preference_ranking_audit_not_future_forecast
 
@@ -99,6 +99,12 @@ time_claim:
   future_forecast: false
   static_catalog: true
   upload_time_filter_applied: false
+
+time_decayed_popularity:
+  static_score_timestamp: validation_end_exclusive
+  state_source: frozen train+validation fit state
+  small_matrix_event_replay: forbidden
+  small_matrix_state_update: forbidden
 
 lock:
   locked_by_default: true

@@ -1,5 +1,5 @@
 contract_id: kuairec-fit-contexts-v1
-protocol_revision: protocol-v2.1
+protocol_revision: protocol-v2.1.1
 status: active_protocol_only_no_model_or_baseline_executed
 
 common:
@@ -78,6 +78,10 @@ contexts:
       source_splits: [train, validation]
       cutoff: validation_end_exclusive
     small_matrix_may_update_learned_parameters: false
+    time_decayed_popularity:
+      static_score_timestamp: validation_end_exclusive
+      state_source: frozen_train_plus_validation
+      replay_or_update_during_small_audit: forbidden
 
 guards:
   ordinary_baseline_contexts: [selection]

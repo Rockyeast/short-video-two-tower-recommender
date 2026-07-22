@@ -13,12 +13,12 @@ dataset:
     - kuairec_caption_category.csv
 
 protocol:
-  revision: protocol-v2.1
+  revision: protocol-v2.1.1
   status: phase_0_protocol_audit_only
   lineage:
-    parent_commit: c41a0717b4ed1e57b0cb9bb994d1b934fc03d574
-    parent_manifest_sha256: 2223ad95548a67d03055fa4db0fbf74f1e6329907d9d2f864cf497683542db8e
-    revision_reason: canonical behavior events, verifiable candidate membership, and bundle-level execution locks
+    parent_commit: 87a8267e1bef033652501ae373d72d06468946d0
+    parent_manifest_sha256: c8562306bf61ca266e70a5cea5258f58078594048298dbe90d58c100f26e822f
+    revision_reason: implement Small Matrix NORMAL/AD audit separation and frozen static scoring time
   active_contracts:
     event_canonicalization: contracts/event_canonicalization_v1.yaml
     temporal_evaluation: contracts/temporal_evaluation_v2.yaml
@@ -75,6 +75,8 @@ fit_contexts:
     fit_artifact: frozen_final_fit_artifact
     history_splits: [train, validation]
     cold_reference_splits: [train, validation]
+    static_score_timestamp: validation_end_exclusive
+    evaluation_replay_or_state_update: forbidden
 
 evaluation:
   history_scope: all_events_strictly_before_query_timestamp
@@ -83,7 +85,7 @@ evaluation:
   filter_seen_items: true
   small_matrix_history_source: big_matrix_train_plus_validation_only
   temporal_candidate_catalog: causal_normal_public_only
-  small_matrix_primary_candidates: observed_pairs_excluding_blocked_or_missing
+  small_matrix_primary_candidates: observed_normal_pairs_excluding_blocked_or_missing
   small_matrix_secondary_candidates: all_3327_for_blocked_safety_audit
   temporal_final_status: phase_0_aggregate_audited_then_frozen
   temporal_final_untouched_claim: false

@@ -1,5 +1,5 @@
 contract_id: kuairec-five-retrieval-baselines-v1
-protocol_revision: protocol-v2.1
+protocol_revision: protocol-v2.1.1
 status: active_protocol_only_no_baseline_executed
 
 common:
@@ -140,6 +140,9 @@ fit_rebuild_rules:
   small_matrix_audit:
     artifact_source: frozen_final_fit
     small_feedback_refit: forbidden
+    time_decayed_popularity_static_score_timestamp: validation_end_exclusive
+    frozen_state_source: train_plus_validation
+    evaluation_event_replay_or_state_update: forbidden
 
 required_validation_table:
   columns:

@@ -1,11 +1,11 @@
 {
   "schema_version": 2,
-  "protocol_revision": "protocol-v2.1.1",
-  "generated_at_utc": "2026-07-22T00:36:57.873190+00:00",
+  "protocol_revision": "protocol-v2.1",
+  "generated_at_utc": "2026-07-21T21:53:55.568315+00:00",
   "phase": "phase_0_data_and_evaluation_audit_only",
   "model_or_baseline_executed": false,
   "final_ranking_evaluation_executed": false,
-  "config_sha256": "6310e9d46d9ae9ea2076c63f40f5c833e8c4bae8ea11bdb6dd8dcfacc762bbfe",
+  "config_sha256": "32d3b84e5414febd511d890d4ac24f0ad41b24dc48decf4559e8d56bdb545e49",
   "files": {
     "big_matrix.csv": {
       "path": "data/raw/KuaiRec 2.0/data/big_matrix.csv",
@@ -28274,70 +28274,6 @@
         "p100": 32.0
       }
     },
-    "video_type_catalog": {
-      "normal_videos": 3327,
-      "ad_videos": 0,
-      "inconsistent_video_type_videos": 0,
-      "missing_video_type_videos": 0,
-      "other_video_type_videos": 0,
-      "unclassified_videos": 0
-    },
-    "video_type_breakdown": {
-      "NORMAL": {
-        "observed_pairs": 4676570,
-        "videos": 3327,
-        "users": 1411,
-        "positive_count": 217175,
-        "zero_positive_users": 0,
-        "candidate_size_per_user": {
-          "count": 1411,
-          "mean": 3314.3656980864635,
-          "zero_count": 0,
-          "zero_fraction": 0.0,
-          "quantiles": {
-            "p00": 3295.0,
-            "p25": 3309.0,
-            "p50": 3315.0,
-            "p75": 3320.0,
-            "p90": 3323.0,
-            "p95": 3324.0,
-            "p99": 3326.0,
-            "p100": 3327.0
-          }
-        },
-        "relevant_item_count": 3276,
-        "relevant_item_membership_sha256": "f9051e161c9ef4b3e4573d26f6c9bbef2415eae6c552eb9911d7d873822ac294"
-      },
-      "AD": {
-        "observed_pairs": 0,
-        "videos": 0,
-        "users": 0,
-        "positive_count": 0,
-        "zero_positive_users": 0,
-        "candidate_size_per_user": {
-          "count": 1411,
-          "mean": 0.0,
-          "zero_count": 1411,
-          "zero_fraction": 1.0,
-          "quantiles": {
-            "p00": 0.0,
-            "p25": 0.0,
-            "p50": 0.0,
-            "p75": 0.0,
-            "p90": 0.0,
-            "p95": 0.0,
-            "p99": 0.0,
-            "p100": 0.0
-          }
-        },
-        "relevant_item_count": 0,
-        "relevant_item_membership_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-      }
-    },
-    "normal_plus_ad_observed_pairs": 4676570,
-    "unclassified_observed_pairs": 0,
-    "normal_plus_ad_reconciles_observed_pairs": true,
-    "primary_candidate_definition": "O_u intersect C_NORMAL",
     "primary_candidate_size_per_user": {
       "count": 1411,
       "mean": 3314.3656980864635,
@@ -28747,7 +28683,6 @@
       "reference_item_count": 7896,
       "reference_membership_sha256": "765a33ca4362ef7f008fa80ef57ee70707bea7b1331880d0858b8d5afbbec8b6",
       "target_item_count": 3904,
-      "target_definition": "canonical validation relevant target items",
       "warm_target_item_count": 2881,
       "cold_target_item_count": 1023,
       "cold_target_membership_sha256": "e008f627a96409c856d4d9e258c5e7caf193c78f7d72c4f36746118504af382e",
@@ -28762,7 +28697,6 @@
       "reference_item_count": 9391,
       "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
       "target_item_count": 2694,
-      "target_definition": "canonical temporal-final relevant target items",
       "warm_target_item_count": 1889,
       "cold_target_item_count": 805,
       "cold_target_membership_sha256": "94285130e4228282ede296a226be765070d664f2120571d0434bdda28ea42c7d",
@@ -28776,26 +28710,10 @@
       ],
       "reference_item_count": 9391,
       "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
-      "target_item_count": 3276,
-      "target_definition": "observed NORMAL Small Matrix items with watch_ratio > 2.0",
-      "warm_target_item_count": 3275,
+      "target_item_count": 3327,
+      "warm_target_item_count": 3326,
       "cold_target_item_count": 1,
       "cold_target_membership_sha256": "bbdbf2d46750dd8d042a84228deb69440f58e16192916415a6af722d697b343f",
-      "data_warm_definition": "at least one Big Matrix interaction in the context reference",
-      "id_embedding_actually_trained_is_separate": true
-    },
-    "small_matrix_ad_diagnostic": {
-      "reference_splits": [
-        "train",
-        "validation"
-      ],
-      "reference_item_count": 9391,
-      "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
-      "target_item_count": 0,
-      "target_definition": "observed AD Small Matrix items with watch_ratio > 2.0; reported separately from primary",
-      "warm_target_item_count": 0,
-      "cold_target_item_count": 0,
-      "cold_target_membership_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "data_warm_definition": "at least one Big Matrix interaction in the context reference",
       "id_embedding_actually_trained_is_separate": true
     },

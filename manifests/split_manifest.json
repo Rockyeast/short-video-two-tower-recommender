@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
-  "protocol_revision": "protocol-v2.1",
-  "created_at_utc": "2026-07-21T21:53:55.568315+00:00",
+  "protocol_revision": "protocol-v2.1.1",
+  "created_at_utc": "2026-07-22T00:36:57.873190+00:00",
   "immutable": true,
   "lineage": {
-    "parent_commit": "c41a0717b4ed1e57b0cb9bb994d1b934fc03d574",
-    "parent_manifest_sha256": "2223ad95548a67d03055fa4db0fbf74f1e6329907d9d2f864cf497683542db8e",
-    "revision_reason": "canonical behavior events, verifiable candidate membership, and bundle-level execution locks"
+    "parent_commit": "87a8267e1bef033652501ae373d72d06468946d0",
+    "parent_manifest_sha256": "c8562306bf61ca266e70a5cea5258f58078594048298dbe90d58c100f26e822f",
+    "revision_reason": "implement Small Matrix NORMAL/AD audit separation and frozen static scoring time"
   },
   "dataset": {
     "name": "KuaiRec",
@@ -52,52 +52,52 @@
       }
     }
   },
-  "config_sha256": "32d3b84e5414febd511d890d4ac24f0ad41b24dc48decf4559e8d56bdb545e49",
+  "config_sha256": "6310e9d46d9ae9ea2076c63f40f5c833e8c4bae8ea11bdb6dd8dcfacc762bbfe",
   "active_contracts": {
     "event_canonicalization": {
       "path": "contracts/event_canonicalization_v1.yaml",
-      "sha256": "da1779ade14862e185c46ac560f5263d1fbfe9adc53cc77ecb3123a401bdba15"
+      "sha256": "f91731873b582cb68eaa689f299a85a05ca818e7a37024fdeede5b6bc2686830"
     },
     "temporal_evaluation": {
       "path": "contracts/temporal_evaluation_v2.yaml",
-      "sha256": "d59444f935982e65349562f9479d159dbd0997d3df61c7ff5e57b753311c15ba"
+      "sha256": "cea9ced194df396c88dfc058723ef6cff7ddb1aeaa3a39473385d41ce04ddf03"
     },
     "small_matrix_audit": {
       "path": "contracts/fully_observed_audit_v2.yaml",
-      "sha256": "1fcafbb5f086b0ea665e9b1f8fba6db558e7e5fff6bb4c2c62e41f088f419a09"
+      "sha256": "8cafcf30d37183ade3ae1415bee0aad5310f9d65949d4c208c8f3d3a363257ca"
     },
     "fit_contexts": {
       "path": "contracts/fit_contexts_v1.yaml",
-      "sha256": "0f0e3051ceb8bf13456c6b313c8db833dbff04395891532af6ce87711ca35b90"
+      "sha256": "c79e9ef4e84e8516db3c44c92df9e5864fba0aafeb633e5def687f8278773d72"
     },
     "candidate_catalog": {
       "path": "contracts/candidate_catalog_v1.yaml",
-      "sha256": "ccf49a34572a8fd7658f3f6668c82d20a83cb8501bb6a055f71f49841b9de6cd"
+      "sha256": "8dca20ac3ef901726513501b0247fcda13c51191d923bbd814a6cad76ce13463"
     },
     "target_deduplication": {
       "path": "contracts/target_deduplication_v1.yaml",
-      "sha256": "977472d640f594480d40b1bfe9cc6e3046b0f9b60ac5d15caf25bc0a83ab473f"
+      "sha256": "e60d93c66e58f6f7c7f9043e4acb1419d9b159b5250b4c32f82d79a81a5ce8f5"
     },
     "cold_start": {
       "path": "contracts/two_tower_cold_start_v2.yaml",
-      "sha256": "efe7077214ce4bd183e88822e9435d44a18f102705f4ac77c40c915d8fa5fe82"
+      "sha256": "8028a37c98fd00747776f67eae2cfcbffdc74560a899bf3616fbc25251726485"
     },
     "metrics": {
       "path": "contracts/metrics_v1.yaml",
-      "sha256": "7211477bb357ebffb4a9526d9c697c3b6c5c9620f1167b23e0b9e66886bcee72"
+      "sha256": "3ddee54a016c8b288ae06d1202fe7a106f982753ac04d1cb2fbf35f169414e06"
     },
     "baselines": {
       "path": "contracts/baselines_v1.yaml",
-      "sha256": "aa55c8dff243ae64baeb098ca9a326b6c39b482dcf1b5dfaa585ebb25916f148"
+      "sha256": "5fdf54e7c09093af94aa46e3b8a8eec1b9e57dfabe83653d27b2f62eae68732c"
     },
     "negative_sampling": {
       "path": "contracts/negative_sampling_v2.yaml",
-      "sha256": "e49fd9fecc7bfd71cc9791b05d5370a60ea013776a7fd3683659c0a15118d43d"
+      "sha256": "0935e104771a56991b4d593ebf6f67fe12031fac9ef565570f97b3861897d86d"
     }
   },
   "generation_code": {
     "path": "scripts/audit_phase0.py",
-    "sha256": "6e08da51829d9dfed286cbbc88ec5b5c6ceaf1fa82985008088a4ff7d973b55a"
+    "sha256": "e1d5492ec88e6b6846cc91cdc41c6b987ec6160bb0658fd9877eafe7f201e587"
   },
   "label": {
     "expression": "watch_ratio > 2.0",
@@ -27179,7 +27179,9 @@
       "cold_reference_splits": [
         "train",
         "validation"
-      ]
+      ],
+      "static_score_timestamp": "validation_end_exclusive",
+      "evaluation_replay_or_state_update": "forbidden"
     }
   },
   "candidate_catalog": {
@@ -27505,6 +27507,7 @@
       "reference_item_count": 7896,
       "reference_membership_sha256": "765a33ca4362ef7f008fa80ef57ee70707bea7b1331880d0858b8d5afbbec8b6",
       "target_item_count": 3904,
+      "target_definition": "canonical validation relevant target items",
       "warm_target_item_count": 2881,
       "cold_target_item_count": 1023,
       "cold_target_membership_sha256": "e008f627a96409c856d4d9e258c5e7caf193c78f7d72c4f36746118504af382e",
@@ -27519,6 +27522,7 @@
       "reference_item_count": 9391,
       "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
       "target_item_count": 2694,
+      "target_definition": "canonical temporal-final relevant target items",
       "warm_target_item_count": 1889,
       "cold_target_item_count": 805,
       "cold_target_membership_sha256": "94285130e4228282ede296a226be765070d664f2120571d0434bdda28ea42c7d",
@@ -27532,10 +27536,26 @@
       ],
       "reference_item_count": 9391,
       "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
-      "target_item_count": 3327,
-      "warm_target_item_count": 3326,
+      "target_item_count": 3276,
+      "target_definition": "observed NORMAL Small Matrix items with watch_ratio > 2.0",
+      "warm_target_item_count": 3275,
       "cold_target_item_count": 1,
       "cold_target_membership_sha256": "bbdbf2d46750dd8d042a84228deb69440f58e16192916415a6af722d697b343f",
+      "data_warm_definition": "at least one Big Matrix interaction in the context reference",
+      "id_embedding_actually_trained_is_separate": true
+    },
+    "small_matrix_ad_diagnostic": {
+      "reference_splits": [
+        "train",
+        "validation"
+      ],
+      "reference_item_count": 9391,
+      "reference_membership_sha256": "62ad8046af1c9db168e49ce47b4056d0b75b85925dbd79fa2cff944b38295b59",
+      "target_item_count": 0,
+      "target_definition": "observed AD Small Matrix items with watch_ratio > 2.0; reported separately from primary",
+      "warm_target_item_count": 0,
+      "cold_target_item_count": 0,
+      "cold_target_membership_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "data_warm_definition": "at least one Big Matrix interaction in the context reference",
       "id_embedding_actually_trained_is_separate": true
     },
@@ -27612,10 +27632,61 @@
     "rows": 4676570,
     "users": 1411,
     "videos": 3327,
-    "positive_count": 217175,
-    "positive_fraction": 0.04643894991414648,
-    "users_with_zero_positives": 0,
-    "users_with_zero_positives_fraction": 0.0,
+    "primary_observed_normal_pairs": 4676570,
+    "primary_positive_count": 217175,
+    "primary_users_with_zero_positives": 0,
+    "video_type_breakdown": {
+      "NORMAL": {
+        "observed_pairs": 4676570,
+        "videos": 3327,
+        "users": 1411,
+        "positive_count": 217175,
+        "zero_positive_users": 0,
+        "candidate_size_per_user": {
+          "count": 1411,
+          "mean": 3314.3656980864635,
+          "zero_count": 0,
+          "zero_fraction": 0.0,
+          "quantiles": {
+            "p00": 3295.0,
+            "p25": 3309.0,
+            "p50": 3315.0,
+            "p75": 3320.0,
+            "p90": 3323.0,
+            "p95": 3324.0,
+            "p99": 3326.0,
+            "p100": 3327.0
+          }
+        },
+        "relevant_item_count": 3276,
+        "relevant_item_membership_sha256": "f9051e161c9ef4b3e4573d26f6c9bbef2415eae6c552eb9911d7d873822ac294"
+      },
+      "AD": {
+        "observed_pairs": 0,
+        "videos": 0,
+        "users": 0,
+        "positive_count": 0,
+        "zero_positive_users": 0,
+        "candidate_size_per_user": {
+          "count": 1411,
+          "mean": 0.0,
+          "zero_count": 1411,
+          "zero_fraction": 1.0,
+          "quantiles": {
+            "p00": 0.0,
+            "p25": 0.0,
+            "p50": 0.0,
+            "p75": 0.0,
+            "p90": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "p100": 0.0
+          }
+        },
+        "relevant_item_count": 0,
+        "relevant_item_membership_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
     "ground_truth_only": true,
     "enters_training_or_history": false,
     "blocked_information_enters_negative_sampling": false,
@@ -27623,6 +27694,11 @@
     "primary_catalog_video_type": "NORMAL",
     "advertisement_quality_policy": "AD items are excluded from primary quality metrics and reported only as a separate diagnostic",
     "secondary_candidate_policy": "rank all 3327 only for Blocked@K safety audit",
+    "time_decayed_popularity": {
+      "static_score_timestamp": "validation_end_exclusive",
+      "state_source": "frozen_train_plus_validation",
+      "small_matrix_replay_or_update": false
+    },
     "observation_coverage": {
       "users": 1411,
       "catalog_videos": 3327,
@@ -27648,6 +27724,70 @@
           "p100": 32.0
         }
       },
+      "video_type_catalog": {
+        "normal_videos": 3327,
+        "ad_videos": 0,
+        "inconsistent_video_type_videos": 0,
+        "missing_video_type_videos": 0,
+        "other_video_type_videos": 0,
+        "unclassified_videos": 0
+      },
+      "video_type_breakdown": {
+        "NORMAL": {
+          "observed_pairs": 4676570,
+          "videos": 3327,
+          "users": 1411,
+          "positive_count": 217175,
+          "zero_positive_users": 0,
+          "candidate_size_per_user": {
+            "count": 1411,
+            "mean": 3314.3656980864635,
+            "zero_count": 0,
+            "zero_fraction": 0.0,
+            "quantiles": {
+              "p00": 3295.0,
+              "p25": 3309.0,
+              "p50": 3315.0,
+              "p75": 3320.0,
+              "p90": 3323.0,
+              "p95": 3324.0,
+              "p99": 3326.0,
+              "p100": 3327.0
+            }
+          },
+          "relevant_item_count": 3276,
+          "relevant_item_membership_sha256": "f9051e161c9ef4b3e4573d26f6c9bbef2415eae6c552eb9911d7d873822ac294"
+        },
+        "AD": {
+          "observed_pairs": 0,
+          "videos": 0,
+          "users": 0,
+          "positive_count": 0,
+          "zero_positive_users": 0,
+          "candidate_size_per_user": {
+            "count": 1411,
+            "mean": 0.0,
+            "zero_count": 1411,
+            "zero_fraction": 1.0,
+            "quantiles": {
+              "p00": 0.0,
+              "p25": 0.0,
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 0.0,
+              "p95": 0.0,
+              "p99": 0.0,
+              "p100": 0.0
+            }
+          },
+          "relevant_item_count": 0,
+          "relevant_item_membership_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "normal_plus_ad_observed_pairs": 4676570,
+      "unclassified_observed_pairs": 0,
+      "normal_plus_ad_reconciles_observed_pairs": true,
+      "primary_candidate_definition": "O_u intersect C_NORMAL",
       "primary_candidate_size_per_user": {
         "count": 1411,
         "mean": 3314.3656980864635,

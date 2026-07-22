@@ -1,6 +1,6 @@
 # KuaiRec Phase 0 Audit
 
-Generated: `2026-07-22T00:36:57.873190+00:00`
+Generated: `2026-07-21T21:53:55.568315+00:00`
 
 > No model or baseline was trained or evaluated in Phase 0.
 
@@ -157,14 +157,10 @@ the new NORMAL/public catalog filter, including the reported final gap.
 
 - Full ranking catalog: 3,327 videos for each of 1,411 users (4,694,397 scored pairs).
 - Observed feedback pairs: 4,676,570 (99.6202%); blocked/missing pairs: 17,827.
-- Primary `O_u ∩ C_NORMAL`: 4,676,570 observed pairs, 3,327 videos, 1,411 users, 217,175 positive pairs, and 0 zero-positive users.
-- Separate `O_u ∩ C_AD` diagnostic: 0 observed pairs, 0 videos, 0 users, 0 positive pairs, and 0 zero-positive users.
-- NORMAL + AD observed-pair reconciliation: 4,676,570 / 4,676,570; unclassified=0.
 - Missing pairs per user p50/p90/p99/max: 12/23/29/32.
 - Officially, missing pairs represent videos/authors blocked by that user.
-- Primary audit ranks each user's observed NORMAL pairs only. Full 3,327-item ranking remains secondary only and must report `Blocked@K` and user hit rate.
+- Primary audit removes each user's blocked/missing pairs. Full 3,327-item ranking is secondary only and must report `Blocked@K` and user hit rate.
 - Blocked information never enters training, history, features, negative sampling, or hyperparameter selection.
-- Time-decayed popularity uses one static score timestamp at `validation_end_exclusive`, with frozen train+validation state and no Small Matrix replay or update.
 
 ## Causal candidate catalog audit
 
@@ -202,9 +198,6 @@ the new NORMAL/public catalog filter, including the reported final gap.
 ## Baseline scale and estimated cost
 
 > Planning estimates only; no baseline was executed in Phase 0. Temporal query count uses exact (user_id, next-positive timestamp) groups.
-
-- Small primary scoring scale: 4,676,570 observed NORMAL pairs.
-- Small secondary safety scale: 4,694,397 full-catalog pairs.
 
 | baseline | fit scale | evaluation scale | planning estimate |
 |---|---|---|---|

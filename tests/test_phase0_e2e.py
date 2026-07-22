@@ -112,7 +112,7 @@ def _write_synthetic_kuairec(root: Path) -> tuple[Path, Path]:
                     video_id,
                     int(date.strftime("%Y%m%d")),
                     video_id,
-                    "NORMAL",
+                    "AD" if video_id == 5 else "NORMAL",
                     "2020-07-04",
                     "synthetic",
                     "public",
@@ -181,7 +181,7 @@ def test_synthetic_generate_then_temp_recompute_verify(tmp_path):
 
     payload = json.loads(manifest.read_text())
     assert payload["schema_version"] == 2
-    assert payload["protocol_revision"] == "protocol-v2.1"
+    assert payload["protocol_revision"] == "protocol-v2.1.1"
     assert payload["split_algorithm"]["fraction_validation"] == {
         "keys": [
             "train_fraction",
@@ -214,6 +214,39 @@ def test_synthetic_generate_then_temp_recompute_verify(tmp_path):
     audit = json.loads((report_dir / "audit.json").read_text())
     assert audit["model_or_baseline_executed"] is False
     assert audit["final_ranking_evaluation_executed"] is False
+    small = audit["small_matrix_observation_coverage"]
+    assert small["video_type_breakdown"]["NORMAL"]["observed_pairs"] == 8
+    assert small["video_type_breakdown"]["AD"]["observed_pairs"] == 1
+    assert small["normal_plus_ad_observed_pairs"] == small[
+        "observed_unique_pairs"
+    ]
+    assert small["primary_candidate_size_per_user"]["quantiles"]["p50"] == 4
+    assert small["secondary_full_catalog_size"] == 5
+    assert payload["small_matrix_audit"]["primary_observed_normal_pairs"] == 8
+    assert payload["small_matrix_audit"]["video_type_breakdown"]["AD"][
+        "observed_pairs"
+    ] == 1
+    assert payload["small_matrix_audit"]["time_decayed_popularity"] == {
+        "static_score_timestamp": "validation_end_exclusive",
+        "state_source": "frozen_train_plus_validation",
+        "small_matrix_replay_or_update": False,
+    }
+    assert payload["cold_start_contexts"]["small_matrix"][
+        "target_definition"
+    ].startswith("observed NORMAL")
+    assert payload["cold_start_contexts"]["small_matrix"]["target_item_count"] == 2
+    assert payload["cold_start_contexts"]["small_matrix_ad_diagnostic"][
+        "target_definition"
+    ].startswith("observed AD")
+    assert payload["cold_start_contexts"]["small_matrix_ad_diagnostic"][
+        "target_item_count"
+    ] == 1
+    assert audit["baseline_cost_estimates"][
+        "small_matrix_primary_observed_pairs"
+    ] == 8
+    assert audit["baseline_cost_estimates"][
+        "small_matrix_secondary_full_ranking_pairs"
+    ] == 10
 
     verify = subprocess.run(
         [
@@ -236,5 +269,5 @@ def test_synthetic_generate_then_temp_recompute_verify(tmp_path):
         check=False,
     )
     assert verify.returncode == 0, verify.stderr
-    assert "protocol-v2.1 bundle" in verify.stdout
+    assert "protocol-v2.1.1 bundle" in verify.stdout
     assert "match byte-for-byte" in verify.stdout

@@ -34,7 +34,7 @@ PROTECTED_EVALUATION_SCOPES = frozenset(
     {FINAL_EVALUATION_SPLIT, "small_matrix_audit"}
 )
 FINAL_CONFIRMATION = "RUN_FROZEN_TEMPORAL_FINAL_ONCE"
-PROTOCOL_REVISION = "protocol-v2.1"
+PROTOCOL_REVISION = "protocol-v2.1.1"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _ALLOWED_UNTRACKED_OUTPUT_ROOTS = frozenset(

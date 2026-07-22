@@ -1,11 +1,11 @@
 # Short-Video Recommendation on KuaiRec
 
-This repository is currently limited to **Phase 0 / protocol-v2.1: data,
+This repository is currently limited to **Phase 0 / protocol-v2.1.1: data,
 candidate-catalog, and evaluation audit**.
 
 No Two-Tower model, ranking model, FAISS index, serving API, or online-feedback
 component is implemented at this stage. The five baselines are specified but
-remain unimplemented and unexecuted until protocol-v2.1 is reviewed.
+remain unimplemented and unexecuted until protocol-v2.1.1 is reviewed.
 
 ## Locked label
 
@@ -19,7 +19,7 @@ The threshold must not be changed in response to holdout results.
 
 ## Phase 0 outputs
 
-The committed protocol-v2.1 audit bundle contains:
+The committed protocol-v2.1.1 audit bundle contains:
 
 - field and missing-value inventory;
 - metadata coverage and time ranges;
@@ -38,7 +38,7 @@ Key aggregate findings (not model metrics):
   and the 29 `AD` videos are excluded;
 - every one of the 497,117 train, 99,248 validation, and 83,661 temporal-final
   formal targets remains inside its query-time available/unseen candidate set;
-- protocol-v2.1 preserves the already frozen and disclosed protocol-v2 time
+- protocol-v2.1.1 preserves the already frozen and disclosed protocol-v2 time
   cutoffs, then assigns canonical events to them. Histories, seen filters,
   last-50 sequences, quick-skip pools, and popularity statistics use one event
   per `(user_id, video_id, timestamp)`, never duplicated raw rows. The audit
@@ -117,7 +117,7 @@ Planning scale uses `497,117` canonical train targets. Ten BPR epochs therefore
 represent approximately `4,971,170` positive updates before batching. These are
 cost estimates, not executed results.
 
-## Active protocol-v2.1 contracts
+## Active protocol-v2.1.1 contracts
 
 - `contracts/event_canonicalization_v1.yaml`
 - `contracts/temporal_evaluation_v2.yaml`

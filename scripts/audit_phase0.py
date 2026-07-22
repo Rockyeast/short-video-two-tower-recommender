@@ -89,6 +89,15 @@ def parse_args() -> argparse.Namespace:
             "and generate protocol-v2.1 outputs. Never use for ordinary reruns."
         ),
     )
+    parser.add_argument(
+        "--supersede-protocol-v2-1",
+        action="store_true",
+        help=(
+            "One-time reviewed migration: archive the complete protocol-v2.1 "
+            "bundle and generate protocol-v2.1.1 outputs. Never use for "
+            "ordinary reruns."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -231,9 +240,14 @@ def scan_csv(path: Path, interaction: bool) -> dict[str, Any]:
             timestamp_min = min(timestamp_min, float(timestamp.min()))
             timestamp_max = max(timestamp_max, float(timestamp.max()))
         raw_timestamp = pd.to_numeric(chunk["timestamp"], errors="coerce")
-        local_date = pd.to_datetime(
-            raw_timestamp, unit="s", utc=True, errors="coerce"
-        ).dt.tz_convert("Asia/Shanghai").dt.strftime("%Y%m%d")
+        # NumPy 2.x can surface a transient overflow from Pandas' vectorized
+        # seconds-to-nanoseconds conversion after the large Big Matrix scan.
+        # Invalid values are intentionally coerced below, so keep that internal
+        # multiply from making verification depend on the ambient FP mode.
+        with np.errstate(over="ignore", invalid="ignore"):
+            local_date = pd.to_datetime(
+                raw_timestamp, unit="s", utc=True, errors="coerce"
+            ).dt.tz_convert("Asia/Shanghai").dt.strftime("%Y%m%d")
         local_date = pd.to_numeric(local_date, errors="coerce")
         declared_date = pd.to_numeric(chunk["date"], errors="coerce")
         comparable = local_date.notna() & declared_date.notna()
@@ -337,54 +351,105 @@ def scan_csv(path: Path, interaction: bool) -> dict[str, Any]:
     return result
 
 
-def small_matrix_observation_coverage(path: Path) -> dict[str, Any]:
-    """Audit Small Matrix observed and officially blocked/missing pairs."""
+def small_matrix_observation_coverage(
+    path: Path, item_daily_features_path: Path
+) -> dict[str, Any]:
+    """Audit blocked/missing pairs and enforce NORMAL/AD task separation."""
+
+    daily = pd.read_csv(
+        item_daily_features_path,
+        usecols=["video_id", "video_type"],
+        low_memory=False,
+    )
+    daily["video_id"] = pd.to_numeric(daily["video_id"], errors="coerce")
+    if daily["video_id"].isna().any():
+        raise RuntimeError("item_daily_features video_id is invalid")
+    daily["video_id"] = daily["video_id"].astype(int)
+    normalized_type = daily["video_type"].astype("string").str.strip().str.upper()
+    normalized_type = normalized_type.mask(normalized_type.eq(""), pd.NA)
+    daily = daily.assign(_normalized_video_type=normalized_type)
+
+    normal_catalog: set[int] = set()
+    ad_catalog: set[int] = set()
+    inconsistent_type: set[int] = set()
+    missing_type: set[int] = set()
+    other_type: set[int] = set()
+    for video_id, group in daily.groupby("video_id", sort=False):
+        values = set(group["_normalized_video_type"].dropna().astype(str))
+        has_missing = bool(group["_normalized_video_type"].isna().any())
+        video_id = int(video_id)
+        if has_missing and values:
+            inconsistent_type.add(video_id)
+        elif has_missing:
+            missing_type.add(video_id)
+        elif values == {"NORMAL"}:
+            normal_catalog.add(video_id)
+        elif values == {"AD"}:
+            ad_catalog.add(video_id)
+        elif len(values) > 1:
+            inconsistent_type.add(video_id)
+        else:
+            other_type.add(video_id)
 
     users: set[int] = set()
     catalog: set[int] = set()
     unique_pairs_per_user: dict[int, int] = {}
     duplicate_rows = 0
-    carry_user: int | None = None
-    carry_seen_videos: set[int] = set()
-    previous_user: int | None = None
-
-    for chunk in pd.read_csv(
-        path, usecols=["user_id", "video_id"], chunksize=CHUNK_SIZE
-    ):
-        user = pd.to_numeric(chunk["user_id"], errors="coerce")
-        video = pd.to_numeric(chunk["video_id"], errors="coerce")
-        if user.isna().any() or video.isna().any():
-            raise RuntimeError("small_matrix user_id or video_id is invalid")
-        user = user.astype(int)
-        video = video.astype(int)
-        user_values = user.to_numpy()
-        if (user_values[1:] < user_values[:-1]).any() or (
-            previous_user is not None and int(user_values[0]) < previous_user
-        ):
-            raise RuntimeError("small_matrix must remain grouped by user_id")
-
-        grouped = pd.DataFrame({"user_id": user, "video_id": video}).groupby(
-            "user_id", sort=False
+    scope_state: dict[str, dict[str, Any]] = {
+        name: {
+            "catalog": scoped_catalog,
+            "observed_pairs": 0,
+            "videos": set(),
+            "users": set(),
+            "positive_count": 0,
+            "zero_positive_users": 0,
+            "candidate_sizes": [],
+            "relevant_items": set(),
+        }
+        for name, scoped_catalog in (
+            ("NORMAL", normal_catalog),
+            ("AD", ad_catalog),
         )
-        group_ids = list(grouped.indices)
-        for position, (user_id, group) in enumerate(grouped):
-            user_id = int(user_id)
-            values = group["video_id"].astype(int).tolist()
-            if user_id == carry_user:
-                seen = carry_seen_videos
-            else:
-                seen = set()
-            before = len(seen)
-            seen.update(values)
-            duplicate_rows += len(values) - (len(seen) - before)
-            unique_pairs_per_user[user_id] = len(seen)
-            if position == len(group_ids) - 1:
-                carry_user = user_id
-                carry_seen_videos = seen
+    }
 
-        users.update(user.unique().tolist())
-        catalog.update(video.unique().tolist())
-        previous_user = int(user_values[-1])
+    for user_id, user_frame in iter_user_frames(
+        path, ["user_id", "video_id", "watch_ratio"]
+    ):
+        videos = pd.to_numeric(user_frame["video_id"], errors="coerce")
+        ratios = pd.to_numeric(user_frame["watch_ratio"], errors="coerce")
+        if videos.isna().any():
+            raise RuntimeError("small_matrix video_id is invalid")
+        pair_frame = pd.DataFrame(
+            {
+                "video_id": videos.astype(int),
+                "is_positive": ratios > 2.0,
+            }
+        )
+        positive_by_video = pair_frame.groupby("video_id", sort=False)[
+            "is_positive"
+        ].any()
+        observed_videos = set(int(value) for value in positive_by_video.index)
+        users.add(int(user_id))
+        catalog.update(observed_videos)
+        unique_pairs_per_user[int(user_id)] = len(observed_videos)
+        duplicate_rows += int(len(user_frame) - len(observed_videos))
+
+        for state in scope_state.values():
+            scoped_videos = observed_videos & state["catalog"]
+            scoped_positives = {
+                video_id
+                for video_id in scoped_videos
+                if bool(positive_by_video.loc[video_id])
+            }
+            state["candidate_sizes"].append(len(scoped_videos))
+            state["observed_pairs"] += len(scoped_videos)
+            state["videos"].update(scoped_videos)
+            state["relevant_items"].update(scoped_positives)
+            state["positive_count"] += len(scoped_positives)
+            if scoped_videos:
+                state["users"].add(int(user_id))
+                if not scoped_positives:
+                    state["zero_positive_users"] += 1
 
     expected_pairs = len(users) * len(catalog)
     observed_unique_pairs = sum(unique_pairs_per_user.values())
@@ -392,6 +457,25 @@ def small_matrix_observation_coverage(path: Path) -> dict[str, Any]:
     per_user_missing = [
         len(catalog) - unique_pairs_per_user.get(user_id, 0) for user_id in users
     ]
+    type_breakdown: dict[str, Any] = {}
+    for name, state in scope_state.items():
+        relevant_items = set(state["relevant_items"])
+        type_breakdown[name] = {
+            "observed_pairs": int(state["observed_pairs"]),
+            "videos": len(state["videos"]),
+            "users": len(state["users"]),
+            "positive_count": int(state["positive_count"]),
+            "zero_positive_users": int(state["zero_positive_users"]),
+            "candidate_size_per_user": distribution(state["candidate_sizes"]),
+            "relevant_item_count": len(relevant_items),
+            "relevant_item_membership_sha256": _stable_int_set_hash(
+                relevant_items
+            ),
+        }
+    classified_observed_pairs = sum(
+        value["observed_pairs"] for value in type_breakdown.values()
+    )
+    unclassified_catalog = catalog - normal_catalog - ad_catalog
     return {
         "users": len(users),
         "catalog_videos": len(catalog),
@@ -404,9 +488,27 @@ def small_matrix_observation_coverage(path: Path) -> dict[str, Any]:
             observed_unique_pairs / expected_pairs if expected_pairs else 0.0
         ),
         "missing_pairs_per_user": distribution(per_user_missing),
-        "primary_candidate_size_per_user": distribution(
-            list(unique_pairs_per_user.values())
+        "video_type_catalog": {
+            "normal_videos": len(catalog & normal_catalog),
+            "ad_videos": len(catalog & ad_catalog),
+            "inconsistent_video_type_videos": len(catalog & inconsistent_type),
+            "missing_video_type_videos": len(
+                (catalog - set(daily["video_id"].unique())) | (catalog & missing_type)
+            ),
+            "other_video_type_videos": len(catalog & other_type),
+            "unclassified_videos": len(unclassified_catalog),
+        },
+        "video_type_breakdown": type_breakdown,
+        "normal_plus_ad_observed_pairs": classified_observed_pairs,
+        "unclassified_observed_pairs": observed_unique_pairs
+        - classified_observed_pairs,
+        "normal_plus_ad_reconciles_observed_pairs": (
+            classified_observed_pairs == observed_unique_pairs
         ),
+        "primary_candidate_definition": "O_u intersect C_NORMAL",
+        "primary_candidate_size_per_user": type_breakdown["NORMAL"][
+            "candidate_size_per_user"
+        ],
         "secondary_full_catalog_size": len(catalog),
         "official_missing_pair_semantics": (
             "user blocked the video or its author; inferred only at pair level"
@@ -431,6 +533,10 @@ def small_matrix_observation_coverage(path: Path) -> dict[str, Any]:
             "negative_sampling",
             "hyperparameter_selection",
         ],
+        "_normal_relevant_item_ids": sorted(
+            scope_state["NORMAL"]["relevant_items"]
+        ),
+        "_ad_relevant_item_ids": sorted(scope_state["AD"]["relevant_items"]),
     }
 
 
@@ -2261,7 +2367,8 @@ def history_distributions(
 def cold_start_context_audit(
     split_stats: dict[str, Any],
     canonical_targets: dict[str, pd.DataFrame],
-    small_catalog_items: set[int],
+    small_normal_relevant_items: set[int],
+    small_ad_relevant_items: set[int],
 ) -> dict[str, Any]:
     train_items = set(int(value) for value in split_stats["train"]["video_ids"])
     through_validation_items = train_items | set(
@@ -2269,7 +2376,11 @@ def cold_start_context_audit(
     )
 
     def context_row(
-        reference_splits: list[str], reference_items: set[int], target_items: set[int]
+        reference_splits: list[str],
+        reference_items: set[int],
+        target_items: set[int],
+        *,
+        target_definition: str,
     ) -> dict[str, Any]:
         cold = target_items - reference_items
         warm = target_items & reference_items
@@ -2278,6 +2389,7 @@ def cold_start_context_audit(
             "reference_item_count": len(reference_items),
             "reference_membership_sha256": _stable_int_set_hash(reference_items),
             "target_item_count": len(target_items),
+            "target_definition": target_definition,
             "warm_target_item_count": len(warm),
             "cold_target_item_count": len(cold),
             "cold_target_membership_sha256": _stable_int_set_hash(cold),
@@ -2294,14 +2406,34 @@ def cold_start_context_audit(
         canonical_targets["temporal_final"]["video_id"].astype(int).tolist()
     )
     return {
-        "validation": context_row(["train"], train_items, validation_targets),
+        "validation": context_row(
+            ["train"],
+            train_items,
+            validation_targets,
+            target_definition="canonical validation relevant target items",
+        ),
         "temporal_final": context_row(
-            ["train", "validation"], through_validation_items, final_targets
+            ["train", "validation"],
+            through_validation_items,
+            final_targets,
+            target_definition="canonical temporal-final relevant target items",
         ),
         "small_matrix": context_row(
             ["train", "validation"],
             through_validation_items,
-            small_catalog_items,
+            small_normal_relevant_items,
+            target_definition=(
+                "observed NORMAL Small Matrix items with watch_ratio > 2.0"
+            ),
+        ),
+        "small_matrix_ad_diagnostic": context_row(
+            ["train", "validation"],
+            through_validation_items,
+            small_ad_relevant_items,
+            target_definition=(
+                "observed AD Small Matrix items with watch_ratio > 2.0; "
+                "reported separately from primary"
+            ),
         ),
         "untrained_id_policy": (
             "an ID embedding may be used only if optimization actually touched it; "
@@ -2490,6 +2622,46 @@ def archive_protocol_v2_bundle(
             if sha256_file(destination) != sha256_file(path):
                 raise RuntimeError(
                     f"Existing protocol-v2 archive differs from {path}: {destination}"
+                )
+        else:
+            shutil.copy2(path, destination)
+        archived[str(path)] = sha256_file(path)
+    for path in paths:
+        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        path.unlink()
+    return {
+        "parent_manifest_sha256": archived[str(manifest_path)],
+        "archive_directory": str(archive_root),
+        "archived_file_sha256": archived,
+    }
+
+
+def archive_protocol_v2_1_bundle(
+    paths: list[Path], archive_root: Path
+) -> dict[str, Any]:
+    """Archive the complete immutable protocol-v2.1 bundle before v2.1.1."""
+
+    missing = [str(path) for path in paths if not path.exists()]
+    if missing:
+        raise RuntimeError(
+            "Protocol-v2.1 supersession requires a complete existing bundle; "
+            f"missing: {missing}"
+        )
+    manifest_path = next(path for path in paths if path.name == "split_manifest.json")
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get("protocol_revision") != "protocol-v2.1":
+        raise RuntimeError(
+            "Only the reviewed protocol-v2.1 bundle may be superseded"
+        )
+    archive_root.mkdir(parents=True, exist_ok=True)
+    archived: dict[str, str] = {}
+    for path in paths:
+        destination = archive_root / path.name
+        if destination.exists():
+            if sha256_file(destination) != sha256_file(path):
+                raise RuntimeError(
+                    f"Existing protocol-v2.1 archive differs from {path}: "
+                    f"{destination}"
                 )
         else:
             shutil.copy2(path, destination)
@@ -2782,6 +2954,8 @@ def markdown_report(audit: dict[str, Any]) -> str:
         )
     small_coverage = audit["small_matrix_observation_coverage"]
     missing_quantiles = small_coverage["missing_pairs_per_user"]["quantiles"]
+    small_normal = small_coverage["video_type_breakdown"]["NORMAL"]
+    small_ad = small_coverage["video_type_breakdown"]["AD"]
     lines.extend(
         [
             "",
@@ -2793,14 +2967,32 @@ def markdown_report(audit: dict[str, Any]) -> str:
             f"- Observed feedback pairs: {small_coverage['observed_unique_pairs']:,} "
             f"({small_coverage['observed_pair_fraction']:.4%}); blocked/missing pairs: "
             f"{small_coverage['missing_pairs']:,}.",
+            f"- Primary `O_u ∩ C_NORMAL`: {small_normal['observed_pairs']:,} "
+            f"observed pairs, {small_normal['videos']:,} videos, "
+            f"{small_normal['users']:,} users, {small_normal['positive_count']:,} "
+            f"positive pairs, and {small_normal['zero_positive_users']:,} "
+            "zero-positive users.",
+            f"- Separate `O_u ∩ C_AD` diagnostic: {small_ad['observed_pairs']:,} "
+            f"observed pairs, {small_ad['videos']:,} videos, "
+            f"{small_ad['users']:,} users, {small_ad['positive_count']:,} "
+            f"positive pairs, and {small_ad['zero_positive_users']:,} "
+            "zero-positive users.",
+            f"- NORMAL + AD observed-pair reconciliation: "
+            f"{small_coverage['normal_plus_ad_observed_pairs']:,} / "
+            f"{small_coverage['observed_unique_pairs']:,}; "
+            f"unclassified={small_coverage['unclassified_observed_pairs']:,}.",
             f"- Missing pairs per user p50/p90/p99/max: "
             f"{missing_quantiles['p50']:.0f}/{missing_quantiles['p90']:.0f}/"
             f"{missing_quantiles['p99']:.0f}/{missing_quantiles['p100']:.0f}.",
             "- Officially, missing pairs represent videos/authors blocked by that user.",
-            "- Primary audit removes each user's blocked/missing pairs. Full 3,327-item "
-            "ranking is secondary only and must report `Blocked@K` and user hit rate.",
+            "- Primary audit ranks each user's observed NORMAL pairs only. Full "
+            f"{small_coverage['secondary_full_catalog_size']:,}-item ranking remains "
+            "secondary only and must report `Blocked@K` and user hit rate.",
             "- Blocked information never enters training, history, features, negative "
             "sampling, or hyperparameter selection.",
+            "- Time-decayed popularity uses one static score timestamp at "
+            "`validation_end_exclusive`, with frozen train+validation state and "
+            "no Small Matrix replay or update.",
         ]
     )
     catalog = audit["candidate_catalog_audit"]
@@ -2899,6 +3091,11 @@ def markdown_report(audit: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            f"- Small primary scoring scale: "
+            f"{cost['small_matrix_primary_observed_pairs']:,} observed NORMAL pairs.",
+            f"- Small secondary safety scale: "
+            f"{cost['small_matrix_secondary_full_ranking_pairs']:,} full-catalog pairs.",
+            "",
             "| baseline | fit scale | evaluation scale | planning estimate |",
             "|---|---|---|---|",
         ]
@@ -2945,9 +3142,9 @@ def generate_bundle(
     config_bytes = args.config.read_bytes()
     config = yaml.safe_load(config_bytes)
     protocol_revision = str(config.get("protocol", {}).get("revision", ""))
-    if protocol_revision != "protocol-v2.1":
+    if protocol_revision != "protocol-v2.1.1":
         raise RuntimeError(
-            "This generator requires the reviewed protocol-v2.1 config"
+            "This generator requires the reviewed protocol-v2.1.1 config"
         )
     if config["label"] != {
         "field": "watch_ratio",
@@ -3022,7 +3219,13 @@ def generate_bundle(
         hard_window_minutes=float(config["negative_sampling"]["local_window_minutes"]),
     )
     small_coverage = small_matrix_observation_coverage(
-        files["small_matrix.csv"]
+        files["small_matrix.csv"], files["item_daily_features.csv"]
+    )
+    small_normal_relevant_items = set(
+        int(value) for value in small_coverage.pop("_normal_relevant_item_ids")
+    )
+    small_ad_relevant_items = set(
+        int(value) for value in small_coverage.pop("_ad_relevant_item_ids")
     )
 
     catalog_items = set(big_internal["video_ids"]) | set(small_internal["video_ids"])
@@ -3031,11 +3234,12 @@ def generate_bundle(
     cold_start = cold_start_context_audit(
         split_stats,
         canonical_targets,
-        set(int(value) for value in small_internal["video_ids"]),
+        small_normal_relevant_items,
+        small_ad_relevant_items,
     )
     costs = baseline_cost_estimates(
         split_stats,
-        small_coverage["observed_unique_pairs"],
+        small_coverage["video_type_breakdown"]["NORMAL"]["observed_pairs"],
         small_coverage["expected_complete_pairs"],
         len(big_internal["video_ids"]),
     )
@@ -3175,10 +3379,16 @@ def generate_bundle(
             "rows": file_audits["small_matrix.csv"]["rows"],
             "users": small_internal["users"],
             "videos": small_internal["videos"],
-            "positive_count": small_internal["positive_count"],
-            "positive_fraction": small_internal["positive_fraction"],
-            "users_with_zero_positives": small_internal["positives_per_user"]["zero_count"],
-            "users_with_zero_positives_fraction": small_internal["positives_per_user"]["zero_fraction"],
+            "primary_observed_normal_pairs": small_coverage[
+                "video_type_breakdown"
+            ]["NORMAL"]["observed_pairs"],
+            "primary_positive_count": small_coverage["video_type_breakdown"][
+                "NORMAL"
+            ]["positive_count"],
+            "primary_users_with_zero_positives": small_coverage[
+                "video_type_breakdown"
+            ]["NORMAL"]["zero_positive_users"],
+            "video_type_breakdown": small_coverage["video_type_breakdown"],
             "ground_truth_only": True,
             "enters_training_or_history": False,
             "blocked_information_enters_negative_sampling": False,
@@ -3195,6 +3405,11 @@ def generate_bundle(
             "secondary_candidate_policy": (
                 "rank all 3327 only for Blocked@K safety audit"
             ),
+            "time_decayed_popularity": {
+                "static_score_timestamp": "validation_end_exclusive",
+                "state_source": "frozen_train_plus_validation",
+                "small_matrix_replay_or_update": False,
+            },
             "observation_coverage": small_coverage,
         },
         "holdout_disclosure": {
@@ -3244,8 +3459,8 @@ def recompute_protocol_derived_hashes(
     """
 
     config = yaml.safe_load(config_path.read_text())
-    if config.get("protocol", {}).get("revision") != "protocol-v2.1":
-        raise RuntimeError("Derived-hash recomputation requires protocol-v2.1")
+    if config.get("protocol", {}).get("revision") != "protocol-v2.1.1":
+        raise RuntimeError("Derived-hash recomputation requires protocol-v2.1.1")
     train_fraction, validation_fraction, _ = validate_split_fractions(
         config["split"]
     )
@@ -3312,8 +3527,8 @@ def verify_bundle(args: argparse.Namespace) -> None:
     reference_manifest = json.loads(args.reference_manifest.read_text())
     config = yaml.safe_load(args.config.read_text())
     expected_revision = config.get("protocol", {}).get("revision")
-    if expected_revision != "protocol-v2.1":
-        raise RuntimeError("Verify mode requires the protocol-v2.1 config")
+    if expected_revision != "protocol-v2.1.1":
+        raise RuntimeError("Verify mode requires the protocol-v2.1.1 config")
     if reference_manifest.get("protocol_revision") != expected_revision:
         raise RuntimeError(
             "Verify mode requires a committed manifest matching the config revision"
@@ -3332,7 +3547,7 @@ def verify_bundle(args: argparse.Namespace) -> None:
         if not path.exists():
             raise FileNotFoundError(path)
 
-    with tempfile.TemporaryDirectory(prefix="kuairec-protocol-v2.1-verify-") as temp:
+    with tempfile.TemporaryDirectory(prefix="kuairec-protocol-v2.1.1-verify-") as temp:
         root = Path(temp)
         generated_args = argparse.Namespace(
             config=args.config,
@@ -3364,21 +3579,31 @@ def verify_bundle(args: argparse.Namespace) -> None:
                 )
         if mismatches:
             raise RuntimeError(
-                "Protocol-v2.1 verification failed: "
+                "Protocol-v2.1.1 verification failed: "
                 + json.dumps(mismatches, sort_keys=True)
             )
-    print("Verified protocol-v2.1 bundle: all four artifacts match byte-for-byte")
+    print("Verified protocol-v2.1.1 bundle: all four artifacts match byte-for-byte")
 
 
 def main() -> None:
     args = parse_args()
     if args.mode == "verify":
-        if args.supersede_protocol_v1 or args.supersede_protocol_v2:
+        if (
+            args.supersede_protocol_v1
+            or args.supersede_protocol_v2
+            or args.supersede_protocol_v2_1
+        ):
             raise RuntimeError("Verify mode cannot supersede an existing bundle")
         verify_bundle(args)
         return
 
-    if args.supersede_protocol_v1 and args.supersede_protocol_v2:
+    if sum(
+        (
+            bool(args.supersede_protocol_v1),
+            bool(args.supersede_protocol_v2),
+            bool(args.supersede_protocol_v2_1),
+        )
+    ) > 1:
         raise RuntimeError("Select at most one protocol supersession source")
 
     lock_path = args.manifest.parent / "FINAL_HOLDOUT_LOCKED.json"
@@ -3419,6 +3644,24 @@ def main() -> None:
         if archive["parent_manifest_sha256"] != expected_parent:
             raise RuntimeError(
                 "Archived v2 manifest hash does not match configured lineage"
+            )
+    elif args.supersede_protocol_v2_1:
+        config = yaml.safe_load(args.config.read_text())
+        expected_parent = config["protocol"]["lineage"][
+            "parent_manifest_sha256"
+        ]
+        if sha256_file(args.manifest) != expected_parent:
+            raise RuntimeError(
+                "Existing protocol-v2.1 manifest hash does not match configured "
+                "protocol-v2.1.1 lineage"
+            )
+        project_root = Path(__file__).resolve().parent.parent
+        archive = archive_protocol_v2_1_bundle(
+            output_paths, project_root / "archive" / "protocol-v2.1"
+        )
+        if archive["parent_manifest_sha256"] != expected_parent:
+            raise RuntimeError(
+                "Archived v2.1 manifest hash does not match configured lineage"
             )
     generate_bundle(args)
 
