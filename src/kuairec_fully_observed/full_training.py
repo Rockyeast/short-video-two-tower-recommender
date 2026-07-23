@@ -642,6 +642,19 @@ def save_full_epoch_checkpoint(
         temporary.unlink(missing_ok=True)
 
 
+def _restore_cuda_rng_state_all(cuda_state: Any) -> None:
+    """Restore CUDA generators from CPU byte tensors after device loading."""
+
+    if not isinstance(cuda_state, (list, tuple)) or not cuda_state:
+        raise RuntimeError("CUDA checkpoint RNG state is invalid")
+    normalized = []
+    for state in cuda_state:
+        if not torch.is_tensor(state) or state.dtype != torch.uint8:
+            raise RuntimeError("CUDA checkpoint RNG state is invalid")
+        normalized.append(state.detach().cpu())
+    torch.cuda.set_rng_state_all(normalized)
+
+
 def load_full_epoch_checkpoint(
     path: Path,
     *,
@@ -703,7 +716,7 @@ def load_full_epoch_checkpoint(
     if target_device.type == "cuda":
         if cuda_state is None:
             raise RuntimeError("CUDA checkpoint is missing CUDA RNG state")
-        torch.cuda.set_rng_state_all(cuda_state)
+        _restore_cuda_rng_state_all(cuda_state)
     return model, optimizer, payload
 
 
