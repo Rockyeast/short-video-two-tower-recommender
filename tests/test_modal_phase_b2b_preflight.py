@@ -229,7 +229,7 @@ def test_modal_wrapper_has_frozen_single_l4_contract() -> None:
     )
     source = script.read_text()
     tree = ast.parse(source)
-    assert 'B2B_RUNNER_COMMIT = "0361b648908acd90a134f379bd39335bcf18d518"' in source
+    assert 'B2B_RUNNER_COMMIT = "7feb5675b7fa6577c68a3775d943c0a32b94f603"' in source
     assert 'gpu="L4"' in source
     assert "gpu=\"any\"" not in source
     assert "memory=16384" in source

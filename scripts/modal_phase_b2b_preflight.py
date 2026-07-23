@@ -30,7 +30,7 @@ from modal_preflight_helpers import (
 )
 
 MODULE_IMPORT_PERF_S = time.perf_counter()
-B2B_RUNNER_COMMIT = "0361b648908acd90a134f379bd39335bcf18d518"
+B2B_RUNNER_COMMIT = "7feb5675b7fa6577c68a3775d943c0a32b94f603"
 REPOSITORY_URL = (
     "https://github.com/Rockyeast/short-video-two-tower-recommender.git"
 )
