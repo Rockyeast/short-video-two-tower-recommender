@@ -42,18 +42,12 @@ from kuairec_fully_observed.torch_training import (
 SMALL_COLUMNS = (
     "user_id",
     "video_id",
-    "timestamp",
-    "play_duration",
-    "video_duration",
     "watch_ratio",
 )
 
 
 def _load_small_once(path: Path) -> pd.DataFrame:
-    frame = pd.read_csv(path, usecols=list(SMALL_COLUMNS))
-    if frame.duplicated(["user_id", "video_id", "timestamp"]).any():
-        raise RuntimeError("Small Matrix is not canonical by event key")
-    return frame
+    return pd.read_csv(path, usecols=list(SMALL_COLUMNS))
 
 
 def _load_bpr(path: Path) -> BPRModel:
@@ -110,6 +104,9 @@ def run(
     )
     static = load_static_item_features(data_dir)
     small = _load_small_once(data_dir / "small_matrix.csv")
+    observed_normal = small[
+        small["video_id"].isin(static.normal_item_ids)
+    ]
     queries = build_small_observed_queries(
         small,
         big_history_events=big_context,
@@ -222,6 +219,9 @@ def run(
     )
     serializable = {
         "phase": "phase-b3b-sealed-small",
+        "sealed_attempt_number": 2,
+        "prior_attempt_metrics_produced": False,
+        "prior_failure_stage": "small_schema_validation",
         "selection_performed": False,
         "small_matrix_accessed_once": True,
         "temporal_final_accessed": False,
@@ -234,6 +234,23 @@ def run(
         "warm_user_count": int(queries.warm_user_mask.sum()),
         "cold_user_count": int((~queries.warm_user_mask).sum()),
         "target_count": int(sum(len(row) for row in queries.relevant)),
+        "audit_counts": {
+            "observed_pair_count": int(
+                small[["user_id", "video_id"]].drop_duplicates().shape[0]
+            ),
+            "observed_normal_pair_count": int(
+                observed_normal[["user_id", "video_id"]]
+                .drop_duplicates()
+                .shape[0]
+            ),
+            "normal_candidate_item_count": int(
+                observed_normal["video_id"].nunique()
+            ),
+            "excluded_zero_relevant_user_count": int(
+                queries.diagnostics["zero_relevant_users_excluded"]
+            ),
+            "data_cold_item_count": int(len(cold_items)),
+        },
         "results": {
             name: record["metrics"] for name, record in result["results"].items()
         },

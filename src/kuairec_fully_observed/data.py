@@ -76,6 +76,52 @@ def _validate_events(frame: pd.DataFrame, *, name: str) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
+def _validate_small_observed_pairs(frame: pd.DataFrame) -> pd.DataFrame:
+    """Validate only the fields used by the sealed observed-pair audit."""
+
+    required = ("user_id", "video_id", "watch_ratio")
+    missing = set(required) - set(frame.columns)
+    if missing:
+        raise ValueError(
+            f"small_observed_pairs is missing columns: {sorted(missing)}"
+        )
+    result = frame.loc[:, required].copy()
+    for name in ("user_id", "video_id"):
+        numeric = pd.to_numeric(result[name], errors="coerce")
+        if numeric.isnull().any() or not np.isfinite(numeric).all():
+            raise ValueError(
+                f"small_observed_pairs contains invalid {name}"
+            )
+        if not np.equal(numeric, np.floor(numeric)).all():
+            raise ValueError(
+                f"small_observed_pairs contains non-integer {name}"
+            )
+        bounds = np.iinfo(np.int64)
+        if ((numeric < bounds.min) | (numeric > bounds.max)).any():
+            raise ValueError(
+                f"small_observed_pairs contains out-of-range {name}"
+            )
+        try:
+            result[name] = numeric.astype(np.int64)
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"small_observed_pairs contains invalid {name}"
+            ) from exc
+    watch_ratio = pd.to_numeric(result["watch_ratio"], errors="coerce")
+    if watch_ratio.isnull().any() or not np.isfinite(watch_ratio).all():
+        raise ValueError(
+            "small_observed_pairs contains invalid watch_ratio"
+        )
+    result["watch_ratio"] = watch_ratio.astype(np.float64)
+    if result.duplicated(["user_id", "video_id"]).any():
+        raise ValueError(
+            "small_observed_pairs contains duplicate observed pairs"
+        )
+    return result.sort_values(
+        ["user_id", "video_id"], kind="mergesort"
+    ).reset_index(drop=True)
+
+
 @dataclass(frozen=True)
 class RetrievalQueries:
     """Ragged query inputs shared by every fixed-catalog baseline and model."""
@@ -237,7 +283,7 @@ def build_small_observed_queries(
 
     if max_history <= 0:
         raise ValueError("max_history must be positive")
-    observed = _validate_events(observed_events, name="small_observed_events")
+    observed = _validate_small_observed_pairs(observed_events)
     big_history = _validate_events(big_history_events, name="big_history_events")
     normal = set(int(item) for item in np.asarray(normal_item_ids, dtype=np.int64))
     observed = observed[observed["video_id"].isin(normal)].copy()
