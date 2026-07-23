@@ -9,6 +9,14 @@ Engineering-only comparison using frozen final Two-Tower vectors. The 100K and 1
 - Fixed threads / seed / query count: `8 / 20260724 / 256`
 - HNSW M / efConstruction / efSearch: `32 / 200 / 512`
 
+## Measurement protocol
+
+- Latency comes from 256 fixed queries executed sequentially through single-query retrieval calls.
+- NumPy Exact, FAISS IndexFlatIP, and FAISS HNSW all used 8 fixed CPU threads.
+- QPS is `1000 / mean single-query latency in milliseconds`; it is not concurrent service load-test throughput.
+- These numbers are one successful measurement in one Modal environment. They do not include cross-machine repetitions, repeated-run variance, or confidence intervals.
+- Modal/gVisor did not expose the host CPU model, so it is reported as `unknown`.
+
 ## Scale and latency
 
 | Scope | Items | Exact p50/p95 ms | FlatIP p50/p95 ms | HNSW p50/p95 ms | HNSW QPS | HNSW Recall@100 | HNSW gate |
@@ -27,7 +35,9 @@ Engineering-only comparison using frozen final Two-Tower vectors. The 100K and 1
 
 ## Conclusion
 
-At the real 10K-scale catalog, NumPy Exact was faster than HNSW, so ANN is not needed at the current dataset scale.
+Under this sequential single-query setup, NumPy Exact was faster than HNSW at the real 10K catalog and the synthetic 100K catalog. This observation does not generalize to batched requests, concurrent serving, or other hardware.
+
+At the synthetic 1M scale, HNSW was faster than Exact, but its Recall@100 relative to IndexFlatIP was only `54.66%`. It therefore failed the frozen `99%` quality gate and was rejected.
 
 - Total wall time: `538.347 s`
 - Process peak RSS: `6713.50 MiB`
