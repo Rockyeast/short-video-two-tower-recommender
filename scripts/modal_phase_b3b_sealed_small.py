@@ -101,7 +101,11 @@ def _prepare_small_volume(path: Path) -> dict[str, Any]:
     try:
         current = b"".join(small_volume.read_file(manifest_path))
     except Exception as exc:
-        if exc.__class__.__name__ not in {"NotFoundError", "GRPCError"}:
+        if exc.__class__.__name__ not in {
+            "FileNotFoundError",
+            "NotFoundError",
+            "GRPCError",
+        }:
             raise
         current = b""
     if current:
