@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -49,7 +51,9 @@ def test_plain_package_import_does_not_import_optional_training_dependencies():
         "assert 'torch' not in sys.modules; "
         "assert 'sentence_transformers' not in sys.modules"
     )
-    subprocess.run([sys.executable, "-c", code], check=True)
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    subprocess.run([sys.executable, "-c", code], check=True, env=environment)
 
 
 def test_selected_event_loader_resolves_frozen_canonicalizer(tmp_path):
