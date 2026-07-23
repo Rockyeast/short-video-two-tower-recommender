@@ -1,395 +1,298 @@
-# Short-Video Recommendation on KuaiRec
+# Short-Video Retrieval on KuaiRec
 
-The primary development path is now a simple, fixed-catalog retrieval study:
+## Project Summary
 
-```text
-Big Matrix train/validation
-  -> Popularity and BPR baselines
-  -> content-aware Two-Tower
-  -> exact Top-K retrieval
-  -> sealed nearly-fully-observed Small Matrix evaluation
+This repository is a leakage-aware, two-stage short-video retrieval study built
+on [KuaiRec](https://github.com/chongminggao/KuaiRec). It compares:
+
+- Global Popularity;
+- BPR matrix factorization;
+- a content-aware PyTorch Two-Tower;
+- a frozen Two-Tower + BPR weighted reciprocal-rank fusion (RRF).
+
+The project uses sparse Big Matrix interactions for fitting and model selection,
+then performs a sealed audit on the nearly fully observed Small Matrix. It also
+measures Exact and FAISS retrieval scalability without turning synthetic scale
+extensions into recommendation-effectiveness claims.
+
+The main result is deliberately mixed:
+
+- on Big validation, Two-Tower improves Recall@100 over BPR by **48.76%** and
+  retrieves items unseen during training through its content path;
+- the frozen Hybrid improves Two-Tower NDCG@20 while retaining its Recall and
+  coverage;
+- on sealed Small, **BPR is strongest overall**;
+- Two-Tower is strongest only on a descriptive slice of **88 Data-Cold
+  targets**, which is too small for a significance claim;
+- at the real 10K catalog size, sequential Exact retrieval is faster than the
+  tested FAISS routes.
+
+This is an offline MLE/recommender-systems project, not a production deployment.
+It does not claim online A/B impact, statistical significance, or a universal
+Two-Tower win.
+
+## System Architecture
+
+```mermaid
+flowchart LR
+    A[Big train / validation] --> B[Popularity]
+    A --> C[BPR]
+    A --> D[Two-Tower]
+    B --> E[Exact retrieval]
+    C --> E
+    D --> E
+    E --> F[Weighted RRF Hybrid]
+    F --> G[Frozen selection]
+    G --> H[Big train + validation refit]
+    H --> I[Sealed Small audit]
 ```
 
-We follow KuaiRec's intended sparse Big-Matrix training and nearly
-fully-observed Small-Matrix evaluation design, and define a fixed Top-K
-retrieval protocol for comparing popularity, matrix factorization and
-content-aware Two-Tower models. This is **not** an official KuaiRec Two-Tower
-benchmark: the [official repository](https://github.com/chongminggao/KuaiRec)
-and [CIKM 2022 paper](https://arxiv.org/abs/2202.10842) provide the data design,
-not a mandatory model, candidate or metric recipe.
+### Model paths
 
-Phase A/A.1 now freezes this route in
-[`docs/fully_observed_protocol_v1.md`](docs/fully_observed_protocol_v1.md), with
-the executable configuration in
-[`configs/fully_observed_v1.yaml`](configs/fully_observed_v1.yaml). It includes
-synthetic-tested dataset/query adapters, fixed candidate filtering, shared
-Recall/NDCG/Coverage evaluation, Popularity and BPR interfaces, exact dot-product
-retrieval, and a deterministic Two-Tower reference encoder.
-Phase B0 adds bounded execution plumbing: a real static-feature loader, lazy
-Two-Tower histories, epoch-resampled BPR negatives/training, blocked Exact
-scoring and a shared cold-user fallback. Phase B2A now adds one real PyTorch
-Two-Tower V1 engineering path, including immutable MiniLM caption embeddings,
-content-only cold-item encoding, masked in-batch training and sampled Exact
-retrieval. Subsequent phases completed frozen Big validation, final
-train+validation refit, and the sealed Small Matrix audit described below.
-FAISS remains unrun.
+**BPR**
 
-The original bounded 100K-interaction plumbing smoke is committed at
-[`reports/phase_b0/smoke_100k.json`](reports/phase_b0/smoke_100k.json). After
-correcting sparse BPR gradient normalization, the cross-user 1M-interaction
-smoke at
-[`reports/phase_b0/smoke_1m.json`](reports/phase_b0/smoke_1m.json) covers 551
-users and records strictly decreasing three-epoch loss
-(`0.693138 -> 0.692819 -> 0.692418`). This is a learning/systems smoke, not a
-converged effectiveness claim. A deterministic synthetic test at the formal
-4096 batch size separately requires loss below 0.60 and at least 90% sampled
-pair ordering accuracy. The
-legacy BPR reuse decision is documented at
-[`reports/phase_b0/legacy_bpr_compatibility.md`](reports/phase_b0/legacy_bpr_compatibility.md):
-its negative sampling and cold-item semantics differ, so it is not reused as
-the fully-observed-V1 baseline.
+- 64-dimensional learned user/item factors;
+- one resampled fit-observed negative per positive per epoch;
+- excludes all fit-known positives for that user;
+- scores an item unseen during fitting as zero.
 
-Phase B1A ran exactly one frozen BPR configuration and seed on canonical Big
-train, selecting only on Big validation. The full report is
-[`reports/phase_b1a/full_bpr_pilot.md`](reports/phase_b1a/full_bpr_pilot.md).
-Primary metrics cover 6,816 warm-user queries and 118,539 targets; the other
-2 cold-user queries and 26 targets are reported separately. Epoch 20 was
-selected by Recall@100 with NDCG@20 as the tie-break:
+**Two-Tower**
 
-| Method | Recall@100 | NDCG@20 | Coverage@100 |
-|---|---:|---:|---:|
-| Random | 0.012930 | 0.002675 | 1.000000 |
-| Global Popularity | 0.036643 | 0.010615 | 0.080085 |
-| BPR epoch 20 | **0.048439** | **0.012774** | 0.333049 |
+- item tower: item ID, category, frozen MiniLM caption vector, duration,
+  dimensions, upload type and upload date;
+- user tower: user ID plus a masked weighted mean of the last 50 causal history
+  item representations;
+- 128-dimensional L2-normalized outputs;
+- temperature-scaled masked in-batch softmax;
+- content-only fallback when an item's ID embedding was never trained.
 
-The separate-seed fixed diagnostic win rate rose from 49.94% at initialization
-to 93.42% at epoch 20. That diagnostic shows the optimizer learned its fixed
-pair task; Big-validation Recall/NDCG provide the separate
-recommendation-effectiveness evidence. BPR Data-Cold Recall@100 was zero in
-this run, consistent with a pure ID model being unable to learn videos unseen
-during training; this is not stated as a mathematical inevitability. The BPR
-Recall@100 gain over Global Popularity was an observed 32.2% relative gain under
-the frozen Big-validation protocol for one seed, not evidence of statistical
-significance or cross-dataset stability.
+**Hybrid**
 
-Before NORMAL membership is read, the B1A runner now fail-closes on the exact
-`item_daily_features.csv` SHA frozen in the processed manifest. The verified
-source SHA is
-`45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b`;
-the sorted, deduplicated set contains 10,699 NORMAL items and has membership
-SHA256
-`631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e`.
-The existing BPR model was not retrained. During B1A, Small Matrix, temporal
-final and Two-Tower were not accessed or run.
+- takes Two-Tower and BPR Top-500 results;
+- combines ranks with weighted RRF;
+- rank constant `60`, Two-Tower weight `alpha=0.75`;
+- configuration frozen on Big validation before Small was opened.
 
-Phase B2A executed one bounded real-data Two-Tower engineering smoke. It used
-256 users, 7,436 causal examples and 5,941 touched items; the separate-seed
-fixed diagnostic loss decreased from 6.146019 to 4.587346 and diagonal Top-1
-rose from 0.39% to 5.47%. Every input-covered item/user/history branch had a
-finite non-zero gradient. The frozen caption encoder covered all 9,388 model
-items at exact revision
-`e8f8c211226b894fcb81acc59f3b34ba3efd5f42`.
+The implementation includes deterministic data adapters, lazy training
+examples, exact blocked matrix scoring, checkpoint identity validation,
+content-only cold-item encoding and reproducible reports.
 
-Phase B2A.1 reran that same bounded configuration after adding fail-closed raw
-input lineage, device-correct checkpoint restoration, schema-v2 checkpoint
-identity, successful-step-only touched IDs, and inference-mode batched item
-precomputation/history gathers. The run started from clean commit `19fdf48`;
-all three raw input SHAs matched the frozen processed manifest. Its diagnostic
-and sampled retrieval metrics were unchanged, while total smoke wall time was
-73.0 seconds and peak RSS was 1.70 GB on CPU.
+## Dataset and Leakage-Safe Protocol
 
-Phase B2A.2 resolved bare CUDA requests once to a concrete ordinal (for example,
-`cuda:0`) and expanded schema-v2 identity checks to bind the complete model
-dimensions, ordered item/user mappings, feature-vocabulary sizes and actual
-touched memberships. The unchanged bounded smoke was rerun once from clean
-commit `7f2cf9c`; its learning and retrieval metrics remained unchanged. Total
-wall time was 83.4 seconds and peak RSS was 1.70 GB on CPU. The conditional
-real-CUDA round-trip remains skipped on this CPU-only host.
+KuaiRec provides:
 
-The sampled retrieval smoke used 128 validation queries and a 4,096-item
-catalog. Its Recall@100 was 0.147449, but this number is deliberately marked
-`sampled_catalog_smoke=true`, `comparable_to_b1a=false`,
-`effectiveness_claim=false`, and `formal_gate_executed=false`; it cannot be
-compared with the full-catalog B1A result. See
-[`reports/phase_b2a/two_tower_smoke.md`](reports/phase_b2a/two_tower_smoke.md)
-and the accompanying JSON for cache identity, gradients, false-negative-mask,
-timing and resource details. Caption vectors and the smoke checkpoint are
-ignored artifacts, not committed files.
+- a sparse Big Matrix used for training and validation;
+- a nearly fully observed Small Matrix used as a final static audit.
 
-## Sealed Small Matrix audit
+The official repository and
+[CIKM 2022 paper](https://arxiv.org/abs/2202.10842) define the data design, but
+not a mandatory Two-Tower model or metric recipe. This repository's executable
+contract is documented in
+[`docs/fully_observed_protocol_v1.md`](docs/fully_observed_protocol_v1.md).
 
-Attempt 5 completed the frozen, nearly-fully-observed Small Matrix audit on
-1,411 warm users, 217,175 relevant targets, 4,676,570 observed NORMAL pairs,
-and a 3,327-item candidate union. This is not a future-time test. Small was not
-used for training, model selection, history construction, or post-result
-tuning. The complete report and the transparent history of four earlier
-pre-metric/reporting failures are in
-[`reports/phase_b3b/sealed_small_modal_l4.md`](reports/phase_b3b/sealed_small_modal_l4.md).
+### Label and history rules
 
-| Method | Recall@20 | Recall@50 | Recall@100 | NDCG@20 | Coverage@100 | Data-Cold Recall@100 |
+- strong positive: strict `watch_ratio > 2.0`;
+- a Two-Tower target must be the user's first interaction with that video;
+- history events must be strictly earlier than the target timestamp;
+- same-timestamp events cannot enter each other's histories;
+- quick skips downweight history but are not explicit V1 negatives;
+- daily engagement aggregates are forbidden model features.
+
+### Big validation
+
+- fit models only on canonical Big train;
+- select checkpoints and Hybrid weight only on Big validation;
+- use one query per user and train-only last-50 history;
+- filter items already seen in train;
+- rank the same fixed 9,365-item `NORMAL` catalog;
+- report 6,816 warm-user queries and 118,539 warm targets;
+- report the additional 2 cold-user queries and 26 targets separately.
+
+### Sealed Small audit
+
+After selection, each method is refit from scratch on Big train + validation.
+For Small user `u`:
+
+```text
+candidates(u) = observed Small pairs intersect NORMAL items
+relevant(u)   = candidates(u) where watch_ratio > 2.0
+```
+
+Missing Small pairs correspond to blocked/unavailable items and are not treated
+as negatives. Small feedback is used only for candidate membership, relevance
+and metrics. It never enters training, model features, user history, Popularity,
+BPR, Two-Tower or Hybrid selection.
+
+Data-Cold is relative to the active fit context:
+
+- Big validation: no canonical interaction in Big train;
+- sealed Small: no canonical interaction in Big train + validation.
+
+The Small audit is nearly fully observed, but it is **not** a future-time test.
+The separate temporal-final split remains unexecuted.
+
+## Big Validation Results
+
+All primary rows below share the same 6,816 warm-user queries, 118,539 targets,
+9,365-item catalog, seen filtering and exact evaluator.
+
+| Route | Recall@20 | Recall@50 | Recall@100 | NDCG@20 | Coverage@100 | Data-Cold Recall@100 |
+|---|---:|---:|---:|---:|---:|---:|
+| Global Popularity | — | — | 0.036643 | 0.010615 | 0.080085 | 0.000000 |
+| BPR epoch 20 | 0.013891 | 0.030344 | 0.048439 | 0.012774 | 0.333049 | 0.000000 |
+| Two-Tower epoch 1 | 0.014870 | 0.036038 | 0.072057 | 0.012113 | 0.569461 | 0.065151 |
+| Hybrid `alpha=0.75` | 0.015643 | 0.037002 | **0.072213** | **0.015341** | **0.571169** | 0.060356 |
+
+Observed findings:
+
+- BPR Recall@100 is 32.2% higher than Global Popularity for the frozen
+  single-seed protocol.
+- Two-Tower Recall@100 is 48.76% higher than BPR and Coverage@100 increases
+  from 0.3330 to 0.5695.
+- Two-Tower Data-Cold Recall@100 is 0.0652 because unseen item IDs can fall
+  back to category, caption and static content.
+- Two-Tower's first-epoch NDCG@20 is slightly below BPR.
+- the frozen Hybrid raises NDCG@20 by 26.65% relative to Two-Tower while
+  preserving Recall@100 and coverage.
+
+These are one-seed validation point estimates, not confidence intervals or
+cross-dataset guarantees.
+
+Detailed results:
+
+- [BPR pilot](reports/phase_b1a/full_bpr_pilot.md)
+- [Two-Tower training](reports/phase_b2b/full_two_tower_modal_l4.md)
+- [Hybrid validation](reports/phase_b3a/hybrid_validation.md)
+
+## Sealed Small Audit Results
+
+Attempt 5 completed the frozen nearly-fully-observed audit:
+
+- 1,411 evaluable users, all with Big history;
+- 217,175 relevant targets;
+- 4,676,570 observed `NORMAL` pairs;
+- 3,327 candidate items;
+- 88 Data-Cold targets.
+
+| Route | Recall@20 | Recall@50 | Recall@100 | NDCG@20 | Coverage@100 | Data-Cold Recall@100 |
 |---|---:|---:|---:|---:|---:|---:|
 | Random | 0.005842 | 0.015039 | 0.030570 | 0.045656 | 1.000000 | 0.045455 |
 | Global Popularity | 0.140601 | 0.212629 | 0.268417 | 0.514947 | 0.032161 | 0.000000 |
-| BPR epoch 20 | **0.173284** | **0.251986** | **0.319850** | **0.569454** | 0.403366 | 0.000000 |
+| **BPR epoch 20** | **0.173284** | **0.251986** | **0.319850** | **0.569454** | 0.403366 | 0.000000 |
 | Two-Tower epoch 1 | 0.034061 | 0.058720 | 0.089741 | 0.159165 | 0.176135 | **0.295455** |
-| Hybrid alpha=0.75 | 0.039513 | 0.068028 | 0.103950 | 0.206173 | 0.178840 | 0.250000 |
+| Hybrid `alpha=0.75` | 0.039513 | 0.068028 | 0.103950 | 0.206173 | 0.178840 | 0.250000 |
 
-Under this frozen audit, BPR was strongest on overall Recall and NDCG, while
-the content-aware Two-Tower was strongest on the descriptive 88-target
-Data-Cold slice. The preselected Hybrid improved over Two-Tower overall but did
-not approach BPR. These are single-run point estimates; no significance,
-cross-seed, or post-Small selection claim is made.
+The generalization result reverses the Big-validation story:
 
-The older protocol-v2.1.1 temporal route remains in the repository as an
-optional production-like stress test. Its Phase 0 audit and all **97/97**
-temporal-validation baseline rows remain preserved and are now permanently
-frozen; no further temporal-baseline experiments will be added. ERRATUM-001
-completed the 97/97 segment-only correction without changing overall
-Recall/NDCG/Coverage or any selected configuration. Its corrected Warm/Tail/Cold
-metrics and artifact lineage are documented in
-[`reports/phase1/ERRATUM-001.md`](reports/phase1/ERRATUM-001.md). Temporal final
-has not been run; the separate fully-observed Small Matrix audit is reported
-above.
+- BPR is strongest on overall Recall and NDCG;
+- the frozen Hybrid improves on Two-Tower but remains far below BPR;
+- Two-Tower is strongest only on the 88-target Data-Cold slice.
 
-All future raw-data commands must set `KUAIREC_DATA_DIR` to the existing shared
-KuaiRec `data/` directory. This worktree does not copy or modify raw data.
+The Data-Cold result is descriptive because the denominator is small. No model,
+checkpoint, feature, alpha or fallback was changed after Small was opened.
+Earlier pre-metric/reporting failures and the successful audit are preserved in
+the [sealed report](reports/phase_b3b/sealed_small_modal_l4.md).
 
-## Primary fully-observed V1 route
+## Retrieval Scalability Results
 
-- Labels: strict `watch_ratio > 2.0`; quick skip is strict
-  `play_duration < min(3000 ms, video_duration)`.
-- Big validation: one query per user, train-only last-50 history, unseen
-  validation positives, fixed `NORMAL` catalog, train-seen filtering.
-- Small evaluation: observed `NORMAL` pairs only; missing/blocked pairs are
-  unavailable rather than negative; after selection, refit from scratch on Big
-  train+validation and build Small user histories from that Big context only.
-- Warm users define primary metrics. Cold users remain in the audit and use a
-  fit-context Popularity fallback; cold positives are never silently dropped.
-- BPR cold items score zero. Two-Tower cold items disable the untrained ID
-  embedding and use content only.
-- BPR resamples one fit-observed `NORMAL` negative per positive per epoch after
-  excluding all fit-known positives for that user. Sparse gradients are
-  normalized per addressed embedding rather than by the full batch; its Exact
-  scorer uses blocked matrix multiplication rather than Python dot products per
-  candidate.
-- Two-Tower targets must be a user's first interaction with that video; later
-  strong repeats are skipped rather than made artificially unseen. Histories
-  are strictly earlier than their target and mask duplicate/known-positive
-  in-batch false negatives; quick skips only downweight history in V1.
-- Model features are fail-closed to static/content fields; daily engagement
-  aggregates are forbidden.
-- Metrics: Recall@20/50/100, NDCG@20, Coverage@100 and descriptive Data-Cold
-  Recall@100.
-- Budget: one Popularity configuration, at most three BPR and three Two-Tower
-  configurations, then at most three final seeds.
-- Exact retrieval comes first. FAISS, serving, reranking and sequence models
-  are outside this phase.
-- The gate compares Two-Tower with the stronger of Popularity and BPR using
-  a frozen 0.002 absolute direct Recall@100 gain, numeric Recall/Coverage
-  tradeoffs and a 0.01 absolute NDCG@20 protection, not a presumed BPR winner.
+Phase B4A compares sequential single-query NumPy Exact, FAISS IndexFlatIP and
+one frozen HNSW configuration using 256 fixed queries, 128-dimensional vectors,
+Top-100 and 8 CPU threads.
 
-> The remaining sections preserve the legacy protocol-v2.1.1 record. They are
-> not the evaluation contract for the new primary route.
+| Scope | Items | Exact p50 | FlatIP p50 | HNSW p50 | HNSW Recall@100 |
+|---|---:|---:|---:|---:|---:|
+| real catalog | 10,725 | **0.071 ms** | 0.314 ms | 0.291 ms | 98.52% |
+| synthetic extension | 100,000 | **0.420 ms** | 1.273 ms | 0.712 ms | 84.28% |
+| synthetic extension | 1,000,000 | 9.665 ms | 13.370 ms | **3.902 ms** | 54.66% |
 
-## Locked label
+At the real 10K catalog, Exact is faster, so this project selects Exact
+retrieval. At 1M, HNSW is faster but fails the frozen 99% quality gate with only
+54.66% Recall@100 relative to FlatIP, so it is rejected.
 
-The primary strong-positive label follows the KuaiRec documentation example:
+These are sequential single-query measurements from one Modal environment.
+QPS is derived from mean single-query latency, not concurrent serving
+throughput. The 100K and 1M catalogs add deterministic normalized synthetic
+distractors and make no recommendation-effectiveness claim.
 
-```text
-watch_ratio > 2.0
-```
+See the complete [FAISS scalability report](reports/phase_b4a/faiss_scalability.md).
 
-The threshold must not be changed in response to holdout results.
+## Honest Findings and Limitations
 
-## Phase 0 outputs
+- The sealed Small audit contradicts the validation ranking: BPR, not
+  Two-Tower, is the strongest overall route.
+- Small is nearly fully observed but is not temporal generalization.
+- Temporal final has not been run.
+- Big and Small metrics are single-seed point estimates without confidence
+  intervals.
+- The 88-target Data-Cold slice is too small for statistical claims.
+- Synthetic 100K/1M distractors test retrieval systems, not recommendation
+  quality or real catalog drift.
+- B4A is one sequential single-query run on one Modal environment; it is not a
+  concurrent service benchmark.
+- No online A/B test, API, deployment, monitoring or production reliability
+  claim is made.
+- Frozen MiniLM caption vectors provide content features, but the language
+  model is not fine-tuned end to end.
+- The repository contains extensive provenance and failure records because the
+  sealed audit was treated as irreversible; those details live in reports
+  rather than the main project narrative.
 
-The committed protocol-v2.1.1 audit bundle contains:
+The older protocol-v2.1.1 temporal work, its 97 baseline rows and ERRATUM-001
+remain available in [`docs/legacy_protocol_v2.md`](docs/legacy_protocol_v2.md).
+They are historical records, not the active fully-observed route.
 
-- field and missing-value inventory;
-- metadata coverage and time ranges;
-- label and user-history distributions;
-- immutable split manifest;
-- temporal and fully-observed evaluation contracts;
-- baseline scale and compute estimates.
+## Reproduction
 
-Key aggregate findings (not model metrics):
-
-- the original temporal-final eligible-row gap is exactly reconciled as
-  `99,637 raw rows - 15,910 exact duplicate extras - 26 same-key nonexact
-  extras = 83,701 canonical keys`;
-- the primary catalog contains only causally visible `NORMAL` videos; all
-  10,728 item records have consistent per-video `upload_dt` and `video_type`,
-  and the 29 `AD` videos are excluded;
-- every one of the 497,117 train, 99,248 validation, and 83,661 temporal-final
-  formal targets remains inside its query-time available/unseen candidate set;
-- protocol-v2.1.1 preserves the already frozen and disclosed protocol-v2 time
-  cutoffs, then assigns canonical events to them. Histories, seen filters,
-  last-50 sequences, quick-skip pools, and popularity statistics use one event
-  per `(user_id, video_id, timestamp)`, never duplicated raw rows. The audit
-  separately reports how recomputing cutoffs after deduplication would change
-  membership; it does not redefine the holdout.
-
-## Fit and evaluation contexts
-
-| context | fit | select/evaluate | cold-item reference |
-|---|---|---|---|
-| selection | train | select on validation | train |
-| final | refit from scratch on train + validation | temporal final exactly once | train + validation |
-| Small Matrix audit | reuse the frozen final-fit artifact | locked static audit | train + validation |
-
-Validation events may update a user's causal runtime history only after the
-current query is scored; they never update learned parameters. The same rule
-applies to prior temporal-final events during the one-time final replay.
-
-The temporal final split is **not claimed to be untouched**. Phase 0 has already
-published aggregate label, query, and data-quality statistics for that split.
-It is therefore described as a **holdout frozen after the Phase 0 aggregate
-audit**. It may only be evaluated once, through a separate explicit entrypoint,
-after the method, feature schema, hyperparameters, and seeds are frozen and the
-model is refit from scratch on train plus validation.
-
-## Candidate and target protocol
-
-The primary temporal catalog contains only videos that are:
-
-- `NORMAL`, not `AD`;
-- uploaded early enough under the conservative date-only availability rule;
-- `public` in the latest daily snapshot strictly before the query's local date;
-- unseen by that user strictly before the query timestamp.
-
-`private` and `only friends` videos are excluded because global permission to
-show them cannot be established from the dataset. Conflicting per-video
-`upload_dt` or `video_type` values are excluded and reported rather than silently
-resolved.
-
-Raw positive rows are not training targets. Rows first pass deterministic
-deduplication by `(user_id, video_id, timestamp)`. Exact duplicates are
-coalesced, a key containing both positive and nonpositive labels is excluded,
-and the final canonical target table is hashed. Different eligible videos at
-the same user timestamp remain one atomic multi-target query.
-
-## Small Matrix: primary quality audit and secondary safety audit
-
-The [official KuaiRec documentation](https://github.com/chongminggao/KuaiRec)
-explains that the 0.4% missing Small Matrix pairs arise because users blocked
-videos or their authors. Protocol-v2.1.1 therefore uses deliberately separate
-evaluations:
-
-1. **Primary quality audit:** remove each user's blocked/missing pairs, rank only
-   physically observed `NORMAL` pairs, and treat `watch_ratio > 2.0` as
-   relevant. This matches the temporal task's `NORMAL`-only catalog.
-2. **Secondary safety audit:** rank all 3,327 catalog videos and report
-   `Blocked@K`, the fraction of Top-K results belonging to that user's inferred
-   blocked set, plus the fraction of users receiving at least one blocked item.
-3. **AD diagnostic:** report quality on physically observed `AD` pairs
-   separately; never pool it into the primary quality metrics.
-
-Blocked/missing information is an evaluation-time availability mask only. It
-must never enter training, user history, feature construction, hyperparameter
-selection, or negative sampling.
-
-## Legacy optional temporal-validation baselines
-
-All methods use the same 99,248 validation queries and targets, causal candidate
-membership, seen filtering, deterministic tie-breaks, and registered metrics.
-The table below reports the selected configuration for each family, plus the
-best fit-frozen time-decayed-popularity configuration needed for an
-information-condition comparison.
-
-| Information condition | Method / selected configuration | Recall@100 | NDCG@20 | Coverage@100 |
-|---|---|---:|---:|---:|
-| frozen/static | Random | 0.015287 | 0.001105 | 0.999033 |
-| frozen/static | Global Popularity | 0.046721 | 0.004532 | 0.093353 |
-| frozen/static | 1-day fit-frozen Time-Decayed Popularity | 0.089987 | 0.011351 | 0.087954 |
-| frozen/static | ItemCF (`neighbors=200`, `shrinkage=0`) | 0.067105 | 0.008653 | 0.365201 |
-| frozen/static | BPR-MF (`dim=64`, `epoch=20`, `lr=0.001`, `L2=0.0001`) | **0.096103** | 0.011670 | 0.285982 |
-| online causal | 1-day causal-streaming Time-Decayed Popularity | **0.462951** | **0.110571** | 0.142616 |
-
-BPR-MF is currently the strongest frozen personalized baseline. The much larger
-streaming-popularity number is a different information condition: all queries
-at a timestamp are scored first, then that timestamp's canonical strong
-positives update popularity for later queries only. It is causal, but it is not
-a train-frozen comparison.
-
-ERRATUM-001 corrected the Phase 1 segment-membership implementation. Under the
-active contract, an item is `Warm` if it has any canonical Big Matrix
-interaction in the train reference window, independent of label, and `Cold` if
-it has none. Of the 99,248 validation queries/targets, 72,115 are Warm and
-27,133 (27.3%) are Cold; 48,008 target Tail items, a subgroup of the data-warm
-catalog. `Cold` still does not mean strict query-time zero-shot: an item may
-already have received an earlier validation positive before a later query.
-
-The corrected Recall@100 comparison shows that 1-day causal-streaming
-Time-Decayed Popularity leads BPR-MF in every reported segment, not only Cold:
-
-| Method | Warm Recall@100 | Tail Recall@100 | Cold Recall@100 |
-|---|---:|---:|---:|
-| 1-day causal-streaming Time-Decayed Popularity | **0.448048** | **0.512435** | **0.502561** |
-| BPR-MF | 0.132039 | 0.036640 | 0.000590 |
-
-This remains a comparison across different information conditions: streaming
-popularity causally absorbs validation feedback after prediction, whereas BPR
-is train-frozen. See the committed
-[ERRATUM-001 report](reports/phase1/ERRATUM-001.md) for the corrected membership,
-artifact lineage, and invariants.
-
-Phase 2 will therefore use two separate gates:
-
-1. compare a pure Two-Tower against BPR-MF and the other frozen baselines under
-   the frozen/static information condition;
-2. compare a Two-Tower + Causal Popularity hybrid against the strongest online
-   causal baseline.
-
-No Two-Tower improvement is claimed before those validation experiments. The
-formal Phase 1 results, selected configurations, and receipt are under
-`reports/phase1/` and `receipts/`; the explanatory summary is
-`reports/phase1/interpretation.md`, and the segment correction is documented in
-[`reports/phase1/ERRATUM-001.md`](reports/phase1/ERRATUM-001.md).
-
-## Active protocol-v2.1.1 contracts
-
-- `contracts/event_canonicalization_v1.yaml`
-- `contracts/temporal_evaluation_v2.yaml`
-- `contracts/fully_observed_audit_v2.yaml`
-- `contracts/fit_contexts_v1.yaml`
-- `contracts/candidate_catalog_v1.yaml`
-- `contracts/target_deduplication_v1.yaml`
-- `contracts/two_tower_cold_start_v2.yaml`
-- `contracts/metrics_v1.yaml`
-- `contracts/baselines_v1.yaml`
-- `contracts/negative_sampling_v2.yaml`
-
-The original `temporal_evaluation_v1.yaml`, `fully_observed_audit_v1.yaml`,
-`two_tower_cold_start_v1.yaml`, and `negative_sampling_v1.yaml` files from
-commit `97a0f52` are retained only as inactive historical records.
-`configs/phase0.yaml` is the authoritative list of active contracts.
-
-The temporal final holdout and the Small Matrix audit are locked by default.
-Ordinary baseline entrypoints may access only train and validation.
-
-## Reproduce Phase 0
-
-The raw archive is the official [KuaiRec 2.0 Zenodo artifact](https://zenodo.org/records/18164998).
-Its expected MD5 is `261550d472c48eff4990fb13c0e5bcf7`.
+Python 3.11+ is required. Raw KuaiRec data and generated model artifacts are not
+committed.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
-.venv/bin/python -m zipfile -e data/raw/KuaiRec.zip data/raw
-.venv/bin/python scripts/audit_phase0.py --mode verify
-.venv/bin/pytest -q
+.venv/bin/pip install -e '.[dev,training,benchmark]'
+export KUAIREC_DATA_DIR=/path/to/KuaiRec/data
 ```
 
-Verify mode recomputes the Phase 0 bundle in a temporary directory and compares
-it with committed outputs. Generate mode refuses to overwrite an existing
-report, split manifest, or holdout lock. An intentional protocol revision must
-preserve the old bundle and be reviewed before regenerating it.
+Run the test suite:
 
-Generated artifacts:
+```bash
+.venv/bin/pytest -q
+python3 -m compileall src scripts tests
+git diff --check
+```
 
-- `reports/phase0/audit.md`: human-readable audit;
-- `reports/phase0/audit.json`: machine-readable audit;
-- `manifests/split_manifest.json`: read-only data/split/config/contract record;
-- `manifests/FINAL_HOLDOUT_LOCKED.json`: read-only final-evaluation guard;
-- `contracts/*.yaml`: fit-context, candidate, target, metrics, baseline,
-  negative-sampling, temporal, Small Matrix, and cold-item contracts.
+Verify the frozen protocol bundle:
+
+```bash
+.venv/bin/python scripts/audit_phase0.py --mode verify
+```
+
+The experiment runners intentionally require explicit data, processed-artifact,
+caption-cache and checkpoint paths. Their frozen configurations are:
+
+- [`configs/phase_b1a_bpr_pilot.yaml`](configs/phase_b1a_bpr_pilot.yaml)
+- [`configs/phase_b2b_full_two_tower.yaml`](configs/phase_b2b_full_two_tower.yaml)
+- [`configs/phase_b3b_final_recipe.yaml`](configs/phase_b3b_final_recipe.yaml)
+
+The sealed Small runner additionally requires the explicit
+`--execute-sealed-small` flag. Do not rerun it for model selection. Temporal
+final remains guarded and is outside this project's reported results.
+
+## Detailed Reports
+
+| Stage | Report |
+|---|---|
+| Protocol | [Fully-observed V1](docs/fully_observed_protocol_v1.md) |
+| Legacy temporal protocol | [Protocol-v2.1.1 history](docs/legacy_protocol_v2.md) |
+| Phase 0 data audit | [Audit](reports/phase0/audit.md) |
+| Legacy temporal baselines | [Validation](reports/phase1/validation_baselines.md) |
+| Legacy segment correction | [ERRATUM-001](reports/phase1/ERRATUM-001.md) |
+| BPR | [Full pilot](reports/phase_b1a/full_bpr_pilot.md) |
+| Two-Tower | [Full L4 training](reports/phase_b2b/full_two_tower_modal_l4.md) |
+| Hybrid | [Validation](reports/phase_b3a/hybrid_validation.md) |
+| Final refit | [Report](reports/phase_b3b0/final_refit.md) |
+| Sealed Small | [Attempt 5](reports/phase_b3b/sealed_small_modal_l4.md) |
+| Retrieval scale | [Exact/FAISS benchmark](reports/phase_b4a/faiss_scalability.md) |
+
+Machine-readable JSON accompanies each result report. Contracts, manifests and
+failure records remain committed for auditability.
