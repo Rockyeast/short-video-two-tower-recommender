@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from kuairec_fully_observed.modal_preflight import (
+from scripts.modal_preflight_helpers import (
     build_input_allowlist,
     cpu_gpu_differences,
     input_bundle_manifest,

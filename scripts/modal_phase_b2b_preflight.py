@@ -17,7 +17,10 @@ from typing import Any
 
 import modal
 
-from kuairec_fully_observed.modal_preflight import (
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from modal_preflight_helpers import (
     build_input_allowlist,
     cpu_gpu_differences,
     input_bundle_manifest,
@@ -508,7 +511,7 @@ def main(
     report_markdown: str = "reports/phase_b2b0/modal_l4_preflight.md",
 ) -> None:
     local_started = time.perf_counter()
-    repository_root = Path(__file__).resolve().parents[1]
+    repository_root = REPOSITORY_ROOT
     wrapper_commit = _git_output(repository_root, "rev-parse", "HEAD")
     if _git_output(repository_root, "status", "--porcelain"):
         raise RuntimeError("Modal wrapper must run from a clean commit")
