@@ -765,6 +765,8 @@ def test_selection_gate_targets_the_strongest_baseline_with_numeric_thresholds()
     assert gate["comparison_baseline"] == (
         "max_recall_at_100_of_global_popularity_and_bpr"
     )
+    assert gate["minimum_direct_recall_gain_absolute"] == 0.002
+    assert "direct_recall_improvement" not in gate
     assert gate["coverage_tradeoff"] == {
         "maximum_recall_at_100_deficit_absolute": 0.02,
         "minimum_coverage_at_100_gain_absolute": 0.05,

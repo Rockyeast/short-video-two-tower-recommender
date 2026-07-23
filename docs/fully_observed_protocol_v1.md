@@ -147,7 +147,7 @@ Global Popularity and BPR, never BPR by assumption. Two-Tower may enter sealed
 Small evaluation only if its NDCG@20 is no more than 0.01 absolute below that
 baseline and it satisfies one predeclared rule:
 
-1. Recall@100 strictly exceeds that strongest baseline; or
+1. Recall@100 exceeds that strongest baseline by at least 0.002 absolute; or
 2. Recall@100 is within 0.02 absolute and Coverage@100 improves by at least 0.05
    absolute; or
 3. Recall@100 is within 0.02 absolute, the data-cold denominator is at least

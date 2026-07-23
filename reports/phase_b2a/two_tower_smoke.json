@@ -1,0 +1,261 @@
+{
+  "access": {
+    "full_two_tower_training": false,
+    "small_matrix_accessed": false,
+    "temporal_final_accessed": false
+  },
+  "artifacts": {
+    "caption_cache_locator": "artifacts/phase_b2a/caption_embeddings.npz",
+    "caption_metadata_locator": "reports/phase_b2a/caption_cache_metadata.json",
+    "checkpoint_identity_schema_version": 2,
+    "checkpoint_identity_sha256": "08a68921796ed7fcecbbaff8cd0bbdddf22609844ec46c3ccc1e058c7e3f471a",
+    "checkpoint_locator": "artifacts/phase_b2a/two_tower_smoke.pt",
+    "checkpoint_sha256": "620aa58c825c94cb6de66eb12789128883bf85f71108de0421d19c5bfaab6177",
+    "code_commit_at_run": "7f2cf9ccc9738c78c284eb77f911c4ea5ade2d49",
+    "config_locator": "configs/phase_b2a_two_tower_smoke.yaml",
+    "input_tree_clean_at_start": true,
+    "processed_manifest_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5"
+  },
+  "caption_cache": {
+    "cache_file_sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+    "cache_locator": "artifacts/phase_b2a/caption_embeddings.npz",
+    "cleaned_text_sha256": "6af1d5f7aeb9a7a0d822c167cd5f3e73ea70b96dfde437abde8fb02cd26e0748",
+    "cuda_version": "13.0",
+    "dtype": "float32",
+    "embedding_payload_sha256": "9455b459f2466be2d122fdcc11f5fff9ff0fef75a435c6965b61363696f903fc",
+    "empty_text_count": 0,
+    "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "nonempty_coverage": 1.0,
+    "nonempty_text_count": 9388,
+    "ordered_item_membership_sha256": "b16eb4d7fd5717cf4c5c29ed05c29aed1dde03d8671e9ea0f358c1533ccf6163",
+    "preprocessing_version": "phase-b2a-caption-fallback-v1",
+    "resolved_revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+    "schema_version": 1,
+    "sentence_transformers_version": "5.6.0",
+    "shape": [
+      9388,
+      384
+    ],
+    "source_actual_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+    "source_expected_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+    "source_locator": "KUAIREC_DATA_DIR/kuairec_caption_category.csv",
+    "torch_version": "2.11.0+cu130",
+    "wall_time_s": 118.5568
+  },
+  "claim_boundary": {
+    "comparable_to_b1a": false,
+    "effectiveness_claim": false,
+    "formal_gate_executed": false,
+    "sampled_catalog_smoke": true
+  },
+  "diagnostic": {
+    "diagnostic_definition": "separate-seed fixed diagnostic",
+    "epoch_train_loss": [
+      5.657458008714361,
+      5.270913429578316,
+      5.010845752670407
+    ],
+    "false_negative_mask": {
+      "duplicate_target_rate_mean": 0.09019097222222222,
+      "off_diagonal_masked_fraction_mean": 0.07280012124942409,
+      "valid_negative_median": 238.0,
+      "valid_negative_p5": 215.0
+    },
+    "final_fixed_diagnostic": {
+      "diagonal_top1_rate": 0.0546875,
+      "loss": 4.587345600128174,
+      "mean_positive_logit": 3.11173152923584,
+      "mean_valid_negative_logit": 1.3076201677322388,
+      "off_diagonal_masked_fraction": 0.07164522260427475,
+      "valid_negative_median": 238.0,
+      "valid_negative_min": 192.0
+    },
+    "gradient_norms_mean": {
+      "caption_projection": 0.027571910227529594,
+      "category": 0.0199155041592834,
+      "history_path": 0.01749695231103235,
+      "item_id": 0.03586436902511968,
+      "static_projection": 0.04916769751193813,
+      "upload_type": 0.013379677827746827,
+      "user_id": 0.04530673782322333
+    },
+    "initial_fixed_diagnostic": {
+      "diagonal_top1_rate": 0.00390625,
+      "loss": 6.146018981933594,
+      "mean_positive_logit": -0.18885815143585205,
+      "mean_valid_negative_logit": -0.1600135862827301,
+      "off_diagonal_masked_fraction": 0.07164522260427475,
+      "valid_negative_median": 238.0,
+      "valid_negative_min": 192.0
+    },
+    "optimizer_steps": 90,
+    "parameter_checksum_after": "32dfb87f08ba7f969e390410c5ffcb9e97a3f0266c7268e63c4271d59fd0c2d4",
+    "parameter_checksum_before": "509a7783f4f68754dba243f7469dbc79ce8820fdd8558ff55ecc84f56bbb7307",
+    "skipped_batches": 0,
+    "touched_item_count": 5941,
+    "touched_item_membership_sha256": "677969ad7201b13ef5a40ef74b1c5ec092c437053cadffee12a703ef681dcba7",
+    "touched_user_count": 256,
+    "touched_user_membership_sha256": "2df124df1a4b08fc283e2e1ea6e247c1c278da4f7a7810744b4b86a126a58451"
+  },
+  "environment": {
+    "caption_model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "caption_model_revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+    "cuda_available": false,
+    "cuda_version": "13.0",
+    "device": "cpu",
+    "sentence_transformers_version": "5.6.0",
+    "torch_version": "2.11.0+cu130"
+  },
+  "evaluation_encoding": {
+    "history_uses_precomputed_gather": true,
+    "inference_mode": true,
+    "item_batch_size": 1024,
+    "item_universe_preencoded_once": true,
+    "model_item_count": 9388,
+    "user_batch_size": 128
+  },
+  "feature_preprocessing": {
+    "category_upload_vocab_fit_scope": "all train-observed history/model-context items",
+    "category_vocab_size": 364,
+    "means": [
+      9.156459624926807,
+      6.557787263489246,
+      7.092359584084703,
+      737625.9119776451
+    ],
+    "medians": [
+      9.112396727646056,
+      6.580639137284949,
+      7.155396301896734,
+      737629.0
+    ],
+    "missing_value_counts": {
+      "upload_dt": 0,
+      "video_duration": 277,
+      "video_height": 0,
+      "video_width": 0
+    },
+    "numeric_fields": [
+      "log1p(video_duration)",
+      "log1p(video_width)",
+      "log1p(video_height)",
+      "upload_dt_ordinal"
+    ],
+    "numeric_scaler_fit_scope": "train-observed NORMAL items",
+    "stds": [
+      0.5820429757669189,
+      0.15163478363362873,
+      0.1614777051231268,
+      20.347183467999297
+    ],
+    "unseen_category_uses_zero_unk": true,
+    "unseen_upload_type_uses_zero_unk": true,
+    "upload_type_vocab_size": 17
+  },
+  "input_provenance": {
+    "processed_manifest": {
+      "actual_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+      "expected_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+      "locator": "PROCESSED_ARTIFACT_DIR/manifest.json",
+      "sha256_match": true
+    },
+    "raw_sources": {
+      "big_matrix.csv": {
+        "actual_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "expected_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/big_matrix.csv"
+      },
+      "item_daily_features.csv": {
+        "actual_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "expected_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/item_daily_features.csv"
+      },
+      "kuairec_caption_category.csv": {
+        "actual_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "expected_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/kuairec_caption_category.csv"
+      }
+    }
+  },
+  "memberships": {
+    "fixed_retrieval_catalog": {
+      "count": 9365,
+      "hash_scheme": "sha256(phase-b2a-fixed-retrieval-catalog-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "8b8e88e2455a27dc0fac79e7bdb2733dc43096bb6d637e549d1ce5853e8ce55b"
+    },
+    "model_item_universe": {
+      "count": 9388,
+      "hash_scheme": "sha256(phase-b2a-model-item-universe-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "36b4f349b5f290c5117d8c19c2ce1cbb38f5a9431272060f46a875fb3aec5d9b"
+    },
+    "normal": {
+      "count": 10699,
+      "hash_scheme": "sha256(normal-video-membership-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e"
+    }
+  },
+  "peak_gpu_memory_mb": 0.0,
+  "peak_rss_mb": 1700.48,
+  "phase": "phase-b2a-pytorch-two-tower-smoke",
+  "sampled_retrieval": {
+    "cold_user_denominators": {
+      "query_count": 0,
+      "target_count": 0
+    },
+    "cold_user_metrics": null,
+    "comparable_to_b1a": false,
+    "content_only_data_cold_catalog_items": 679,
+    "data_cold_is_descriptive": true,
+    "denominators": {
+      "all_query_count": 128,
+      "all_target_count": 1067,
+      "candidate_union_count": 4096,
+      "data_cold_query_count": 32,
+      "data_cold_target_count": 195,
+      "query_count": 128,
+      "target_count": 1067,
+      "user_count": 128
+    },
+    "effectiveness_claim": false,
+    "formal_gate_executed": false,
+    "maximum_candidate_count": 4050,
+    "metrics": {
+      "Coverage@100": 0.177490234375,
+      "Data-Cold Recall@100": 0.11257665945165944,
+      "NDCG@20": 0.014331245536165764,
+      "Recall@100": 0.1474490638570709,
+      "Recall@20": 0.03486666328463203,
+      "Recall@50": 0.09290073132854869
+    },
+    "minimum_candidate_count": 2976,
+    "queries_with_data_cold_relevant": 32,
+    "query_membership_sha256": "e9e30662d77b1738eb9cc6a532853b01c889d8c209c46a6bad74791b1d2e5a4e",
+    "sampled_catalog_items": 4096,
+    "sampled_catalog_smoke": true,
+    "sampled_queries": 128,
+    "sampled_targets": 1067
+  },
+  "status": "completed",
+  "timings_s": {
+    "batch_encode_query_users_s": 0.0435,
+    "bounded_training_s": 17.1141,
+    "load_verified_inputs_s": 4.3473,
+    "preencode_model_item_universe_s": 0.1244,
+    "sampled_exact_retrieval_s": 0.8118,
+    "scan_big_and_canonicalize_selected_users_s": 31.6331
+  },
+  "total_wall_time_s": 83.4175,
+  "training_sample": {
+    "maximum_example_index": 23178,
+    "minimum_example_index": 3,
+    "not_csv_prefix": true,
+    "sample_membership_sha256": "7fe654947c9eb270df56d88f108c373bc31ab62c6500d28a5b933d314a9199b0",
+    "sampled_examples": 7436,
+    "sampled_items": 5941,
+    "sampled_users": 256,
+    "source_example_population": 23179
+  }
+}

@@ -1,0 +1,48 @@
+phase: phase-b2a-pytorch-two-tower-smoke
+scope:
+  fit: bounded_sample_from_canonical_big_train
+  retrieve: sampled_big_validation
+  forbidden: [small_matrix, temporal_final, full_two_tower]
+caption:
+  model_id: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+  resolved_revision: e8f8c211226b894fcb81acc59f3b34ba3efd5f42
+  dimension: 384
+  preprocessing_version: phase-b2a-caption-fallback-v1
+  batch_size: 128
+architecture:
+  item_id_dim: 64
+  category_dim: 32
+  caption_projection_dim: 64
+  static_projection_dim: 16
+  upload_type_dim: 8
+  hidden_dim: 256
+  output_dim: 128
+  max_history: 50
+training:
+  optimizer: AdamW
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  batch_size: 256
+  epochs: 3
+  temperature: 0.07
+  gradient_clip_norm: 5.0
+  seed: 20260722
+  diagnostic_seed: 20260723
+  precision: FP32
+  num_workers: 0
+bounded_sample:
+  max_users: 256
+  max_examples_per_user: 32
+  max_examples: 8192
+  min_users: 64
+  min_examples: 2000
+retrieval_smoke:
+  max_queries: 128
+  max_catalog_items: 4096
+  minimum_candidates_per_query: 100
+  k: 100
+claims:
+  sampled_catalog_smoke: true
+  comparable_to_b1a: false
+  effectiveness_claim: false
+  formal_gate_executed: false
