@@ -246,6 +246,11 @@ def test_frozen_config_and_selection_gate_contracts():
         },
     ]
     assert select_checkpoint_epoch(records) == 2
+    nested = [
+        {"epoch": row["epoch"], "validation": {"metrics": row["metrics"]}}
+        for row in records
+    ]
+    assert select_checkpoint_epoch(nested) == 2
     gates = evaluate_frozen_gates(
         {
             "Recall@100": 0.051,

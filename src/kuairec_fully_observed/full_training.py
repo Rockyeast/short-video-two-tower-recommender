@@ -692,11 +692,14 @@ def build_checkpoint_identity(
 def select_checkpoint_epoch(records: list[dict[str, Any]]) -> int:
     if not records:
         raise ValueError("No validation checkpoints are available")
+    def metrics(row: dict[str, Any]) -> dict[str, float]:
+        return row.get("metrics", row.get("validation", {}).get("metrics", {}))
+
     return max(
         records,
         key=lambda row: (
-            float(row["metrics"]["Recall@100"]),
-            float(row["metrics"]["NDCG@20"]),
+            float(metrics(row)["Recall@100"]),
+            float(metrics(row)["NDCG@20"]),
             -int(row["epoch"]),
         ),
     )["epoch"]
