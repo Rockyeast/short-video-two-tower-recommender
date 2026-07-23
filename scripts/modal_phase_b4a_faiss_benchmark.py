@@ -12,7 +12,7 @@ import modal
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNNER_COMMIT = "c8e9714d388d552ff1f6c5794d459f4ba05aafb7"
+RUNNER_COMMIT = "af4fa9aebba1cdbcea0cdbb7983fd99952db3db7"
 REPOSITORY_URL = (
     "https://github.com/Rockyeast/short-video-two-tower-recommender.git"
 )

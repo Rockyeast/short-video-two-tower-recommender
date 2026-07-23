@@ -6,7 +6,7 @@ def test_modal_b4a_wrapper_is_bounded_and_has_no_small_input():
         "scripts/modal_phase_b4a_faiss_benchmark.py"
     ).read_text()
     assert (
-        'RUNNER_COMMIT = "c8e9714d388d552ff1f6c5794d459f4ba05aafb7"'
+        'RUNNER_COMMIT = "af4fa9aebba1cdbcea0cdbb7983fd99952db3db7"'
         in source
     )
     assert 'gpu="L4"' in source
