@@ -200,6 +200,106 @@ def test_small_retains_cold_users_without_using_small_feedback_as_history():
     assert queries.diagnostics["cold_users_retained"] == 1
 
 
+def test_small_pairs_allow_missing_unused_time_fields():
+    observed = pd.DataFrame(
+        {
+            "user_id": [7, 7],
+            "video_id": [1, 2],
+            "watch_ratio": [3.0, 1.0],
+            "timestamp": [np.nan, np.nan],
+            "time": [np.nan, np.nan],
+            "date": [np.nan, np.nan],
+        }
+    )
+    queries = build_small_observed_queries(
+        observed,
+        big_history_events=_events(
+            [(7, 99, 1.0, 500.0, 1000.0, 0.5)]
+        ),
+        normal_item_ids=np.asarray([1, 2]),
+    )
+
+    np.testing.assert_array_equal(queries.candidates[0], [1, 2])
+    np.testing.assert_array_equal(queries.relevant[0], [1])
+
+
+def test_small_pairs_reject_missing_user_id():
+    observed = pd.DataFrame(
+        {"user_id": [np.nan], "video_id": [1], "watch_ratio": [3.0]}
+    )
+    with pytest.raises(ValueError, match="invalid user_id"):
+        build_small_observed_queries(
+            observed,
+            big_history_events=_events([]),
+            normal_item_ids=np.asarray([1]),
+        )
+
+
+def test_small_pairs_reject_missing_video_id():
+    observed = pd.DataFrame(
+        {"user_id": [7], "video_id": [np.nan], "watch_ratio": [3.0]}
+    )
+    with pytest.raises(ValueError, match="invalid video_id"):
+        build_small_observed_queries(
+            observed,
+            big_history_events=_events([]),
+            normal_item_ids=np.asarray([1]),
+        )
+
+
+@pytest.mark.parametrize("watch_ratio", [np.nan, np.inf, -np.inf])
+def test_small_pairs_reject_missing_or_nonfinite_watch_ratio(watch_ratio):
+    observed = pd.DataFrame(
+        {"user_id": [7], "video_id": [1], "watch_ratio": [watch_ratio]}
+    )
+    with pytest.raises(ValueError, match="invalid watch_ratio"):
+        build_small_observed_queries(
+            observed,
+            big_history_events=_events([]),
+            normal_item_ids=np.asarray([1]),
+        )
+
+
+def test_small_pairs_reject_duplicate_user_item_pair():
+    observed = pd.DataFrame(
+        {
+            "user_id": [7, 7],
+            "video_id": [1, 1],
+            "watch_ratio": [3.0, 1.0],
+        }
+    )
+    with pytest.raises(ValueError, match="duplicate observed pairs"):
+        build_small_observed_queries(
+            observed,
+            big_history_events=_events([]),
+            normal_item_ids=np.asarray([1]),
+        )
+
+
+def test_small_feedback_never_enters_big_history():
+    observed = pd.DataFrame(
+        {
+            "user_id": [7, 7],
+            "video_id": [1, 2],
+            "watch_ratio": [3.0, 4.0],
+        }
+    )
+    big_history = _events(
+        [
+            (7, 98, 1.0, 500.0, 1000.0, 0.5),
+            (7, 99, 2.0, 3000.0, 1000.0, 3.0),
+        ]
+    )
+    queries = build_small_observed_queries(
+        observed,
+        big_history_events=big_history,
+        normal_item_ids=np.asarray([1, 2]),
+    )
+
+    np.testing.assert_array_equal(queries.histories[0], [98, 99])
+    assert not set(queries.histories[0]) & {1, 2}
+
+
 def test_sealed_small_routes_share_cold_fallback_and_keep_frozen_hybrid():
     observed = _events(
         [

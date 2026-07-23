@@ -143,6 +143,10 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "future-time test. Small was not used for model selection, fitting, "
         "history construction, or route parameters.",
         "",
+        "- Sealed attempt number: `2`",
+        "- Prior attempt metrics produced: `false`",
+        "- Prior failure stage: `small_schema_validation`",
+        "",
         "## Audit population",
         "",
         f"- Observed pairs: `{counts['observed_pair_count']}`",
@@ -365,6 +369,9 @@ def main(
     report = {
         **remote,
         "wrapper_commit": _git("rev-parse", "HEAD"),
+        "sealed_attempt_number": 2,
+        "prior_attempt_metrics_produced": False,
+        "prior_failure_stage": "small_schema_validation",
         "small_upload_identity": small_identity,
         "claim_boundary": {
             "sealed_nearly_fully_observed_audit": True,

@@ -42,18 +42,12 @@ from kuairec_fully_observed.torch_training import (
 SMALL_COLUMNS = (
     "user_id",
     "video_id",
-    "timestamp",
-    "play_duration",
-    "video_duration",
     "watch_ratio",
 )
 
 
 def _load_small_once(path: Path) -> pd.DataFrame:
-    frame = pd.read_csv(path, usecols=list(SMALL_COLUMNS))
-    if frame.duplicated(["user_id", "video_id", "timestamp"]).any():
-        raise RuntimeError("Small Matrix is not canonical by event key")
-    return frame
+    return pd.read_csv(path, usecols=list(SMALL_COLUMNS))
 
 
 def _load_bpr(path: Path) -> BPRModel:
@@ -225,6 +219,9 @@ def run(
     )
     serializable = {
         "phase": "phase-b3b-sealed-small",
+        "sealed_attempt_number": 2,
+        "prior_attempt_metrics_produced": False,
+        "prior_failure_stage": "small_schema_validation",
         "selection_performed": False,
         "small_matrix_accessed_once": True,
         "temporal_final_accessed": False,
