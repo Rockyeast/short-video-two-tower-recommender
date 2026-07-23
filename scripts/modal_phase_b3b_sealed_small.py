@@ -17,7 +17,7 @@ import modal
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNNER_COMMIT = "178f8df631ffdaa9ff038eb8c9d357e604124cd2"
+RUNNER_COMMIT = "518131548478182de285ec8e48b6e3b57330a83e"
 REPOSITORY_URL = (
     "https://github.com/Rockyeast/short-video-two-tower-recommender.git"
 )
@@ -146,6 +146,8 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "- Sealed attempt number: `2`",
         "- Prior attempt metrics produced: `false`",
         "- Prior failure stage: `small_schema_validation`",
+        "- Attempt-1 failure report: "
+        "[sealed_small_failure.md](sealed_small_failure.md)",
         "",
         "## Audit population",
         "",
@@ -372,6 +374,9 @@ def main(
         "sealed_attempt_number": 2,
         "prior_attempt_metrics_produced": False,
         "prior_failure_stage": "small_schema_validation",
+        "attempt_1_failure_report": (
+            "reports/phase_b3b/sealed_small_failure.md"
+        ),
         "small_upload_identity": small_identity,
         "claim_boundary": {
             "sealed_nearly_fully_observed_audit": True,
