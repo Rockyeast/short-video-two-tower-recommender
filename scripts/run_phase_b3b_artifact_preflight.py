@@ -257,7 +257,7 @@ def run(
         raise RuntimeError("Artifact-only Exact Retrieval failed")
 
     report = {
-        "phase": "phase-b3b-r2-artifact-only-preflight",
+        "phase": "phase-b3b-r3-numeric-sidecar-artifact-only-preflight",
         "checkpoint_sha256": refit_identity["artifacts"][
             "two_tower_epoch_1"
         ]["actual_sha256"],
