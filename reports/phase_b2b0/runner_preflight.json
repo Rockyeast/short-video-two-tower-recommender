@@ -1,0 +1,233 @@
+{
+  "access": {
+    "faiss_run": false,
+    "full_training_started": false,
+    "hybrid_run": false,
+    "small_matrix_accessed": false,
+    "temporal_final_accessed": false
+  },
+  "checkpoints": [
+    {
+      "checkpoint": {
+        "identity_sha256": "9011533a3877d27de526a6ff92116fd745c84a5e4936272d81e23aad87f39047",
+        "locator": "CHECKPOINT_DIR/epoch_001.pt",
+        "sha256": "f5d41942bd90828f30147cab5ccbb6083ea958765cfd4a60c9f4d8ca0b1c6897"
+      },
+      "epoch": 1,
+      "epoch_loss": 5.877541446685791,
+      "timings_s": {
+        "exact_retrieval_and_metrics_s": 0.9270292340079322,
+        "item_encoding_s": 0.04941202700138092,
+        "user_encoding_s": 0.05453169299289584
+      },
+      "validation": {
+        "cold_user_denominators": {
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 2,
+          "data_cold_target_count": 9,
+          "query_count": 2,
+          "target_count": 26,
+          "user_count": 2
+        },
+        "cold_user_metrics": {
+          "Coverage@100": 0.010678056593699947,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.028066324913547245,
+          "Recall@100": 0.029411764705882353,
+          "Recall@20": 0.029411764705882353,
+          "Recall@50": 0.029411764705882353
+        },
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 128,
+          "all_target_count": 2545,
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 123,
+          "data_cold_target_count": 694,
+          "query_count": 126,
+          "target_count": 2519,
+          "user_count": 126
+        },
+        "metrics": {
+          "Coverage@100": 0.05616657768286172,
+          "Data-Cold Recall@100": 0.0009033423667570009,
+          "NDCG@20": 0.0,
+          "Recall@100": 0.0020721771614628758,
+          "Recall@20": 0.0,
+          "Recall@50": 0.0008692365835222978
+        }
+      }
+    },
+    {
+      "checkpoint": {
+        "identity_sha256": "9011533a3877d27de526a6ff92116fd745c84a5e4936272d81e23aad87f39047",
+        "locator": "CHECKPOINT_DIR/epoch_002.pt",
+        "sha256": "014308d6565f9b212c965457f4eb01f0e6af107ae6a055cab647d5242a50d334"
+      },
+      "epoch": 2,
+      "epoch_loss": 5.074811553955078,
+      "timings_s": {
+        "exact_retrieval_and_metrics_s": 0.8404298609821126,
+        "item_encoding_s": 0.08162175700999796,
+        "user_encoding_s": 0.03214057901641354
+      },
+      "validation": {
+        "cold_user_denominators": {
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 2,
+          "data_cold_target_count": 9,
+          "query_count": 2,
+          "target_count": 26,
+          "user_count": 2
+        },
+        "cold_user_metrics": {
+          "Coverage@100": 0.010678056593699947,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.028066324913547245,
+          "Recall@100": 0.029411764705882353,
+          "Recall@20": 0.029411764705882353,
+          "Recall@50": 0.029411764705882353
+        },
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 128,
+          "all_target_count": 2545,
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 123,
+          "data_cold_target_count": 694,
+          "query_count": 126,
+          "target_count": 2519,
+          "user_count": 126
+        },
+        "metrics": {
+          "Coverage@100": 0.0603310197544047,
+          "Data-Cold Recall@100": 0.0033662137320673905,
+          "NDCG@20": 0.0033712163467103148,
+          "Recall@100": 0.020325568536071367,
+          "Recall@20": 0.0014910702565279902,
+          "Recall@50": 0.00500894181916187
+        }
+      }
+    }
+  ],
+  "claim_boundary": {
+    "effectiveness_claim": false,
+    "formal_gate_executed": false,
+    "full_big_train": false,
+    "full_big_validation": false
+  },
+  "environment": {
+    "cuda_available": false,
+    "device": "cpu",
+    "torch_version": "2.11.0+cu130"
+  },
+  "estimated_full_run_minutes": {
+    "high": 597.7932136501281,
+    "low": 358.67592819007683,
+    "method": "preflight_step_rate_scaled_with_1.5x_to_2.5x_overhead"
+  },
+  "formal_gates": {
+    "A": false,
+    "B": false,
+    "C": false
+  },
+  "frozen_bpr_epoch_20": {
+    "Coverage@100": 0.33304858515750135,
+    "Data-Cold Recall@100": 0.0,
+    "NDCG@20": 0.012773561140700995,
+    "Recall@100": 0.04843855379304513
+  },
+  "input_provenance": {
+    "caption_cache_sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+    "code_commit_at_run": "126e82f9d96954c379b355fac5ed5e24534e47c1",
+    "config_sha256": "3afb836f7c15855e6fed89399002bf9ae6b57447d31062f263b98fdd55f5bf2d",
+    "input_tree_clean_at_start": true,
+    "processed_manifest_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+    "raw_sources": {
+      "big_matrix.csv": {
+        "actual_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "expected_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/big_matrix.csv"
+      },
+      "item_daily_features.csv": {
+        "actual_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "expected_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/item_daily_features.csv"
+      },
+      "kuairec_caption_category.csv": {
+        "actual_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "expected_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/kuairec_caption_category.csv"
+      }
+    }
+  },
+  "memberships": {
+    "fixed_retrieval_catalog": {
+      "count": 9365,
+      "hash_scheme": "sha256(phase-b2a-fixed-retrieval-catalog-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "8b8e88e2455a27dc0fac79e7bdb2733dc43096bb6d637e549d1ce5853e8ce55b"
+    },
+    "model_item_universe": {
+      "count": 9388,
+      "hash_scheme": "sha256(phase-b2a-model-item-universe-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "36b4f349b5f290c5117d8c19c2ce1cbb38f5a9431272060f46a875fb3aec5d9b"
+    },
+    "normal": {
+      "count": 10699,
+      "hash_scheme": "sha256(normal-video-membership-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e"
+    }
+  },
+  "peak_gpu_memory_mb": 0.0,
+  "peak_rss_mb": 1712.7109375,
+  "phase": "phase-b2b0-full-runner-preflight",
+  "resume": {
+    "checkpoint_epoch": 1,
+    "independent_load_before_continue": true,
+    "verified": true
+  },
+  "runtime_s": 151.0687729830388,
+  "selected_epoch_by_frozen_rule": 2,
+  "status": "completed",
+  "training": {
+    "completed_epoch": 2,
+    "epoch_losses": [
+      5.877541446685791,
+      5.074811553955078
+    ],
+    "example_count": 2560,
+    "optimizer_steps": 20,
+    "ordered_user_count": 249,
+    "planned_item_count": 6197,
+    "sample": {
+      "maximum_example_index": 23177,
+      "minimum_example_index": 12,
+      "not_csv_prefix": true,
+      "sample_membership_sha256": "dc7f3cd977e7e42eb1cec784c10b885c2eb8f613a90f43d51fa08d0c1c1562c6",
+      "sampled_examples": 2560,
+      "sampled_items": 5456,
+      "sampled_users": 249,
+      "source_example_population": 23179
+    },
+    "skipped_batches": 0,
+    "source_example_population": 23179,
+    "training_and_epoch_validation_s": 42.64240489702206
+  },
+  "validation": {
+    "evaluated_queries": 128,
+    "evaluated_targets": 2545,
+    "fixed_catalog_count": 9365,
+    "frozen_contract": {
+      "data_cold_item_count": 1492,
+      "fixed_catalog_count": 9365,
+      "query_contract_sha256": "f25df9d235f32b114357a190f69a60e49d8993d2c4e09f975a0b361c7439f877",
+      "query_count": 6818,
+      "target_count": 118565,
+      "warm_query_count": 6816,
+      "warm_target_count": 118539
+    }
+  }
+}
