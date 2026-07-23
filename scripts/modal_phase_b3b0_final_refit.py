@@ -21,7 +21,7 @@ from modal_preflight_helpers import (  # noqa: E402
     modal_volume_file_paths,
 )
 
-B3B_RUNNER_COMMIT = "9f1c3222dc111227e64d57c88f5e792ce23c5529"
+B3B_RUNNER_COMMIT = "fa4e53c1ea88a81e7c68c9f082d7f645eddd6e66"
 REPOSITORY_URL = (
     "https://github.com/Rockyeast/short-video-two-tower-recommender.git"
 )
