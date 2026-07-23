@@ -49,6 +49,26 @@ SMALL_COLUMNS = (
     "watch_ratio",
 )
 
+SEALED_ATTEMPT_NUMBER = 3
+PRIOR_SEALED_ATTEMPTS = (
+    {
+        "attempt_number": 1,
+        "failure_stage": "small_schema_validation",
+        "formal_metrics_produced_or_observed": False,
+        "failure_report": "reports/phase_b3b/sealed_small_failure.md",
+    },
+    {
+        "attempt_number": 2,
+        "failure_stage": (
+            "two_tower_checkpoint_feature_vocab_validation"
+        ),
+        "formal_metrics_produced_or_observed": False,
+        "failure_report": (
+            "reports/phase_b3b/sealed_small_attempt2_failure.md"
+        ),
+    },
+)
+
 
 def _load_small_once(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, usecols=list(SMALL_COLUMNS))
@@ -251,9 +271,10 @@ def run(
     )
     serializable = {
         "phase": "phase-b3b-sealed-small",
-        "sealed_attempt_number": 2,
+        "sealed_attempt_number": SEALED_ATTEMPT_NUMBER,
+        "prior_attempts": list(PRIOR_SEALED_ATTEMPTS),
         "prior_attempt_metrics_produced": False,
-        "prior_failure_stage": "small_schema_validation",
+        "small_used_for_post_attempt_tuning": False,
         "selection_performed": False,
         "small_matrix_accessed_once": True,
         "temporal_final_accessed": False,
