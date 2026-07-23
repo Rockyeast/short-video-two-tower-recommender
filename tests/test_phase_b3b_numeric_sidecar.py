@@ -154,6 +154,11 @@ def test_final_refit_store_uses_frozen_stats_without_refitting():
 
 
 def test_artifact_only_runner_contains_no_small_input_path():
-    source = Path("scripts/run_phase_b3b_artifact_preflight.py").read_text()
-    assert "small_matrix.csv" not in source
-    assert "small_matrix_path" not in source
+    sources = [
+        Path("scripts/run_phase_b3b_artifact_preflight.py").read_text(),
+        Path("scripts/modal_phase_b3b_r3_artifact_preflight.py").read_text(),
+    ]
+    for source in sources:
+        assert "small_matrix.csv" not in source
+        assert "small_matrix_path" not in source
+        assert "SMALL_VOLUME" not in source
