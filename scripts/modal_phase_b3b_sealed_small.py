@@ -66,6 +66,7 @@ image = (
         "/opt/modal-wrapper/modal_phase_b3b_sealed_small.py",
         copy=True,
     )
+    .env({"PYTHONPATH": "/opt/modal-wrapper"})
 )
 
 
