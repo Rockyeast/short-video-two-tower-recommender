@@ -34,6 +34,7 @@ REPOSITORY_URL = (
     "https://github.com/Rockyeast/short-video-two-tower-recommender.git"
 )
 REPOSITORY_DIR = Path("/opt/short-video-two-tower-recommender")
+WRAPPER_REMOTE_DIR = "/opt/modal-wrapper"
 INPUT_VOLUME_NAME = "kuairec-b2b-preflight-inputs"
 INPUT_MOUNT = Path("/inputs")
 FORMAL_STEP_COUNT = 6729
@@ -63,6 +64,17 @@ image = (
         f"cd {REPOSITORY_DIR} && test -z \"$(git status --porcelain)\"",
         f"python -m pip install --no-deps {REPOSITORY_DIR}",
     )
+    .add_local_file(
+        Path(__file__),
+        f"{WRAPPER_REMOTE_DIR}/modal_phase_b2b_preflight.py",
+        copy=True,
+    )
+    .add_local_file(
+        Path(__file__).resolve().parent / "modal_preflight_helpers.py",
+        f"{WRAPPER_REMOTE_DIR}/modal_preflight_helpers.py",
+        copy=True,
+    )
+    .env({"PYTHONPATH": WRAPPER_REMOTE_DIR})
 )
 
 

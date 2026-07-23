@@ -219,6 +219,11 @@ def test_modal_wrapper_has_frozen_single_l4_contract() -> None:
     assert "retries=0" in source
     assert "single_use_containers=True" in source
     assert "input_volume.read_only()" in source
+    assert source.count(".add_local_file(") == 2
+    assert "modal_phase_b2b_preflight.py" in source
+    assert "modal_preflight_helpers.py" in source
+    assert '.env({"PYTHONPATH": WRAPPER_REMOTE_DIR})' in source
+    assert "include_source=False" in source
     assert '"--preflight"' in source
     assert '"--full-run"' not in source
     remote_calls = [
