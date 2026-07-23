@@ -131,7 +131,8 @@ def _fit_bpr(
         "training_items": int(len(result.model.item_ids)),
         "epochs": int(config["epochs"]),
         "optimizer_steps": int(
-            np.ceil(len(dataset) / int(config["batch_size"])) * config["epochs"]
+            np.ceil(len(dataset.user_ids) / int(config["batch_size"]))
+            * config["epochs"]
         ),
         "epoch_losses": list(result.epoch_losses),
         "final_loss": float(result.epoch_losses[-1]),
