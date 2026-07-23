@@ -17,7 +17,7 @@ import modal
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNNER_COMMIT = "518131548478182de285ec8e48b6e3b57330a83e"
+RUNNER_COMMIT = "90eced9e062004b5954fab257989b96f2a43339c"
 REPOSITORY_URL = (
     "https://github.com/Rockyeast/short-video-two-tower-recommender.git"
 )
@@ -36,6 +36,25 @@ INPUT_MOUNT = Path("/inputs")
 REFIT_MOUNT = Path("/refit")
 SMALL_MOUNT = Path("/sealed-small")
 SMALL_LOGICAL_PATH = f"sha256/{SMALL_SHA256}/small_matrix.csv"
+SEALED_ATTEMPT_NUMBER = 3
+PRIOR_SEALED_ATTEMPTS = (
+    {
+        "attempt_number": 1,
+        "failure_stage": "small_schema_validation",
+        "formal_metrics_produced_or_observed": False,
+        "failure_report": "reports/phase_b3b/sealed_small_failure.md",
+    },
+    {
+        "attempt_number": 2,
+        "failure_stage": (
+            "two_tower_checkpoint_feature_vocab_validation"
+        ),
+        "formal_metrics_produced_or_observed": False,
+        "failure_report": (
+            "reports/phase_b3b/sealed_small_attempt2_failure.md"
+        ),
+    },
+)
 
 app = modal.App("short-video-two-tower-b3b-sealed-small")
 input_volume = modal.Volume.from_name(INPUT_VOLUME_NAME, create_if_missing=False)
@@ -143,11 +162,15 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "future-time test. Small was not used for model selection, fitting, "
         "history construction, or route parameters.",
         "",
-        "- Sealed attempt number: `2`",
-        "- Prior attempt metrics produced: `false`",
-        "- Prior failure stage: `small_schema_validation`",
-        "- Attempt-1 failure report: "
+        "- Sealed attempt number: `3`",
+        "- Attempt 1 failed at `small_schema_validation`: "
         "[sealed_small_failure.md](sealed_small_failure.md)",
+        "- Attempt 2 failed at "
+        "`two_tower_checkpoint_feature_vocab_validation`: "
+        "[sealed_small_attempt2_failure.md]"
+        "(sealed_small_attempt2_failure.md)",
+        "- Attempts 1 and 2 produced or exposed no formal metrics.",
+        "- No model, rule, or parameter was changed based on Small.",
         "",
         "## Audit population",
         "",
@@ -371,12 +394,10 @@ def main(
     report = {
         **remote,
         "wrapper_commit": _git("rev-parse", "HEAD"),
-        "sealed_attempt_number": 2,
+        "sealed_attempt_number": SEALED_ATTEMPT_NUMBER,
+        "prior_attempts": list(PRIOR_SEALED_ATTEMPTS),
         "prior_attempt_metrics_produced": False,
-        "prior_failure_stage": "small_schema_validation",
-        "attempt_1_failure_report": (
-            "reports/phase_b3b/sealed_small_failure.md"
-        ),
+        "small_used_for_post_attempt_tuning": False,
         "small_upload_identity": small_identity,
         "claim_boundary": {
             "sealed_nearly_fully_observed_audit": True,
