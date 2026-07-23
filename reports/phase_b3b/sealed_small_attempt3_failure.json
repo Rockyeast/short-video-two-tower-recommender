@@ -1,0 +1,43 @@
+{
+  "phase": "phase-b3b-sealed-small",
+  "attempt_number": 3,
+  "sealed_attempt_number": 3,
+  "status": "stopped_after_sealed_read_failure",
+  "modal_run_url": "https://modal.com/apps/lzf1416082617/main/ap-0J7JeMn5g1A1ejLNI16EYx",
+  "main_merge_commit": "4e27387a5925bd2f3839c1df4779a0d041785682",
+  "runner_commit": "90eced9e062004b5954fab257989b96f2a43339c",
+  "wrapper_pin_commit": "6c12e7fb400bb33a05c11648be000a46690d8e79",
+  "failure_stage": "formal_report_serialization_audit_counts",
+  "failure_function": "run",
+  "failure_file": "scripts/run_phase_b3b_sealed_small.py",
+  "failure_line": 295,
+  "exception_type": "IndexError",
+  "exception_message": "only integers, slices (`:`), ellipsis (`...`), numpy.newaxis (`None`) and integer or boolean arrays are valid indices",
+  "small_identity": {
+    "size_bytes": 406155844,
+    "sha256": "6b601cd38b2600d8734b4aede309ad73d1e201fdc4bd76d4bc7d2534793d7d15",
+    "verified_before_read": true
+  },
+  "final_refit_artifacts": {
+    "global_popularity_sha256": "b47f01c8af900d2b00d80163c57485637785cae912a34832b7e50421492ba780",
+    "bpr_epoch_20_sha256": "ac423dacece97cbc6c10c4d773e4b9deec0d9cdf540ec8baf7be492dd812f4c2",
+    "two_tower_epoch_1_sha256": "5715a98d47c80f545afdce845c2a96940bc7ce3fec355e4a1156576d2fcab949",
+    "identities_verified_before_read": true
+  },
+  "small_csv_read_completed": true,
+  "queries_constructed": true,
+  "popularity_ranking_computed": true,
+  "bpr_ranking_computed": true,
+  "two_tower_ranking_computed": true,
+  "hybrid_computed": true,
+  "formal_metrics_computed": true,
+  "formal_metrics_exposed": false,
+  "formal_report_written": false,
+  "automatic_retry_performed": false,
+  "post_failure_small_or_model_inspection_performed": false,
+  "code_modified_after_failure": false,
+  "training_performed": false,
+  "tuning_performed": false,
+  "temporal_final_accessed": false,
+  "next_action": "await_independent_review"
+}
