@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 
 import numpy as np
 import pytest
@@ -10,7 +12,10 @@ from kuairec_fully_observed.caption_embeddings import (
     PREPROCESSING_VERSION,
     build_caption_cache,
     cleaned_text_sha256,
+    load_sentence_transformer,
     load_caption_cache,
+    resolve_model_revision,
+    validate_pinned_revision,
 )
 
 
@@ -153,3 +158,28 @@ def test_caption_cache_rejects_source_sha_before_encoding(tmp_path):
             versions={},
         )
     assert encoder.calls == []
+
+
+def test_sentence_transformer_loads_the_pinned_revision_without_resolving_main(
+    monkeypatch,
+):
+    calls = []
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_id, *, revision):
+            calls.append((model_id, revision))
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        types.SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
+    )
+    pinned = "a" * 40
+    loaded = load_sentence_transformer(CAPTION_MODEL_ID, pinned)
+    assert isinstance(loaded, FakeSentenceTransformer)
+    assert calls == [(CAPTION_MODEL_ID, pinned)]
+    assert validate_pinned_revision(pinned) == pinned
+    with pytest.raises(ValueError, match="pinned 40-character"):
+        load_sentence_transformer(CAPTION_MODEL_ID, "main")
+    with pytest.raises(RuntimeError, match="Floating caption revision"):
+        resolve_model_revision(CAPTION_MODEL_ID)

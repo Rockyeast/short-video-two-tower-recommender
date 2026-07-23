@@ -16,11 +16,19 @@ import yaml
 from kuairec_fully_observed.caption_embeddings import (
     CAPTION_MODEL_ID,
     build_caption_cache,
+    cleaned_text_sha256,
+    load_caption_cache,
     load_sentence_transformer,
-    resolve_model_revision,
-    sha256_file,
+    validate_pinned_revision,
 )
 from kuairec_fully_observed.features import load_static_item_features
+from kuairec_fully_observed.provenance import (
+    PHASE1_PROCESSED_MANIFEST_SHA256,
+    membership_record,
+    normal_membership_record,
+    sha256_file,
+    verify_phase_b2a_inputs,
+)
 
 
 def _verify_manifest(artifact_dir: Path) -> dict:
@@ -40,9 +48,9 @@ def _verify_manifest(artifact_dir: Path) -> dict:
     return manifest
 
 
-def model_item_universe(
+def model_item_sets(
     artifact_dir: Path, normal_item_ids: np.ndarray
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     with np.load(artifact_dir / "events_train_validation.npz") as events, np.load(
         artifact_dir / "catalog.npz"
     ) as catalog:
@@ -55,7 +63,8 @@ def model_item_universe(
     fixed_retrieval = np.intersect1d(
         observed, np.asarray(normal_item_ids, dtype=np.int64), assume_unique=True
     )
-    return np.union1d(train_history, fixed_retrieval).astype(np.int64)
+    universe = np.union1d(train_history, fixed_retrieval).astype(np.int64)
+    return fixed_retrieval.astype(np.int64), universe
 
 
 def run(
@@ -72,51 +81,76 @@ def run(
     caption_config = config["caption"]
     if caption_config["model_id"] != CAPTION_MODEL_ID:
         raise RuntimeError("Caption model ID is not frozen")
-    manifest = _verify_manifest(artifact_dir)
-    source_path = data_dir / "kuairec_caption_category.csv"
-    actual_source_sha = sha256_file(source_path)
-    expected_source_sha = manifest["fingerprint"]["source_file_sha256"][
-        "kuairec_caption_category.csv"
-    ]
-    if actual_source_sha != expected_source_sha:
-        raise RuntimeError(
-            "Caption source SHA mismatch: "
-            f"actual={actual_source_sha} expected={expected_source_sha}"
-        )
+    revision = validate_pinned_revision(caption_config["resolved_revision"])
+    manifest, raw_inputs = verify_phase_b2a_inputs(
+        data_dir=data_dir,
+        artifact_dir=artifact_dir,
+        required_raw_files=(
+            "item_daily_features.csv",
+            "kuairec_caption_category.csv",
+        ),
+    )
+    _verify_manifest(artifact_dir)
     started = time.perf_counter()
     all_static = load_static_item_features(data_dir)
-    item_ids = model_item_universe(artifact_dir, all_static.normal_item_ids)
+    normal_identity = normal_membership_record(
+        np.unique(all_static.normal_item_ids)
+    )
+    fixed_catalog, item_ids = model_item_sets(
+        artifact_dir, all_static.normal_item_ids
+    )
+    fixed_identity = membership_record(
+        fixed_catalog, label="phase-b2a-fixed-retrieval-catalog-v1"
+    )
+    universe_identity = membership_record(
+        item_ids, label="phase-b2a-model-item-universe-v1"
+    )
     frame = all_static.frame.set_index("video_id").reindex(item_ids)
     if frame["caption_text"].isna().any():
         raise RuntimeError("Model item universe is missing caption metadata rows")
     cleaned_texts = frame["caption_text"].astype(str).tolist()
-    resolved = resolve_model_revision(CAPTION_MODEL_ID)
-    if resolved != caption_config["resolved_revision"]:
-        raise RuntimeError(
-            f"Caption revision changed: {resolved} != "
-            f"{caption_config['resolved_revision']}"
+    caption_trace = raw_inputs["kuairec_caption_category.csv"]
+    text_sha = cleaned_text_sha256(item_ids, cleaned_texts)
+    if cache_path.is_file() and metadata_path.is_file():
+        cache = load_caption_cache(
+            cache_path=cache_path,
+            metadata_path=metadata_path,
+            expected_item_ids=item_ids,
+            expected_model_id=CAPTION_MODEL_ID,
+            expected_revision=revision,
+            expected_source_sha256=caption_trace["expected_sha256"],
+            expected_cleaned_text_sha256=text_sha,
         )
-    encoder = load_sentence_transformer(CAPTION_MODEL_ID, resolved)
-    cache = build_caption_cache(
-        item_ids=item_ids,
-        cleaned_texts=cleaned_texts,
-        encoder=encoder,
-        cache_path=cache_path,
-        metadata_path=metadata_path,
-        model_id=CAPTION_MODEL_ID,
-        resolved_revision=resolved,
-        source_actual_sha256=actual_source_sha,
-        source_expected_sha256=expected_source_sha,
-        versions={
-            "torch": torch.__version__,
-            "sentence_transformers": importlib.metadata.version(
-                "sentence-transformers"
-            ),
-            "cuda": torch.version.cuda,
-        },
-        batch_size=int(caption_config["batch_size"]),
-    )
+        cache_reused = True
+    else:
+        encoder = load_sentence_transformer(CAPTION_MODEL_ID, revision)
+        cache = build_caption_cache(
+            item_ids=item_ids,
+            cleaned_texts=cleaned_texts,
+            encoder=encoder,
+            cache_path=cache_path,
+            metadata_path=metadata_path,
+            model_id=CAPTION_MODEL_ID,
+            resolved_revision=revision,
+            source_actual_sha256=caption_trace["actual_sha256"],
+            source_expected_sha256=caption_trace["expected_sha256"],
+            versions={
+                "torch": torch.__version__,
+                "sentence_transformers": importlib.metadata.version(
+                    "sentence-transformers"
+                ),
+                "cuda": torch.version.cuda,
+            },
+            batch_size=int(caption_config["batch_size"]),
+        )
+        cache_reused = False
     value = dict(cache.metadata)
+    value["cache_reused"] = cache_reused
+    value["processed_manifest_sha256"] = PHASE1_PROCESSED_MANIFEST_SHA256
+    value["raw_input_traceability"] = raw_inputs
+    value["normal_membership"] = normal_identity
+    value["fixed_retrieval_catalog_membership"] = fixed_identity
+    value["model_item_universe_membership"] = universe_identity
     value["wall_time_s"] = round(time.perf_counter() - started, 4)
     metadata_path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
     return value

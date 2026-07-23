@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -225,14 +226,18 @@ def load_caption_cache(
 
 
 def resolve_model_revision(model_id: str = CAPTION_MODEL_ID) -> str:
-    """Resolve a floating model ID through a lazy huggingface-hub import."""
+    raise RuntimeError(
+        "Floating caption revision resolution is forbidden; use the pinned "
+        "40-character revision from the Phase B2A config"
+    )
 
-    from huggingface_hub import model_info
 
-    revision = model_info(model_id, revision="main").sha
-    if not revision:
-        raise RuntimeError(f"Could not resolve a revision for {model_id}")
-    return str(revision)
+def validate_pinned_revision(revision: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError(
+            "Caption revision must be a pinned 40-character lowercase git SHA"
+        )
+    return revision
 
 
 def load_sentence_transformer(model_id: str, revision: str) -> CaptionEncoder:
@@ -240,4 +245,6 @@ def load_sentence_transformer(model_id: str, revision: str) -> CaptionEncoder:
 
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(model_id, revision=revision)
+    return SentenceTransformer(
+        model_id, revision=validate_pinned_revision(revision)
+    )

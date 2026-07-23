@@ -31,12 +31,21 @@ from kuairec_fully_observed.caption_embeddings import (
     CAPTION_MODEL_ID,
     cleaned_text_sha256,
     load_caption_cache,
+)
+from kuairec_fully_observed.provenance import (
+    PHASE1_PROCESSED_MANIFEST_SHA256,
+    canonical_json_sha256,
+    membership_record,
+    normal_membership_record,
     sha256_file,
+    verify_phase_b2a_inputs,
 )
 from kuairec_fully_observed.torch_models import TwoTowerV1
 from kuairec_fully_observed.torch_training import (
-    encode_item_ids,
+    assert_model_device,
+    encode_query_users_from_precomputed,
     load_checkpoint,
+    preencode_item_universe,
     prepare_item_feature_store,
     sample_bounded_example_indices,
     save_checkpoint,
@@ -46,6 +55,9 @@ from kuairec_fully_observed.training import (
     _weights_from_arrays,
     build_two_tower_training_dataset,
 )
+
+ITEM_ENCODING_BATCH_SIZE = 1024
+USER_ENCODING_BATCH_SIZE = 128
 
 
 def _stable_key(seed: int, *values: int) -> bytes:
@@ -88,8 +100,9 @@ def validate_smoke_config(config: dict[str, Any]) -> None:
         raise RuntimeError("Phase B2A claim boundary changed")
 
 
-def _verify_artifacts(artifact_dir: Path) -> dict[str, Any]:
-    manifest = json.loads((artifact_dir / "manifest.json").read_text())
+def _verify_artifacts(
+    artifact_dir: Path, manifest: dict[str, Any]
+) -> None:
     if manifest.get("artifact_scope") != "train_and_validation_only":
         raise RuntimeError("Smoke artifacts are not train/validation-only")
     stats = manifest.get("statistics", {})
@@ -100,9 +113,6 @@ def _verify_artifacts(artifact_dir: Path) -> dict[str, Any]:
     for name in ("events_train_validation.npz", "catalog.npz"):
         if sha256_file(artifact_dir / name) != manifest["files"][name]:
             raise RuntimeError(f"Processed artifact SHA mismatch: {name}")
-    return manifest
-
-
 def _select_proxy_training_users(
     *,
     event_users: np.ndarray,
@@ -343,65 +353,13 @@ def _sampled_queries(
     }, tuple(seen_sets)
 
 
-def _encode_query_users(
-    *,
-    model: TwoTowerV1,
-    queries: RetrievalQueries,
-    store,
-    touched_item_ids: set[int],
-    touched_user_ids: set[int],
-    user_positions: dict[int, int],
-    device: torch.device,
-) -> np.ndarray:
-    torch_store = store.torch_features(device)
-    width = max(1, max(len(value) for value in queries.histories))
-    output_histories = torch.zeros(
-        (len(queries.user_ids), width, 128), dtype=torch.float32, device=device
-    )
-    weight = torch.zeros((len(queries.user_ids), width), device=device)
-    mask = torch.zeros(
-        (len(queries.user_ids), width), dtype=torch.bool, device=device
-    )
-    for row, (history, values) in enumerate(
-        zip(queries.histories, queries.history_weights, strict=True)
-    ):
-        if not len(history):
-            continue
-        vectors = encode_item_ids(
-            model,
-            store,
-            torch_store,
-            history,
-            touched_item_ids=touched_item_ids,
-            device=device,
-        )
-        output_histories[row, : len(history)] = vectors
-        weight[row, : len(history)] = torch.as_tensor(values, device=device)
-        mask[row, : len(history)] = True
-    indices = torch.as_tensor(
-        [user_positions.get(int(user), 0) for user in queries.user_ids],
-        dtype=torch.long,
-        device=device,
-    )
-    use_id = torch.as_tensor(
-        [int(user) in touched_user_ids for user in queries.user_ids],
-        dtype=torch.bool,
-        device=device,
-    )
-    with torch.no_grad():
-        vectors = model.encode_users(
-            user_indices=indices,
-            history_vectors=output_histories,
-            history_weights=weight,
-            padding_mask=mask,
-            use_id_embedding=use_id,
-        )
-    return vectors.cpu().numpy()
-
-
 def _write_markdown(report: dict[str, Any], path: Path) -> None:
     diagnostic = report["diagnostic"]
     retrieval = report["sampled_retrieval"]
+    artifacts = report["artifacts"]
+    memberships = report["memberships"]
+    encoding = report["evaluation_encoding"]
+    raw_sources = report["input_provenance"]["raw_sources"]
     text = f"""# Phase B2A PyTorch Two-Tower bounded smoke
 
 This is an engineering smoke, not a formal effectiveness experiment. Small
@@ -438,6 +396,28 @@ not run.
   Coverage@100: `{retrieval['metrics']['Coverage@100']:.6f}`
 - Smoke wall time: `{report['total_wall_time_s']:.4f} s`; peak RSS
   `{report['peak_rss_mb']:.2f} MB`; GPU memory `{report['peak_gpu_memory_mb']:.2f} MB`
+- Code commit at run: `{artifacts['code_commit_at_run']}`
+- Input tree clean at start:
+  `{str(artifacts['input_tree_clean_at_start']).lower()}`
+- Checkpoint identity schema: `{artifacts['checkpoint_identity_schema_version']}`;
+  SHA256 `{artifacts['checkpoint_identity_sha256']}`
+- NORMAL membership: `{memberships['normal']['count']}` items;
+  SHA256 `{memberships['normal']['sha256']}`
+- Fixed retrieval catalog: `{memberships['fixed_retrieval_catalog']['count']}`
+  items; SHA256 `{memberships['fixed_retrieval_catalog']['sha256']}`
+- Model item universe: `{memberships['model_item_universe']['count']}` items;
+  SHA256 `{memberships['model_item_universe']['sha256']}`
+- Evaluation encoding: item batch `{encoding['item_batch_size']}`, user batch
+  `{encoding['user_batch_size']}`, one inference-mode item-universe pass plus
+  precomputed history gathers
+
+Raw input identity:
+
+| Logical source | Actual SHA256 | Expected SHA256 | Match |
+|---|---|---|---|
+| `KUAIREC_DATA_DIR/big_matrix.csv` | `{raw_sources['big_matrix.csv']['actual_sha256']}` | `{raw_sources['big_matrix.csv']['expected_sha256']}` | true |
+| `KUAIREC_DATA_DIR/item_daily_features.csv` | `{raw_sources['item_daily_features.csv']['actual_sha256']}` | `{raw_sources['item_daily_features.csv']['expected_sha256']}` | true |
+| `KUAIREC_DATA_DIR/kuairec_caption_category.csv` | `{raw_sources['kuairec_caption_category.csv']['actual_sha256']}` | `{raw_sources['kuairec_caption_category.csv']['expected_sha256']}` | true |
 
 Required interpretation flags:
 
@@ -470,13 +450,34 @@ def run(
 ) -> dict[str, Any]:
     started_total = time.perf_counter()
     timings: dict[str, float] = {}
-    config = yaml.safe_load(
-        (repo_root / "configs/phase_b2a_two_tower_smoke.yaml").read_text()
-    )
+    config_path = repo_root / "configs/phase_b2a_two_tower_smoke.yaml"
+    config = yaml.safe_load(config_path.read_text())
     validate_smoke_config(config)
-    manifest = _verify_artifacts(artifact_dir)
+    code_commit_at_run = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True
+    ).strip()
+    input_tree_status = subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=repo_root, text=True
+    ).strip()
+    if input_tree_status:
+        raise RuntimeError(
+            "Phase B2A.1 smoke requires a clean input tree before execution"
+        )
+    manifest, raw_input_traceability = verify_phase_b2a_inputs(
+        data_dir=data_dir,
+        artifact_dir=artifact_dir,
+        required_raw_files=(
+            "big_matrix.csv",
+            "item_daily_features.csv",
+            "kuairec_caption_category.csv",
+        ),
+    )
+    _verify_artifacts(artifact_dir, manifest)
     started = time.perf_counter()
     static = load_static_item_features(data_dir)
+    normal_membership = normal_membership_record(
+        np.unique(static.normal_item_ids)
+    )
     with np.load(artifact_dir / "events_train_validation.npz") as event_file, np.load(
         artifact_dir / "catalog.npz"
     ) as catalog_file:
@@ -493,18 +494,21 @@ def run(
     fixed_catalog = np.unique(
         video_ids[event_item_positions[normal_position[event_item_positions]]]
     )
+    fixed_catalog_membership = membership_record(
+        fixed_catalog, label="phase-b2a-fixed-retrieval-catalog-v1"
+    )
     train_history_items = np.unique(
         video_ids[event_item_positions[train_event]]
     )
     item_universe = np.union1d(train_history_items, fixed_catalog).astype(np.int64)
+    model_item_universe_membership = membership_record(
+        item_universe, label="phase-b2a-model-item-universe-v1"
+    )
     timings["load_verified_inputs_s"] = _elapsed(started)
 
-    caption_source_sha = sha256_file(data_dir / "kuairec_caption_category.csv")
-    expected_caption_sha = manifest["fingerprint"]["source_file_sha256"][
+    caption_trace = raw_input_traceability[
         "kuairec_caption_category.csv"
     ]
-    if caption_source_sha != expected_caption_sha:
-        raise RuntimeError("Live caption source no longer matches its manifest")
     static_for_universe = static.frame.set_index("video_id").reindex(item_universe)
     cleaned_texts = static_for_universe["caption_text"].astype(str).tolist()
     caption = load_caption_cache(
@@ -513,7 +517,7 @@ def run(
         expected_item_ids=item_universe,
         expected_model_id=config["caption"]["model_id"],
         expected_revision=config["caption"]["resolved_revision"],
-        expected_source_sha256=expected_caption_sha,
+        expected_source_sha256=caption_trace["expected_sha256"],
         expected_cleaned_text_sha256=cleaned_text_sha256(
             item_universe, cleaned_texts
         ),
@@ -587,6 +591,7 @@ def run(
     }
     torch.manual_seed(int(config["training"]["seed"]))
     model = TwoTowerV1(**dimensions).to(device)
+    assert_model_device(model, device)
     started = time.perf_counter()
     training_result = train_bounded_two_tower(
         model=model,
@@ -606,14 +611,91 @@ def run(
     timings["bounded_training_s"] = _elapsed(started)
     if timings["bounded_training_s"] > 30 * 60:
         raise RuntimeError("Bounded smoke training exceeded 30 minutes")
+    ordered_user_ids = training_result["ordered_user_ids"]
+    checkpoint_identity = {
+        "schema_version": 2,
+        "config": {
+            "locator": "configs/phase_b2a_two_tower_smoke.yaml",
+            "sha256": sha256_file(config_path),
+        },
+        "processed_manifest_sha256": PHASE1_PROCESSED_MANIFEST_SHA256,
+        "raw_inputs": raw_input_traceability,
+        "code_commit": code_commit_at_run,
+        "ordered_item_store": membership_record(
+            store.item_ids, label="phase-b2a-ordered-item-store-v1"
+        ),
+        "ordered_user_position_mapping": membership_record(
+            ordered_user_ids,
+            label="phase-b2a-ordered-user-position-mapping-v1",
+        ),
+        "memberships": {
+            "normal": normal_membership,
+            "fixed_retrieval_catalog": fixed_catalog_membership,
+            "model_item_universe": model_item_universe_membership,
+        },
+        "feature_identity": {
+            "category_vocab_sha256": canonical_json_sha256(
+                [
+                    [level, raw, index]
+                    for (level, raw), index in sorted(
+                        store.category_vocab.items()
+                    )
+                ],
+                label="phase-b2a-category-vocab-v1",
+            ),
+            "upload_type_vocab_sha256": canonical_json_sha256(
+                sorted(store.upload_type_vocab.items()),
+                label="phase-b2a-upload-type-vocab-v1",
+            ),
+            "numeric_preprocessing_sha256": canonical_json_sha256(
+                store.preprocessing,
+                label="phase-b2a-numeric-preprocessing-v1",
+            ),
+        },
+        "caption_identity": {
+            "model_id": caption.metadata["model_id"],
+            "resolved_revision": caption.metadata["resolved_revision"],
+            "item_membership_sha256": caption.metadata[
+                "ordered_item_membership_sha256"
+            ],
+            "embedding_payload_sha256": caption.metadata[
+                "embedding_payload_sha256"
+            ],
+        },
+        "actual_touched_membership": {
+            "users": {
+                "count": training_result["touched_user_count"],
+                "sha256": training_result[
+                    "touched_user_membership_sha256"
+                ],
+            },
+            "items": {
+                "count": training_result["touched_item_count"],
+                "sha256": training_result[
+                    "touched_item_membership_sha256"
+                ],
+            },
+        },
+    }
     save_checkpoint(
         checkpoint_path,
         model=model,
         model_dimensions=dimensions,
+        ordered_user_ids=ordered_user_ids,
         touched_user_ids=training_result["touched_user_ids"],
         touched_item_ids=training_result["touched_item_ids"],
+        identity=checkpoint_identity,
     )
-    restored, _ = load_checkpoint(checkpoint_path, map_location=device)
+    restored, restored_payload = load_checkpoint(
+        checkpoint_path,
+        device=device,
+        expected_identity=checkpoint_identity,
+    )
+    assert_model_device(restored, device)
+    if any(
+        value.device != device for value in restored.state_dict().values()
+    ):
+        raise RuntimeError("Restored checkpoint tensors are on the wrong device")
     restored.eval()
 
     retrieval_config = config["retrieval_smoke"]
@@ -629,28 +711,42 @@ def run(
     touched_users = set(int(value) for value in training_result["touched_user_ids"])
     user_positions = {
         int(user): index + 1
-        for index, user in enumerate(training_result["touched_user_ids"])
+        for index, user in enumerate(ordered_user_ids)
     }
     started = time.perf_counter()
-    with torch.no_grad():
-        torch_store = store.torch_features(device)
-        item_vectors = encode_item_ids(
-            restored,
-            store,
-            torch_store,
-            queries.catalog,
-            touched_item_ids=touched_items,
-            device=device,
-        ).cpu().numpy()
-    user_vectors = _encode_query_users(
+    precomputed_items = preencode_item_universe(
         model=restored,
-        queries=queries,
         store=store,
         touched_item_ids=touched_items,
-        touched_user_ids=touched_users,
-        user_positions=user_positions,
         device=device,
+        batch_size=ITEM_ENCODING_BATCH_SIZE,
     )
+    timings["preencode_model_item_universe_s"] = _elapsed(started)
+    catalog_positions = np.asarray(
+        [store.positions[int(item)] for item in queries.catalog],
+        dtype=np.int64,
+    )
+    with torch.inference_mode():
+        item_vectors = precomputed_items[
+            torch.as_tensor(
+                catalog_positions, dtype=torch.long, device=device
+            )
+        ].cpu().numpy()
+    started = time.perf_counter()
+    user_vectors = encode_query_users_from_precomputed(
+        model=restored,
+        store=store,
+        precomputed_item_vectors=precomputed_items,
+        user_ids=queries.user_ids,
+        histories=queries.histories,
+        history_weights=queries.history_weights,
+        user_positions=user_positions,
+        touched_user_ids=touched_users,
+        device=device,
+        batch_size=USER_ENCODING_BATCH_SIZE,
+    ).cpu().numpy()
+    timings["batch_encode_query_users_s"] = _elapsed(started)
+    started = time.perf_counter()
     popularity = PopularityBaseline.fit(selected_train_events)
     fallback = popularity.rank(queries, k=int(retrieval_config["k"]))
     topk = ExactDotProductRetriever().search(
@@ -683,11 +779,15 @@ def run(
         topk, queries, data_cold_item_ids=cold_items
     )
     timings["sampled_exact_retrieval_s"] = _elapsed(started)
-    if (
-        timings["bounded_training_s"]
-        + timings["sampled_exact_retrieval_s"]
-        > 30 * 60
-    ):
+    if sum(
+        timings[name]
+        for name in (
+            "bounded_training_s",
+            "preencode_model_item_universe_s",
+            "batch_encode_query_users_s",
+            "sampled_exact_retrieval_s",
+        )
+    ) > 30 * 60:
         raise RuntimeError("Smoke training plus retrieval exceeded 30 minutes")
     if not np.isfinite(item_vectors).all() or not np.isfinite(user_vectors).all():
         raise FloatingPointError("Retrieval vectors contain NaN or Inf")
@@ -701,7 +801,13 @@ def run(
     public_training = {
         key: value
         for key, value in training_result.items()
-        if key not in {"touched_user_ids", "touched_item_ids", "user_positions"}
+        if key
+        not in {
+            "touched_user_ids",
+            "touched_item_ids",
+            "ordered_user_ids",
+            "user_positions",
+        }
     }
     report: dict[str, Any] = {
         "phase": "phase-b2a-pytorch-two-tower-smoke",
@@ -720,6 +826,20 @@ def run(
         },
         "caption_cache": caption.metadata,
         "feature_preprocessing": store.preprocessing,
+        "input_provenance": {
+            "processed_manifest": {
+                "locator": "PROCESSED_ARTIFACT_DIR/manifest.json",
+                "actual_sha256": PHASE1_PROCESSED_MANIFEST_SHA256,
+                "expected_sha256": PHASE1_PROCESSED_MANIFEST_SHA256,
+                "sha256_match": True,
+            },
+            "raw_sources": raw_input_traceability,
+        },
+        "memberships": {
+            "normal": normal_membership,
+            "fixed_retrieval_catalog": fixed_catalog_membership,
+            "model_item_universe": model_item_universe_membership,
+        },
         "training_sample": sample_stats,
         "diagnostic": public_training,
         "sampled_retrieval": {
@@ -734,17 +854,21 @@ def run(
             "caption_metadata_locator": "reports/phase_b2a/caption_cache_metadata.json",
             "checkpoint_locator": "artifacts/phase_b2a/two_tower_smoke.pt",
             "checkpoint_sha256": sha256_file(checkpoint_path),
-            "processed_manifest_sha256": sha256_file(
-                artifact_dir / "manifest.json"
-            ),
-            "base_code_commit_at_run": subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True
-            ).strip(),
-            "implementation_worktree_dirty_at_run": bool(
-                subprocess.check_output(
-                    ["git", "status", "--porcelain"], cwd=repo_root, text=True
-                ).strip()
-            ),
+            "checkpoint_identity_schema_version": 2,
+            "checkpoint_identity_sha256": restored_payload[
+                "identity_sha256"
+            ],
+            "processed_manifest_sha256": PHASE1_PROCESSED_MANIFEST_SHA256,
+            "code_commit_at_run": code_commit_at_run,
+            "input_tree_clean_at_start": True,
+        },
+        "evaluation_encoding": {
+            "inference_mode": True,
+            "item_universe_preencoded_once": True,
+            "history_uses_precomputed_gather": True,
+            "item_batch_size": ITEM_ENCODING_BATCH_SIZE,
+            "user_batch_size": USER_ENCODING_BATCH_SIZE,
+            "model_item_count": len(store.item_ids),
         },
         "timings_s": timings,
         "total_wall_time_s": _elapsed(started_total),

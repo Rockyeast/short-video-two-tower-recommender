@@ -16,6 +16,11 @@ torch = pytest.importorskip("torch")
 
 from kuairec_fully_observed import ExactDotProductRetriever, RetrievalQueries  # noqa: E402
 from kuairec_fully_observed.caption_embeddings import CaptionCache  # noqa: E402
+from kuairec_fully_observed import provenance  # noqa: E402
+from kuairec_fully_observed.provenance import (  # noqa: E402
+    sha256_file,
+    verify_phase_b2a_inputs,
+)
 from kuairec_fully_observed.torch_training import (  # noqa: E402
     prepare_item_feature_store,
     sample_bounded_example_indices,
@@ -102,6 +107,13 @@ def test_feature_vocab_and_statistics_fit_train_only_with_zero_unk():
     assert store.upload_type_indices[2] == 0
     assert np.isfinite(store.numeric_features).all()
     assert store.preprocessing["missing_value_counts"]["upload_dt"] == 1
+    assert (
+        store.preprocessing["numeric_scaler_fit_scope"]
+        == "train-observed NORMAL items"
+    )
+    assert store.preprocessing["category_upload_vocab_fit_scope"] == (
+        "all train-observed history/model-context items"
+    )
 
 
 def test_bounded_sampling_is_reproducible_and_not_a_prefix():
@@ -181,3 +193,50 @@ def test_committed_smoke_reports_have_only_stable_logical_paths():
         assert "\\\\Users\\" not in text
         if report_path.endswith(".json"):
             json.loads(text)
+
+
+def test_raw_sources_are_fail_closed_against_the_frozen_manifest(
+    tmp_path, monkeypatch
+):
+    data_dir = tmp_path / "data"
+    artifact_dir = tmp_path / "artifacts"
+    data_dir.mkdir()
+    artifact_dir.mkdir()
+    names = (
+        "big_matrix.csv",
+        "item_daily_features.csv",
+        "kuairec_caption_category.csv",
+    )
+    expected = {}
+    for index, name in enumerate(names):
+        path = data_dir / name
+        path.write_text(f"source-{index}\n")
+        expected[name] = sha256_file(path)
+    manifest_path = artifact_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {"fingerprint": {"source_file_sha256": expected}},
+            sort_keys=True,
+        )
+    )
+    monkeypatch.setattr(
+        provenance,
+        "PHASE1_PROCESSED_MANIFEST_SHA256",
+        sha256_file(manifest_path),
+    )
+    _, records = verify_phase_b2a_inputs(
+        data_dir=data_dir,
+        artifact_dir=artifact_dir,
+        required_raw_files=names,
+    )
+    assert set(records) == set(names)
+    assert all(value["sha256_match"] for value in records.values())
+    assert "/home/" not in json.dumps(records)
+
+    (data_dir / "big_matrix.csv").write_text("tampered\n")
+    with pytest.raises(RuntimeError, match="big_matrix.csv SHA256 mismatch"):
+        verify_phase_b2a_inputs(
+            data_dir=data_dir,
+            artifact_dir=artifact_dir,
+            required_raw_files=names,
+        )

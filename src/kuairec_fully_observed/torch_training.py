@@ -13,6 +13,7 @@ import pandas as pd
 import torch
 
 from .caption_embeddings import CaptionCache
+from .provenance import canonical_json_sha256, membership_record
 from .torch_models import (
     TorchItemFeatures,
     TwoTowerV1,
@@ -171,7 +172,10 @@ def prepare_item_feature_store(
                 "log1p(video_height)",
                 "upload_dt_ordinal",
             ],
-            "fit_scope": "train-observed NORMAL items only",
+            "numeric_scaler_fit_scope": "train-observed NORMAL items",
+            "category_upload_vocab_fit_scope": (
+                "all train-observed history/model-context items"
+            ),
             "medians": medians.tolist(),
             "means": means.tolist(),
             "stds": stds.tolist(),
@@ -253,6 +257,23 @@ class TrainingBatch:
     allowed_logits: torch.Tensor
 
 
+def record_successful_step_membership(
+    batch: TrainingBatch,
+    *,
+    touched_users: set[int],
+    touched_items: set[int],
+) -> None:
+    """Record IDs only after a forward/backward/optimizer step succeeds."""
+
+    touched_users.update(int(user) for user in batch.user_ids)
+    touched_items.update(int(item) for item in batch.target_item_ids)
+    touched_items.update(
+        int(item)
+        for item in batch.history_item_ids.reshape(-1)
+        if int(item) >= 0
+    )
+
+
 def collate_training_batch(
     dataset: TwoTowerTrainingDataset,
     example_indices: np.ndarray,
@@ -313,6 +334,155 @@ def encode_item_ids(
         torch_store.select(position_tensor), use_id_embedding=use_id
     )
     return encoded.reshape(*values.shape, 128)
+
+
+def assert_model_device(
+    model: TwoTowerV1, expected_device: str | torch.device
+) -> torch.device:
+    expected = torch.device(expected_device)
+    devices = {parameter.device for parameter in model.parameters()}
+    if devices != {expected}:
+        raise RuntimeError(
+            f"Model parameter devices {sorted(map(str, devices))} "
+            f"do not match requested device {expected}"
+        )
+    return expected
+
+
+def preencode_item_universe(
+    *,
+    model: TwoTowerV1,
+    store: PreparedItemFeatureStore,
+    touched_item_ids: set[int],
+    device: str | torch.device,
+    batch_size: int,
+) -> torch.Tensor:
+    """Encode the complete item universe once without constructing a graph."""
+
+    if batch_size <= 0:
+        raise ValueError("Item encoding batch_size must be positive")
+    target_device = assert_model_device(model, device)
+    torch_store = store.torch_features(target_device)
+    output = torch.empty(
+        (len(store.item_ids), 128), dtype=torch.float32, device=target_device
+    )
+    with torch.inference_mode():
+        for begin in range(0, len(store.item_ids), batch_size):
+            end = min(begin + batch_size, len(store.item_ids))
+            positions = torch.arange(
+                begin, end, dtype=torch.long, device=target_device
+            )
+            use_id = torch.as_tensor(
+                [
+                    int(item) in touched_item_ids
+                    for item in store.item_ids[begin:end]
+                ],
+                dtype=torch.bool,
+                device=target_device,
+            )
+            output[begin:end] = model.encode_items(
+                torch_store.select(positions), use_id_embedding=use_id
+            )
+    if output.requires_grad or output.grad_fn is not None:
+        raise RuntimeError("Precomputed item vectors retained an autograd graph")
+    return output
+
+
+def encode_query_users_from_precomputed(
+    *,
+    model: TwoTowerV1,
+    store: PreparedItemFeatureStore,
+    precomputed_item_vectors: torch.Tensor,
+    user_ids: np.ndarray,
+    histories: tuple[np.ndarray, ...],
+    history_weights: tuple[np.ndarray, ...],
+    user_positions: dict[int, int],
+    touched_user_ids: set[int],
+    device: str | torch.device,
+    batch_size: int,
+) -> torch.Tensor:
+    """Gather cached history vectors and batch the user tower under inference."""
+
+    if batch_size <= 0:
+        raise ValueError("User encoding batch_size must be positive")
+    target_device = assert_model_device(model, device)
+    if precomputed_item_vectors.device != target_device:
+        raise RuntimeError("Precomputed item vectors are on the wrong device")
+    if (
+        precomputed_item_vectors.shape != (len(store.item_ids), 128)
+        or precomputed_item_vectors.requires_grad
+        or precomputed_item_vectors.grad_fn is not None
+    ):
+        raise RuntimeError("Precomputed item-vector contract is invalid")
+    if not (
+        len(user_ids) == len(histories) == len(history_weights)
+    ):
+        raise ValueError("Query user/history arrays differ in length")
+    positions = store.positions
+    output = torch.empty(
+        (len(user_ids), 128), dtype=torch.float32, device=target_device
+    )
+    with torch.inference_mode():
+        for begin in range(0, len(user_ids), batch_size):
+            end = min(begin + batch_size, len(user_ids))
+            batch_histories = histories[begin:end]
+            width = max(1, max(len(value) for value in batch_histories))
+            history = torch.zeros(
+                (end - begin, width, 128),
+                dtype=torch.float32,
+                device=target_device,
+            )
+            weights = torch.zeros(
+                (end - begin, width),
+                dtype=torch.float32,
+                device=target_device,
+            )
+            padding = torch.zeros(
+                (end - begin, width), dtype=torch.bool, device=target_device
+            )
+            for row, (item_ids, values) in enumerate(
+                zip(
+                    batch_histories,
+                    history_weights[begin:end],
+                    strict=True,
+                )
+            ):
+                if not len(item_ids):
+                    continue
+                item_positions = _positions(
+                    np.asarray(item_ids, dtype=np.int64), positions
+                )
+                position_tensor = torch.as_tensor(
+                    item_positions, dtype=torch.long, device=target_device
+                )
+                history[row, : len(item_ids)] = precomputed_item_vectors[
+                    position_tensor
+                ]
+                weights[row, : len(item_ids)] = torch.as_tensor(
+                    values, dtype=torch.float32, device=target_device
+                )
+                padding[row, : len(item_ids)] = True
+            batch_users = np.asarray(user_ids[begin:end], dtype=np.int64)
+            user_index = torch.as_tensor(
+                [user_positions.get(int(user), 0) for user in batch_users],
+                dtype=torch.long,
+                device=target_device,
+            )
+            use_id = torch.as_tensor(
+                [int(user) in touched_user_ids for user in batch_users],
+                dtype=torch.bool,
+                device=target_device,
+            )
+            output[begin:end] = model.encode_users(
+                user_indices=user_index,
+                history_vectors=history,
+                history_weights=weights,
+                padding_mask=padding,
+                use_id_embedding=use_id,
+            )
+    if output.requires_grad or output.grad_fn is not None:
+        raise RuntimeError("Query vectors retained an autograd graph")
+    return output
 
 
 def encode_training_batch(
@@ -418,19 +588,19 @@ def train_bounded_two_tower(
     torch.manual_seed(seed)
     np.random.seed(seed)
     examples = [dataset[int(index)] for index in sampled_indices]
-    touched_users = {int(row.user_id) for row in examples}
-    touched_items = {int(row.target_item_id) for row in examples}
+    planned_users = {int(row.user_id) for row in examples}
+    planned_items = {int(row.target_item_id) for row in examples}
     for row in examples:
-        touched_items.update(int(item) for item in row.history)
-    user_ids = np.asarray(sorted(touched_users), dtype=np.int64)
+        planned_items.update(int(item) for item in row.history)
+    user_ids = np.asarray(sorted(planned_users), dtype=np.int64)
     user_positions = {int(user): index + 1 for index, user in enumerate(user_ids)}
     torch_store = store.torch_features(device)
     encoding = {
         "store": store,
         "torch_store": torch_store,
         "user_positions": user_positions,
-        "touched_item_ids": touched_items,
-        "touched_user_ids": touched_users,
+        "touched_item_ids": planned_items,
+        "touched_user_ids": planned_users,
         "device": device,
     }
     diagnostic_order = sorted(
@@ -452,6 +622,8 @@ def train_bounded_two_tower(
     epoch_losses: list[float] = []
     optimizer_steps = 0
     skipped_batches = 0
+    actual_touched_users: set[int] = set()
+    actual_touched_items: set[int] = set()
     gradient_sums = {
         name: 0.0
         for name in (
@@ -528,6 +700,11 @@ def train_bounded_two_tower(
             torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
             optimizer.step()
             model._zero_padding_rows()
+            record_successful_step_membership(
+                batch,
+                touched_users=actual_touched_users,
+                touched_items=actual_touched_items,
+            )
             optimizer_steps += 1
             epoch_loss += float(loss.detach().cpu()) * len(indices)
             epoch_examples += len(indices)
@@ -550,7 +727,12 @@ def train_bounded_two_tower(
         if value <= 0 or not math.isfinite(value):
             raise RuntimeError(f"Covered module has no finite nonzero gradient: {name}")
     valid = np.concatenate(valid_negative_counts)
-    touched_items_array = np.asarray(sorted(touched_items), dtype=np.int64)
+    touched_user_ids = np.asarray(
+        sorted(actual_touched_users), dtype=np.int64
+    )
+    touched_items_array = np.asarray(
+        sorted(actual_touched_items), dtype=np.int64
+    )
     after_checksum = _parameter_checksum(model)
     if before_checksum == after_checksum:
         raise RuntimeError("Two-Tower parameters did not change")
@@ -564,16 +746,17 @@ def train_bounded_two_tower(
         "gradient_norms_mean": gradient_norms,
         "parameter_checksum_before": before_checksum,
         "parameter_checksum_after": after_checksum,
-        "touched_user_count": len(touched_users),
+        "touched_user_count": len(actual_touched_users),
         "touched_user_membership_sha256": stable_int_membership_sha256(
-            "phase-b2a-touched-users-v1", user_ids
+            "phase-b2a-touched-users-v1", touched_user_ids
         ),
-        "touched_item_count": len(touched_items),
+        "touched_item_count": len(actual_touched_items),
         "touched_item_membership_sha256": stable_int_membership_sha256(
             "phase-b2a-touched-items-v1", touched_items_array
         ),
-        "touched_user_ids": user_ids,
+        "touched_user_ids": touched_user_ids,
         "touched_item_ids": touched_items_array,
+        "ordered_user_ids": user_ids,
         "user_positions": user_positions,
         "false_negative_mask": {
             "off_diagonal_masked_fraction_mean": float(np.mean(masked_fractions)),
@@ -589,14 +772,26 @@ def save_checkpoint(
     *,
     model: TwoTowerV1,
     model_dimensions: dict[str, int],
+    ordered_user_ids: np.ndarray,
     touched_user_ids: np.ndarray,
     touched_item_ids: np.ndarray,
+    identity: dict[str, Any],
 ) -> None:
+    if identity.get("schema_version") != 2:
+        raise ValueError("Phase B2A.1 checkpoint identity schema must be 2")
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
+            "schema_version": 2,
             "model_dimensions": model_dimensions,
             "state_dict": model.state_dict(),
+            "identity": identity,
+            "identity_sha256": canonical_json_sha256(
+                identity, label="phase-b2a-checkpoint-identity-v2"
+            ),
+            "ordered_user_ids": np.asarray(
+                ordered_user_ids, dtype=np.int64
+            ),
             "touched_user_ids": np.asarray(touched_user_ids, dtype=np.int64),
             "touched_item_ids": np.asarray(touched_item_ids, dtype=np.int64),
         },
@@ -604,9 +799,60 @@ def save_checkpoint(
     )
 
 
-def load_checkpoint(path: Path, *, map_location: str | torch.device = "cpu") -> tuple[TwoTowerV1, dict[str, Any]]:
-    payload = torch.load(path, map_location=map_location, weights_only=False)
-    model = TwoTowerV1(**payload["model_dimensions"])
+def load_checkpoint(
+    path: Path,
+    *,
+    device: str | torch.device,
+    expected_identity: dict[str, Any],
+) -> tuple[TwoTowerV1, dict[str, Any]]:
+    target_device = torch.device(device)
+    payload = torch.load(
+        path, map_location=target_device, weights_only=False
+    )
+    if payload.get("schema_version") != 2:
+        raise RuntimeError("Unsupported Two-Tower checkpoint schema")
+    actual_identity = payload.get("identity")
+    if actual_identity != expected_identity:
+        raise RuntimeError("Two-Tower checkpoint identity mismatch")
+    expected_identity_sha = canonical_json_sha256(
+        expected_identity, label="phase-b2a-checkpoint-identity-v2"
+    )
+    if payload.get("identity_sha256") != expected_identity_sha:
+        raise RuntimeError("Two-Tower checkpoint identity SHA mismatch")
+    ordered_users = np.asarray(payload.get("ordered_user_ids"), dtype=np.int64)
+    touched_users = np.asarray(payload.get("touched_user_ids"), dtype=np.int64)
+    touched_items = np.asarray(payload.get("touched_item_ids"), dtype=np.int64)
+    if not np.array_equal(ordered_users, np.unique(ordered_users)):
+        raise RuntimeError("Checkpoint ordered user mapping is invalid")
+    if not set(touched_users).issubset(set(ordered_users)):
+        raise RuntimeError("Checkpoint touched users escape the user mapping")
+    ordered_identity = expected_identity["ordered_user_position_mapping"]
+    if membership_record(
+        ordered_users,
+        label="phase-b2a-ordered-user-position-mapping-v1",
+    ) != ordered_identity:
+        raise RuntimeError("Checkpoint ordered user mapping identity mismatch")
+    touched_identity = expected_identity["actual_touched_membership"]
+    if (
+        int(len(touched_users)) != touched_identity["users"]["count"]
+        or stable_int_membership_sha256(
+            "phase-b2a-touched-users-v1", touched_users
+        )
+        != touched_identity["users"]["sha256"]
+        or int(len(touched_items)) != touched_identity["items"]["count"]
+        or stable_int_membership_sha256(
+            "phase-b2a-touched-items-v1", touched_items
+        )
+        != touched_identity["items"]["sha256"]
+    ):
+        raise RuntimeError("Checkpoint touched membership identity mismatch")
+    if payload["model_dimensions"]["num_users"] != len(ordered_users):
+        raise RuntimeError("Checkpoint user mapping and model dimensions differ")
+    model = TwoTowerV1(**payload["model_dimensions"]).to(target_device)
     model.load_state_dict(payload["state_dict"], strict=True)
     model._zero_padding_rows()
+    assert_model_device(model, target_device)
+    for value in model.state_dict().values():
+        if value.device != target_device:
+            raise RuntimeError("Checkpoint state tensor is on the wrong device")
     return model, payload
