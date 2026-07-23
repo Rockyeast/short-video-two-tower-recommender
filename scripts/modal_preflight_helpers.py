@@ -88,6 +88,15 @@ def input_bundle_manifest(files: tuple[InputFile, ...]) -> dict[str, Any]:
     }
 
 
+def modal_volume_file_paths(entries: list[Any]) -> set[str]:
+    """Return only file paths from Modal's recursive file-and-directory list."""
+    return {
+        entry.path.lstrip("/")
+        for entry in entries
+        if getattr(entry.type, "name", None) == "FILE"
+    }
+
+
 def verify_remote_inputs(
     root: Path, manifest: dict[str, Any]
 ) -> dict[str, Any]:

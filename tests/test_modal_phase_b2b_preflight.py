@@ -3,7 +3,9 @@ from __future__ import annotations
 import ast
 import copy
 import json
+from enum import Enum
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +13,7 @@ from scripts.modal_preflight_helpers import (
     build_input_allowlist,
     cpu_gpu_differences,
     input_bundle_manifest,
+    modal_volume_file_paths,
     validate_gpu_preflight_report,
     verify_remote_inputs,
 )
@@ -132,6 +135,22 @@ def test_input_allowlist_rejects_missing_file(tmp_path: Path) -> None:
             caption_cache=caption,
             caption_metadata=metadata,
         )
+
+
+def test_modal_volume_membership_ignores_directory_entries() -> None:
+    class EntryType(Enum):
+        FILE = 1
+        DIRECTORY = 2
+
+    entries = [
+        SimpleNamespace(path="bundle/raw", type=EntryType.DIRECTORY),
+        SimpleNamespace(
+            path="bundle/raw/big_matrix.csv", type=EntryType.FILE
+        ),
+    ]
+    assert modal_volume_file_paths(entries) == {
+        "bundle/raw/big_matrix.csv"
+    }
 
 
 def test_remote_input_verification_rejects_membership_and_sha_changes(

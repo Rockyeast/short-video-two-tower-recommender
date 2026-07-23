@@ -24,6 +24,7 @@ from modal_preflight_helpers import (
     build_input_allowlist,
     cpu_gpu_differences,
     input_bundle_manifest,
+    modal_volume_file_paths,
     validate_gpu_preflight_report,
     verify_remote_inputs,
 )
@@ -102,7 +103,7 @@ def _prepare_volume(
             raise
         entries = []
     if entries:
-        actual_paths = {entry.path.lstrip("/") for entry in entries}
+        actual_paths = modal_volume_file_paths(entries)
         expected_paths = {
             f"{version_root}/{record.logical_path}" for record in files
         } | {manifest_path}
