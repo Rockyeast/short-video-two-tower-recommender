@@ -64,6 +64,13 @@ def _stable_user_key(user_id: int) -> tuple[bytes, int]:
     return digest, user_id
 
 
+def _ordered_query_user_sha256(user_ids: np.ndarray) -> str:
+    ordered = np.asarray(user_ids, dtype="<i8")
+    if ordered.ndim != 1 or len(np.unique(ordered)) != len(ordered):
+        raise ValueError("Phase B4A query users must be one-dimensional and unique")
+    return hashlib.sha256(ordered.tobytes(order="C")).hexdigest()
+
+
 def _load_real_vectors(
     *,
     data_dir: Path,
@@ -241,8 +248,9 @@ def _load_real_vectors(
             ordered_items, label="phase-b3b-refit-item-universe-v1"
         ),
         "query_user_membership": membership_record(
-            user_ids, label="phase-b4a-query-users-v1"
+            np.sort(user_ids), label="phase-b4a-query-users-v1"
         ),
+        "query_user_order_sha256": _ordered_query_user_sha256(user_ids),
         "query_selection_seed": BENCHMARK_SEED,
         "small_matrix_accessed": False,
         "temporal_final_accessed": False,

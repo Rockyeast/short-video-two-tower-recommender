@@ -16,11 +16,25 @@ from kuairec_fully_observed.faiss_benchmark import (  # noqa: E402
     stable_topk_from_scores,
     topk_overlap,
 )
+from scripts.run_phase_b4a_faiss_benchmark import (  # noqa: E402
+    _ordered_query_user_sha256,
+)
 
 
 def test_stable_topk_uses_item_position_as_tie_break():
     scores = np.asarray([0.5, 0.8, 0.8, 0.1, 0.8], dtype=np.float32)
     np.testing.assert_array_equal(stable_topk_from_scores(scores, 3), [1, 2, 4])
+
+
+def test_query_user_order_identity_accepts_unsorted_unique_users():
+    first = _ordered_query_user_sha256(np.asarray([9, 2, 7], dtype=np.int64))
+    second = _ordered_query_user_sha256(np.asarray([2, 7, 9], dtype=np.int64))
+    assert first != second
+
+
+def test_query_user_order_identity_rejects_duplicate_users():
+    with pytest.raises(ValueError, match="one-dimensional and unique"):
+        _ordered_query_user_sha256(np.asarray([9, 2, 9], dtype=np.int64))
 
 
 def test_synthetic_extension_is_deterministic_normalized_and_keeps_real_prefix():
