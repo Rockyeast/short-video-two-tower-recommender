@@ -1,0 +1,40 @@
+{
+  "phase": "phase-b3b-sealed-small",
+  "attempt_number": 4,
+  "sealed_attempt_number": 4,
+  "status": "stopped_after_sealed_read_failure",
+  "modal_run_url": "https://modal.com/apps/lzf1416082617/main/ap-dzkLRVZFq4JnZoXGqcxB8C",
+  "runner_commit": "cc93f2487ce8f3e6e44575b89feb755c0bbb266a",
+  "wrapper_pin_commit": "97d8c42be66e95b7d842e723a0d20ce2446bc721",
+  "failure_stage": "two_tower_checkpoint_numeric_preprocessing_identity_validation",
+  "failure_function": "load_final_refit_checkpoint_compatible",
+  "exception_type": "RuntimeError",
+  "exception_message": "Final-refit reconstructed numeric_preprocessing_sha256 mismatch",
+  "small_identity": {
+    "size_bytes": 406155844,
+    "sha256": "6b601cd38b2600d8734b4aede309ad73d1e201fdc4bd76d4bc7d2534793d7d15",
+    "verified_before_read": true
+  },
+  "final_refit_artifacts": {
+    "global_popularity_sha256": "b47f01c8af900d2b00d80163c57485637785cae912a34832b7e50421492ba780",
+    "bpr_epoch_20_sha256": "ac423dacece97cbc6c10c4d773e4b9deec0d9cdf540ec8baf7be492dd812f4c2",
+    "two_tower_epoch_1_sha256": "5715a98d47c80f545afdce845c2a96940bc7ce3fec355e4a1156576d2fcab949",
+    "identities_verified_before_read": true
+  },
+  "small_csv_read_completed": true,
+  "queries_constructed": true,
+  "popularity_ranking_computed": true,
+  "bpr_ranking_computed": true,
+  "two_tower_ranking_computed": false,
+  "hybrid_computed": false,
+  "formal_metrics_computed": false,
+  "formal_metrics_exposed": false,
+  "formal_report_written": false,
+  "automatic_retry_performed": false,
+  "post_failure_small_or_model_inspection_performed": false,
+  "code_modified_after_failure": false,
+  "training_performed": false,
+  "tuning_performed": false,
+  "temporal_final_accessed": false,
+  "next_action": "await_independent_review"
+}

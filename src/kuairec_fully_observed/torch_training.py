@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import math
 from dataclasses import dataclass
@@ -117,6 +118,48 @@ def prepare_item_feature_store(
 ) -> PreparedItemFeatureStore:
     """Fit every vocabulary/statistic only on the frozen train context."""
 
+    return _prepare_item_feature_store(
+        static_frame=static_frame,
+        caption_cache=caption_cache,
+        item_universe=item_universe,
+        train_observed_item_ids=train_observed_item_ids,
+        train_observed_normal_item_ids=train_observed_normal_item_ids,
+        frozen_preprocessing=None,
+    )
+
+
+def prepare_final_refit_inference_feature_store(
+    *,
+    static_frame: pd.DataFrame,
+    caption_cache: CaptionCache,
+    item_universe: np.ndarray,
+    train_observed_item_ids: np.ndarray,
+    train_observed_normal_item_ids: np.ndarray,
+    frozen_preprocessing: dict[str, Any],
+) -> PreparedItemFeatureStore:
+    """Use the identity-verified final-refit numeric scaler without refitting."""
+
+    return _prepare_item_feature_store(
+        static_frame=static_frame,
+        caption_cache=caption_cache,
+        item_universe=item_universe,
+        train_observed_item_ids=train_observed_item_ids,
+        train_observed_normal_item_ids=train_observed_normal_item_ids,
+        frozen_preprocessing=frozen_preprocessing,
+    )
+
+
+def _prepare_item_feature_store(
+    *,
+    static_frame: pd.DataFrame,
+    caption_cache: CaptionCache,
+    item_universe: np.ndarray,
+    train_observed_item_ids: np.ndarray,
+    train_observed_normal_item_ids: np.ndarray,
+    frozen_preprocessing: dict[str, Any] | None,
+) -> PreparedItemFeatureStore:
+    """Build feature tensors, optionally using a validated frozen scaler."""
+
     item_ids = np.unique(np.asarray(item_universe, dtype=np.int64))
     if not np.array_equal(item_ids, caption_cache.item_ids):
         raise RuntimeError("Caption cache and model item universe differ")
@@ -176,20 +219,71 @@ def prepare_item_feature_store(
         )
     }
     fit = numeric[train_normal_mask].copy()
-    medians = np.nanmedian(fit, axis=0)
-    if not np.isfinite(medians).all():
-        raise RuntimeError("Static numeric train medians are non-finite")
+    if frozen_preprocessing is None:
+        medians = np.nanmedian(fit, axis=0)
+        if not np.isfinite(medians).all():
+            raise RuntimeError("Static numeric train medians are non-finite")
+        fit_filled = np.where(np.isnan(fit), medians, fit)
+        means = fit_filled.mean(axis=0)
+        stds = fit_filled.std(axis=0)
+        stds[stds < 1e-12] = 1.0
+    else:
+        medians = np.asarray(
+            frozen_preprocessing.get("medians"), dtype=np.float64
+        )
+        means = np.asarray(
+            frozen_preprocessing.get("means"), dtype=np.float64
+        )
+        stds = np.asarray(
+            frozen_preprocessing.get("stds"), dtype=np.float64
+        )
+        if (
+            medians.shape != (4,)
+            or means.shape != (4,)
+            or stds.shape != (4,)
+            or not np.isfinite(medians).all()
+            or not np.isfinite(means).all()
+            or not np.isfinite(stds).all()
+            or np.any(stds <= 0)
+        ):
+            raise RuntimeError("Frozen numeric preprocessing is invalid")
+        if frozen_preprocessing.get("missing_value_counts") != missing_counts:
+            raise RuntimeError(
+                "Frozen numeric missing-value counts differ"
+            )
     numeric = np.where(np.isnan(numeric), medians, numeric)
-    fit_filled = np.where(np.isnan(fit), medians, fit)
-    means = fit_filled.mean(axis=0)
-    stds = fit_filled.std(axis=0)
-    stds[stds < 1e-12] = 1.0
     normalized = ((numeric - means) / stds).astype(np.float32)
     if not np.isfinite(normalized).all():
         raise RuntimeError("Static numeric preprocessing produced NaN or Inf")
 
     captions = np.asarray(caption_cache.embeddings, dtype=np.float32)
     present = np.linalg.norm(captions, axis=1) > 0
+    preprocessing = {
+        "numeric_fields": [
+            "log1p(video_duration)",
+            "log1p(video_width)",
+            "log1p(video_height)",
+            "upload_dt_ordinal",
+        ],
+        "numeric_scaler_fit_scope": "train-observed NORMAL items",
+        "category_upload_vocab_fit_scope": (
+            "all train-observed history/model-context items"
+        ),
+        "medians": medians.tolist(),
+        "means": means.tolist(),
+        "stds": stds.tolist(),
+        "missing_value_counts": missing_counts,
+        "category_vocab_size": len(category_vocab),
+        "upload_type_vocab_size": len(upload_type_vocab),
+        "unseen_category_uses_zero_unk": True,
+        "unseen_upload_type_uses_zero_unk": True,
+    }
+    if frozen_preprocessing is not None:
+        if preprocessing != frozen_preprocessing:
+            raise RuntimeError(
+                "Frozen numeric preprocessing contract differs"
+            )
+        preprocessing = copy.deepcopy(frozen_preprocessing)
     return PreparedItemFeatureStore(
         item_ids=item_ids,
         category_indices=category_indices,
@@ -199,26 +293,7 @@ def prepare_item_feature_store(
         upload_type_indices=upload_indices,
         category_vocab=category_vocab,
         upload_type_vocab=upload_type_vocab,
-        preprocessing={
-            "numeric_fields": [
-                "log1p(video_duration)",
-                "log1p(video_width)",
-                "log1p(video_height)",
-                "upload_dt_ordinal",
-            ],
-            "numeric_scaler_fit_scope": "train-observed NORMAL items",
-            "category_upload_vocab_fit_scope": (
-                "all train-observed history/model-context items"
-            ),
-            "medians": medians.tolist(),
-            "means": means.tolist(),
-            "stds": stds.tolist(),
-            "missing_value_counts": missing_counts,
-            "category_vocab_size": len(category_vocab),
-            "upload_type_vocab_size": len(upload_type_vocab),
-            "unseen_category_uses_zero_unk": True,
-            "unseen_upload_type_uses_zero_unk": True,
-        },
+        preprocessing=preprocessing,
     )
 
 

@@ -31,14 +31,18 @@ from kuairec_fully_observed.caption_embeddings import (
 from kuairec_fully_observed.full_training import load_canonical_train_events
 from kuairec_fully_observed.provenance import (
     membership_record,
+    sha256_file,
     verify_phase_b2a_inputs,
+)
+from kuairec_fully_observed.numeric_sidecar import (
+    load_final_refit_numeric_sidecar,
 )
 from kuairec_fully_observed.torch_training import (
     encode_query_users_from_precomputed,
     final_refit_feature_identity,
     load_final_refit_checkpoint_compatible,
     preencode_item_universe,
-    prepare_item_feature_store,
+    prepare_final_refit_inference_feature_store,
     resolve_concrete_device,
 )
 
@@ -49,7 +53,7 @@ SMALL_COLUMNS = (
     "watch_ratio",
 )
 
-SEALED_ATTEMPT_NUMBER = 3
+SEALED_ATTEMPT_NUMBER = 5
 PRIOR_SEALED_ATTEMPTS = (
     {
         "attempt_number": 1,
@@ -67,11 +71,59 @@ PRIOR_SEALED_ATTEMPTS = (
             "reports/phase_b3b/sealed_small_attempt2_failure.md"
         ),
     },
+    {
+        "attempt_number": 3,
+        "failure_stage": "formal_report_serialization_audit_counts",
+        "formal_metrics_produced_or_observed": False,
+        "formal_metrics_computed": True,
+        "formal_metrics_exposed": False,
+        "failure_report": (
+            "reports/phase_b3b/sealed_small_attempt3_failure.md"
+        ),
+    },
+    {
+        "attempt_number": 4,
+        "failure_stage": (
+            "two_tower_checkpoint_numeric_preprocessing_identity_validation"
+        ),
+        "formal_metrics_produced_or_observed": False,
+        "formal_metrics_computed": False,
+        "formal_metrics_exposed": False,
+        "failure_report": (
+            "reports/phase_b3b/sealed_small_attempt4_failure.md"
+        ),
+    },
 )
 
 
 def _load_small_once(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, usecols=list(SMALL_COLUMNS))
+
+
+def _small_audit_counts(
+    *,
+    small: pd.DataFrame,
+    small_observed_normal: pd.DataFrame,
+    queries,
+    cold_items: np.ndarray,
+) -> dict[str, int]:
+    return {
+        "observed_pair_count": int(
+            small[["user_id", "video_id"]].drop_duplicates().shape[0]
+        ),
+        "observed_normal_pair_count": int(
+            small_observed_normal[["user_id", "video_id"]]
+            .drop_duplicates()
+            .shape[0]
+        ),
+        "normal_candidate_item_count": int(
+            small_observed_normal["video_id"].nunique()
+        ),
+        "excluded_zero_relevant_user_count": int(
+            queries.diagnostics["zero_relevant_users_excluded"]
+        ),
+        "data_cold_item_count": int(len(cold_items)),
+    }
 
 
 def _load_bpr(path: Path) -> BPRModel:
@@ -99,6 +151,9 @@ def run(
     split_manifest_path: Path,
     report_json: Path,
     execute_sealed_small: bool,
+    numeric_sidecar_path: Path = Path(
+        "manifests/phase_b3b_final_numeric_preprocessing.json"
+    ),
     device: str = "cpu",
 ) -> dict:
     require_sealed_execution(execute_sealed_small)
@@ -128,7 +183,7 @@ def run(
     )
     static = load_static_item_features(data_dir)
     small = _load_small_once(data_dir / "small_matrix.csv")
-    observed_normal = small[
+    small_observed_normal = small[
         small["video_id"].isin(static.normal_item_ids)
     ]
     queries = build_small_observed_queries(
@@ -176,17 +231,64 @@ def run(
         ),
     )
     observed = np.unique(big_context["video_id"].to_numpy(np.int64))
-    observed_normal = np.intersect1d(
+    train_observed_normal = np.intersect1d(
         observed, static.normal_item_ids, assume_unique=True
     )
-    store = prepare_item_feature_store(
+    sidecar_memberships = {
+        "train_observed_items": membership_record(
+            observed,
+            label="phase-b3b-r3-train-observed-items-v1",
+        ),
+        "train_observed_normal_items": membership_record(
+            train_observed_normal,
+            label="phase-b3b-r3-train-observed-normal-items-v1",
+        ),
+        "model_item_universe": membership_record(
+            ordered_items,
+            label="phase-b3b-refit-item-universe-v1",
+        ),
+    }
+    sidecar = load_final_refit_numeric_sidecar(
+        numeric_sidecar_path,
+        checkpoint_sha256=refit_identity["artifacts"][
+            "two_tower_epoch_1"
+        ]["actual_sha256"],
+        checkpoint_expected_numeric_sha256=checkpoint_identity[
+            "feature_identity"
+        ]["numeric_preprocessing_sha256"],
+        processed_manifest_sha256=sha256_file(
+            artifact_dir / "manifest.json"
+        ),
+        raw_input_sha256={
+            name: record["actual_sha256"]
+            for name, record in raw_sources.items()
+        },
+        memberships=sidecar_memberships,
+    )
+    store = prepare_final_refit_inference_feature_store(
         static_frame=static.frame,
         caption_cache=caption,
         item_universe=ordered_items,
         train_observed_item_ids=observed,
-        train_observed_normal_item_ids=observed_normal,
+        train_observed_normal_item_ids=train_observed_normal,
+        frozen_preprocessing=sidecar["preprocessing"],
     )
     reconstructed_feature_identity = final_refit_feature_identity(store)
+    if sidecar["feature_vocab"] != {
+        "category_count": reconstructed_feature_identity[
+            "category_vocab_count"
+        ],
+        "category_sha256": reconstructed_feature_identity[
+            "category_vocab_sha256"
+        ],
+        "upload_type_count": reconstructed_feature_identity[
+            "upload_type_vocab_count"
+        ],
+        "upload_type_sha256": reconstructed_feature_identity[
+            "upload_type_vocab_sha256"
+        ],
+    }:
+        raise RuntimeError("Final-refit sidecar feature vocab differs")
     if membership_record(
         ordered_items,
         label="phase-b2a-ordered-item-store-v1",
@@ -281,29 +383,28 @@ def run(
         "input_identity": {
             "small_matrix": small_source_identity,
             "final_refit": refit_identity,
+            "numeric_preprocessing_sidecar": {
+                "locator": (
+                    "manifests/"
+                    "phase_b3b_final_numeric_preprocessing.json"
+                ),
+                "sha256": sha256_file(numeric_sidecar_path),
+                "numeric_preprocessing_sha256": sidecar[
+                    "numeric_preprocessing_sha256"
+                ],
+            },
         },
         "recipe": result["recipe"],
         "query_count": int(len(queries.user_ids)),
         "warm_user_count": int(queries.warm_user_mask.sum()),
         "cold_user_count": int((~queries.warm_user_mask).sum()),
         "target_count": int(sum(len(row) for row in queries.relevant)),
-        "audit_counts": {
-            "observed_pair_count": int(
-                small[["user_id", "video_id"]].drop_duplicates().shape[0]
-            ),
-            "observed_normal_pair_count": int(
-                observed_normal[["user_id", "video_id"]]
-                .drop_duplicates()
-                .shape[0]
-            ),
-            "normal_candidate_item_count": int(
-                observed_normal["video_id"].nunique()
-            ),
-            "excluded_zero_relevant_user_count": int(
-                queries.diagnostics["zero_relevant_users_excluded"]
-            ),
-            "data_cold_item_count": int(len(cold_items)),
-        },
+        "audit_counts": _small_audit_counts(
+            small=small,
+            small_observed_normal=small_observed_normal,
+            queries=queries,
+            cold_items=cold_items,
+        ),
         "results": {
             name: record["metrics"] for name, record in result["results"].items()
         },
