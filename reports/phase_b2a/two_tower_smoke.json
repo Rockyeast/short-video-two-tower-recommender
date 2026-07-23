@@ -7,11 +7,13 @@
   "artifacts": {
     "caption_cache_locator": "artifacts/phase_b2a/caption_embeddings.npz",
     "caption_metadata_locator": "reports/phase_b2a/caption_cache_metadata.json",
+    "checkpoint_identity_schema_version": 2,
+    "checkpoint_identity_sha256": "8d7d97cffc4429e9ef3e09d79457adaaa683e22fdf16f3b193af41745bef6157",
     "checkpoint_locator": "artifacts/phase_b2a/two_tower_smoke.pt",
-    "checkpoint_sha256": "8ce989c13d642caa2deb2fbe3be464f8af528e4da3ed58f8fc58b71f9ef478d8",
-    "base_code_commit_at_run": "22328c80536a6db3afc5df32ba4719f646e0c104",
+    "checkpoint_sha256": "eabcabb318990ac61bd0d244b2aad3a61fc1758a21f55c83df7ecff5cd7e0e12",
+    "code_commit_at_run": "19fdf4870acf3a95bbc76c3e65d103cddda69c92",
     "config_locator": "configs/phase_b2a_two_tower_smoke.yaml",
-    "implementation_worktree_dirty_at_run": true,
+    "input_tree_clean_at_start": true,
     "processed_manifest_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5"
   },
   "caption_cache": {
@@ -104,9 +106,17 @@
     "sentence_transformers_version": "5.6.0",
     "torch_version": "2.11.0+cu130"
   },
+  "evaluation_encoding": {
+    "history_uses_precomputed_gather": true,
+    "inference_mode": true,
+    "item_batch_size": 1024,
+    "item_universe_preencoded_once": true,
+    "model_item_count": 9388,
+    "user_batch_size": 128
+  },
   "feature_preprocessing": {
+    "category_upload_vocab_fit_scope": "all train-observed history/model-context items",
     "category_vocab_size": 364,
-    "fit_scope": "train-observed NORMAL items only",
     "means": [
       9.156459624926807,
       6.557787263489246,
@@ -131,6 +141,7 @@
       "log1p(video_height)",
       "upload_dt_ordinal"
     ],
+    "numeric_scaler_fit_scope": "train-observed NORMAL items",
     "stds": [
       0.5820429757669189,
       0.15163478363362873,
@@ -141,8 +152,53 @@
     "unseen_upload_type_uses_zero_unk": true,
     "upload_type_vocab_size": 17
   },
+  "input_provenance": {
+    "processed_manifest": {
+      "actual_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+      "expected_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+      "locator": "PROCESSED_ARTIFACT_DIR/manifest.json",
+      "sha256_match": true
+    },
+    "raw_sources": {
+      "big_matrix.csv": {
+        "actual_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "expected_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/big_matrix.csv"
+      },
+      "item_daily_features.csv": {
+        "actual_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "expected_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/item_daily_features.csv"
+      },
+      "kuairec_caption_category.csv": {
+        "actual_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "expected_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/kuairec_caption_category.csv"
+      }
+    }
+  },
+  "memberships": {
+    "fixed_retrieval_catalog": {
+      "count": 9365,
+      "hash_scheme": "sha256(phase-b2a-fixed-retrieval-catalog-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "8b8e88e2455a27dc0fac79e7bdb2733dc43096bb6d637e549d1ce5853e8ce55b"
+    },
+    "model_item_universe": {
+      "count": 9388,
+      "hash_scheme": "sha256(phase-b2a-model-item-universe-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "36b4f349b5f290c5117d8c19c2ce1cbb38f5a9431272060f46a875fb3aec5d9b"
+    },
+    "normal": {
+      "count": 10699,
+      "hash_scheme": "sha256(normal-video-membership-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e"
+    }
+  },
   "peak_gpu_memory_mb": 0.0,
-  "peak_rss_mb": 1714.07,
+  "peak_rss_mb": 1699.57,
   "phase": "phase-b2a-pytorch-two-tower-smoke",
   "sampled_retrieval": {
     "cold_user_denominators": {
@@ -184,12 +240,14 @@
   },
   "status": "completed",
   "timings_s": {
-    "bounded_training_s": 17.0097,
-    "load_verified_inputs_s": 4.9728,
-    "sampled_exact_retrieval_s": 1.3487,
-    "scan_big_and_canonicalize_selected_users_s": 40.1905
+    "batch_encode_query_users_s": 0.0611,
+    "bounded_training_s": 16.0068,
+    "load_verified_inputs_s": 4.185,
+    "preencode_model_item_universe_s": 0.0557,
+    "sampled_exact_retrieval_s": 0.8077,
+    "scan_big_and_canonicalize_selected_users_s": 31.1276
   },
-  "total_wall_time_s": 75.0842,
+  "total_wall_time_s": 73.0141,
   "training_sample": {
     "maximum_example_index": 23178,
     "minimum_example_index": 3,

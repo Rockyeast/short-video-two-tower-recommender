@@ -89,6 +89,14 @@ finite non-zero gradient. The frozen caption encoder covered all 9,388 model
 items at exact revision
 `e8f8c211226b894fcb81acc59f3b34ba3efd5f42`.
 
+Phase B2A.1 reran that same bounded configuration after adding fail-closed raw
+input lineage, device-correct checkpoint restoration, schema-v2 checkpoint
+identity, successful-step-only touched IDs, and inference-mode batched item
+precomputation/history gathers. The run started from clean commit `19fdf48`;
+all three raw input SHAs matched the frozen processed manifest. Its diagnostic
+and sampled retrieval metrics were unchanged, while total smoke wall time was
+73.0 seconds and peak RSS was 1.70 GB on CPU.
+
 The sampled retrieval smoke used 128 validation queries and a 4,096-item
 catalog. Its Recall@100 was 0.147449, but this number is deliberately marked
 `sampled_catalog_smoke=true`, `comparable_to_b1a=false`,
