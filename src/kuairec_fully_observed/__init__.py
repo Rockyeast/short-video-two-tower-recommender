@@ -35,6 +35,13 @@ from .sealed_small import (
     evaluate_frozen_small_routes,
     require_sealed_execution,
 )
+from .sealed_identity import (
+    SMALL_MATRIX_SHA256,
+    SMALL_MATRIX_SIZE_BYTES,
+    verify_file_identity,
+    verify_final_refit_artifacts,
+    verify_frozen_small_source,
+)
 from .training import (
     BPRTrainingDataset,
     TwoTowerTrainingDataset,
@@ -54,6 +61,8 @@ __all__ = [
     "FROZEN_ROUTE_TOP_K",
     "FROZEN_SMALL_ALPHA",
     "FROZEN_SMALL_METHODS",
+    "SMALL_MATRIX_SHA256",
+    "SMALL_MATRIX_SIZE_BYTES",
     "NumpyTwoTowerReference",
     "MODEL_ITEM_FEATURE_COLUMNS",
     "PopularityBaseline",
@@ -72,6 +81,9 @@ __all__ = [
     "evaluate_retrieval",
     "evaluate_frozen_small_routes",
     "require_sealed_execution",
+    "verify_file_identity",
+    "verify_final_refit_artifacts",
+    "verify_frozen_small_source",
     "in_batch_softmax_loss",
     "is_quick_skip",
     "is_strong_positive",

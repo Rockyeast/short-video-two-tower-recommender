@@ -21,6 +21,8 @@ from kuairec_fully_observed import (
     load_static_item_features,
     require_sealed_execution,
     stable_random_rank,
+    verify_final_refit_artifacts,
+    verify_frozen_small_source,
 )
 from kuairec_fully_observed.caption_embeddings import (
     cleaned_text_sha256,
@@ -75,11 +77,23 @@ def run(
     popularity_path: Path,
     bpr_checkpoint: Path,
     two_tower_checkpoint: Path,
+    final_refit_report_path: Path,
+    split_manifest_path: Path,
     report_json: Path,
     execute_sealed_small: bool,
     device: str = "cpu",
 ) -> dict:
     require_sealed_execution(execute_sealed_small)
+    small_source_identity = verify_frozen_small_source(
+        small_path=data_dir / "small_matrix.csv",
+        split_manifest_path=split_manifest_path,
+    )
+    refit_identity = verify_final_refit_artifacts(
+        final_refit_report_path=final_refit_report_path,
+        popularity_path=popularity_path,
+        bpr_checkpoint_path=bpr_checkpoint,
+        two_tower_checkpoint_path=two_tower_checkpoint,
+    )
     _, raw_sources = verify_phase_b2a_inputs(
         data_dir=data_dir,
         artifact_dir=artifact_dir,
@@ -211,6 +225,10 @@ def run(
         "selection_performed": False,
         "small_matrix_accessed_once": True,
         "temporal_final_accessed": False,
+        "input_identity": {
+            "small_matrix": small_source_identity,
+            "final_refit": refit_identity,
+        },
         "recipe": result["recipe"],
         "query_count": int(len(queries.user_ids)),
         "warm_user_count": int(queries.warm_user_mask.sum()),
@@ -234,6 +252,12 @@ def main() -> None:
     parser.add_argument("--popularity", type=Path, required=True)
     parser.add_argument("--bpr-checkpoint", type=Path, required=True)
     parser.add_argument("--two-tower-checkpoint", type=Path, required=True)
+    parser.add_argument("--final-refit-report", type=Path, required=True)
+    parser.add_argument(
+        "--split-manifest",
+        type=Path,
+        default=Path("manifests/split_manifest.json"),
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--execute-sealed-small", action="store_true")
     parser.add_argument(
@@ -250,6 +274,8 @@ def main() -> None:
         popularity_path=args.popularity.resolve(),
         bpr_checkpoint=args.bpr_checkpoint.resolve(),
         two_tower_checkpoint=args.two_tower_checkpoint.resolve(),
+        final_refit_report_path=args.final_refit_report.resolve(),
+        split_manifest_path=args.split_manifest.resolve(),
         report_json=args.report_json.resolve(),
         execute_sealed_small=args.execute_sealed_small,
         device=args.device,

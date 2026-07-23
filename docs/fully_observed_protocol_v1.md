@@ -97,7 +97,13 @@ are reported separately after the declared Popularity fallback:
 - Coverage@100 = unique recommended items / union of candidate items;
 - descriptive Data-Cold Recall@100.
 
-Data-cold means no canonical interaction of any label in the Big train window.
+Data-cold is relative to the fit context of the evaluation stage:
+
+- on Big validation, an item is data-cold when it has no canonical interaction
+  of any label in the Big train fit context;
+- on sealed Small, an item is data-cold when it has no canonical interaction
+  of any label in the Big train+validation final-refit context.
+
 Its query/target denominator is always reported. It is descriptive and has no
 win gate when the denominator is small. Metrics are query-macro; because there
 is one query per user, this is also user-macro. V1 has no bootstrap CI.
