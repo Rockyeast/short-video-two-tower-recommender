@@ -53,7 +53,7 @@ SMALL_COLUMNS = (
     "watch_ratio",
 )
 
-SEALED_ATTEMPT_NUMBER = 4
+SEALED_ATTEMPT_NUMBER = 5
 PRIOR_SEALED_ATTEMPTS = (
     {
         "attempt_number": 1,
@@ -79,6 +79,18 @@ PRIOR_SEALED_ATTEMPTS = (
         "formal_metrics_exposed": False,
         "failure_report": (
             "reports/phase_b3b/sealed_small_attempt3_failure.md"
+        ),
+    },
+    {
+        "attempt_number": 4,
+        "failure_stage": (
+            "two_tower_checkpoint_numeric_preprocessing_identity_validation"
+        ),
+        "formal_metrics_produced_or_observed": False,
+        "formal_metrics_computed": False,
+        "formal_metrics_exposed": False,
+        "failure_report": (
+            "reports/phase_b3b/sealed_small_attempt4_failure.md"
         ),
     },
 )
