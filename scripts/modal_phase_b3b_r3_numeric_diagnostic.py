@@ -83,6 +83,8 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "Three independent single-threaded Big-only processes rebuilt both "
         "preprocessing paths. No Small input was mounted or accessed.",
         "",
+        f"- Reconstructions identical: "
+        f"`{report['reconstructions_identical']}`",
         f"- Checkpoint expected SHA: "
         f"`{first['checkpoint']['expected_numeric_preprocessing_sha256']}`",
         f"- Training-path SHA: "
@@ -91,6 +93,10 @@ def _render_markdown(report: dict[str, Any]) -> str:
         f"- Training path matches checkpoint: "
         f"`{training['matches_checkpoint']}`",
         f"- Sealed path matches checkpoint: `{sealed['matches_checkpoint']}`",
+        "- Per-process training SHAs: "
+        f"`{report['per_process_numeric_sha256']['training']}`",
+        "- Per-process sealed SHAs: "
+        f"`{report['per_process_numeric_sha256']['sealed']}`",
         "",
         "## Membership",
         "",
@@ -175,10 +181,7 @@ def main(
         }
         for result in results
     ]
-    if comparable[1:] != comparable[:-1]:
-        raise RuntimeError(
-            "Independent numeric preprocessing reconstructions differ"
-        )
+    reconstructions_identical = comparable[1:] == comparable[:-1]
     report = {
         "phase": "phase-b3b-r3-numeric-preprocessing-provenance",
         "runner_commit": RUNNER_COMMIT,
@@ -186,6 +189,21 @@ def main(
         "process_count": 3,
         "single_threaded": True,
         "small_matrix_accessed": False,
+        "reconstructions_identical": reconstructions_identical,
+        "per_process_numeric_sha256": {
+            "training": [
+                result["paths"]["training"][
+                    "numeric_preprocessing_sha256"
+                ]
+                for result in results
+            ],
+            "sealed": [
+                result["paths"]["sealed"][
+                    "numeric_preprocessing_sha256"
+                ]
+                for result in results
+            ],
+        },
         "reconstructions": results,
     }
     serialized = json.dumps(report, indent=2, sort_keys=True)

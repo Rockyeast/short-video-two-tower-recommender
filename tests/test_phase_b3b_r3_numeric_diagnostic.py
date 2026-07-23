@@ -43,5 +43,6 @@ def test_modal_numeric_diagnostic_uses_three_single_use_processes() -> None:
     assert "single_use_containers=True" in source
     assert "retries=0" in source
     assert "results = [reconstruct.remote(index) for index in range(3)]" in source
+    assert '"reconstructions_identical": reconstructions_identical' in source
     assert "SMALL_VOLUME" not in source
     assert "small_matrix.csv" not in source
