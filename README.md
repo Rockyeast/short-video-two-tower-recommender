@@ -97,6 +97,14 @@ all three raw input SHAs matched the frozen processed manifest. Its diagnostic
 and sampled retrieval metrics were unchanged, while total smoke wall time was
 73.0 seconds and peak RSS was 1.70 GB on CPU.
 
+Phase B2A.2 resolved bare CUDA requests once to a concrete ordinal (for example,
+`cuda:0`) and expanded schema-v2 identity checks to bind the complete model
+dimensions, ordered item/user mappings, feature-vocabulary sizes and actual
+touched memberships. The unchanged bounded smoke was rerun once from clean
+commit `7f2cf9c`; its learning and retrieval metrics remained unchanged. Total
+wall time was 83.4 seconds and peak RSS was 1.70 GB on CPU. The conditional
+real-CUDA round-trip remains skipped on this CPU-only host.
+
 The sampled retrieval smoke used 128 validation queries and a 4,096-item
 catalog. Its Recall@100 was 0.147449, but this number is deliberately marked
 `sampled_catalog_smoke=true`, `comparable_to_b1a=false`,

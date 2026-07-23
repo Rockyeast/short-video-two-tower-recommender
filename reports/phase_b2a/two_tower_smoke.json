@@ -8,10 +8,10 @@
     "caption_cache_locator": "artifacts/phase_b2a/caption_embeddings.npz",
     "caption_metadata_locator": "reports/phase_b2a/caption_cache_metadata.json",
     "checkpoint_identity_schema_version": 2,
-    "checkpoint_identity_sha256": "8d7d97cffc4429e9ef3e09d79457adaaa683e22fdf16f3b193af41745bef6157",
+    "checkpoint_identity_sha256": "08a68921796ed7fcecbbaff8cd0bbdddf22609844ec46c3ccc1e058c7e3f471a",
     "checkpoint_locator": "artifacts/phase_b2a/two_tower_smoke.pt",
-    "checkpoint_sha256": "eabcabb318990ac61bd0d244b2aad3a61fc1758a21f55c83df7ecff5cd7e0e12",
-    "code_commit_at_run": "19fdf4870acf3a95bbc76c3e65d103cddda69c92",
+    "checkpoint_sha256": "620aa58c825c94cb6de66eb12789128883bf85f71108de0421d19c5bfaab6177",
+    "code_commit_at_run": "7f2cf9ccc9738c78c284eb77f911c4ea5ade2d49",
     "config_locator": "configs/phase_b2a_two_tower_smoke.yaml",
     "input_tree_clean_at_start": true,
     "processed_manifest_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5"
@@ -198,7 +198,7 @@
     }
   },
   "peak_gpu_memory_mb": 0.0,
-  "peak_rss_mb": 1699.57,
+  "peak_rss_mb": 1700.48,
   "phase": "phase-b2a-pytorch-two-tower-smoke",
   "sampled_retrieval": {
     "cold_user_denominators": {
@@ -240,14 +240,14 @@
   },
   "status": "completed",
   "timings_s": {
-    "batch_encode_query_users_s": 0.0611,
-    "bounded_training_s": 16.0068,
-    "load_verified_inputs_s": 4.185,
-    "preencode_model_item_universe_s": 0.0557,
-    "sampled_exact_retrieval_s": 0.8077,
-    "scan_big_and_canonicalize_selected_users_s": 31.1276
+    "batch_encode_query_users_s": 0.0435,
+    "bounded_training_s": 17.1141,
+    "load_verified_inputs_s": 4.3473,
+    "preencode_model_item_universe_s": 0.1244,
+    "sampled_exact_retrieval_s": 0.8118,
+    "scan_big_and_canonicalize_selected_users_s": 31.6331
   },
-  "total_wall_time_s": 73.0141,
+  "total_wall_time_s": 83.4175,
   "training_sample": {
     "maximum_example_index": 23178,
     "minimum_example_index": 3,

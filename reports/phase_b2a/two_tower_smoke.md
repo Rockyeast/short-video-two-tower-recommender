@@ -32,13 +32,13 @@ not run.
 - Sampled Recall@100: `0.147449`
 - Sampled NDCG@20: `0.014331`;
   Coverage@100: `0.177490`
-- Smoke wall time: `73.0141 s`; peak RSS
-  `1699.57 MB`; GPU memory `0.00 MB`
-- Code commit at run: `19fdf4870acf3a95bbc76c3e65d103cddda69c92`
+- Smoke wall time: `83.4175 s`; peak RSS
+  `1700.48 MB`; GPU memory `0.00 MB`
+- Code commit at run: `7f2cf9ccc9738c78c284eb77f911c4ea5ade2d49`
 - Input tree clean at start:
   `true`
 - Checkpoint identity schema: `2`;
-  SHA256 `8d7d97cffc4429e9ef3e09d79457adaaa683e22fdf16f3b193af41745bef6157`
+  SHA256 `08a68921796ed7fcecbbaff8cd0bbdddf22609844ec46c3ccc1e058c7e3f471a`
 - NORMAL membership: `10699` items;
   SHA256 `631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e`
 - Fixed retrieval catalog: `9365`
