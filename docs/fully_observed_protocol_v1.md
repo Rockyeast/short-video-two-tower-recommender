@@ -73,6 +73,15 @@ opening it, report user/item overlap with Big train+validation, content-feature
 coverage, data-cold items and users without Big history. Coverage audit numbers
 must not be used for model selection.
 
+The original Phase A plan anticipated only a Two-Tower plus Popularity hybrid.
+Big validation later exposed a Top-20 NDCG weakness in the selected Two-Tower.
+Before Small was opened, Phase B3A therefore evaluated and froze the minimal
+Two-Tower plus BPR weighted reciprocal-rank fusion extension: each route
+contributes its Top-500, the rank constant is 60, the output is Top-100, and
+`alpha=0.75` weights the Two-Tower route. This is a transparent
+validation-stage protocol extension, not part of the original Phase A
+preregistration. Small Matrix remained sealed throughout that decision.
+
 Users with no Big history are retained and reported as cold users. They use the
 fit-context Global Popularity fallback for ranking and are reported separately;
 they are not silently removed from candidate, target or denominator counts.
@@ -88,7 +97,13 @@ are reported separately after the declared Popularity fallback:
 - Coverage@100 = unique recommended items / union of candidate items;
 - descriptive Data-Cold Recall@100.
 
-Data-cold means no canonical interaction of any label in the Big train window.
+Data-cold is relative to the fit context of the evaluation stage:
+
+- on Big validation, an item is data-cold when it has no canonical interaction
+  of any label in the Big train fit context;
+- on sealed Small, an item is data-cold when it has no canonical interaction
+  of any label in the Big train+validation final-refit context.
+
 Its query/target denominator is always reported. It is descriptive and has no
 win gate when the denominator is small. Metrics are query-macro; because there
 is one query per user, this is also user-macro. V1 has no bootstrap CI.
@@ -99,7 +114,8 @@ is one query per user, this is also user-macro. V1 has no bootstrap CI.
 - Global Popularity: train strong-positive counts only.
 - BPR-MF: at most three configurations and three final seeds.
 - Two-Tower: at most three configurations and three final seeds.
-- Two-Tower + Popularity: considered only after the first four methods finish.
+- Two-Tower + BPR weighted RRF: frozen on Big validation at `alpha=0.75`,
+  route Top-500 and rank constant 60 before Small is opened.
 
 BPR positives are canonical `NORMAL` events with `watch_ratio > 2.0`. For each
 positive and each epoch, one uniform negative is resampled from fit-observed
@@ -152,8 +168,8 @@ baseline and it satisfies one predeclared rule:
    absolute; or
 3. Recall@100 is within 0.02 absolute, the data-cold denominator is at least
    100 targets, and Data-Cold Recall@100 improves by at least 0.05 absolute; or
-4. the frozen Two-Tower + Popularity hybrid is no worse on both Recall@100 and
-   Coverage@100 and improves at least one by 0.01 absolute.
+4. a hybrid frozen on Big validation before Small is opened satisfies its
+   separately declared selection rule.
 
 Small results never trigger a protocol or hyperparameter change.
 
