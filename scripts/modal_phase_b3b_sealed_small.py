@@ -17,7 +17,7 @@ import modal
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNNER_COMMIT = "cc93f2487ce8f3e6e44575b89feb755c0bbb266a"
+RUNNER_COMMIT = "82e3a462d1c71828a4fb0ffd53ca77da1fad28e2"
 REPOSITORY_URL = (
     "https://github.com/Rockyeast/short-video-two-tower-recommender.git"
 )
@@ -36,7 +36,7 @@ INPUT_MOUNT = Path("/inputs")
 REFIT_MOUNT = Path("/refit")
 SMALL_MOUNT = Path("/sealed-small")
 SMALL_LOGICAL_PATH = f"sha256/{SMALL_SHA256}/small_matrix.csv"
-SEALED_ATTEMPT_NUMBER = 4
+SEALED_ATTEMPT_NUMBER = 5
 PRIOR_SEALED_ATTEMPTS = (
     {
         "attempt_number": 1,
@@ -62,6 +62,18 @@ PRIOR_SEALED_ATTEMPTS = (
         "formal_metrics_exposed": False,
         "failure_report": (
             "reports/phase_b3b/sealed_small_attempt3_failure.md"
+        ),
+    },
+    {
+        "attempt_number": 4,
+        "failure_stage": (
+            "two_tower_checkpoint_numeric_preprocessing_identity_validation"
+        ),
+        "formal_metrics_produced_or_observed": False,
+        "formal_metrics_computed": False,
+        "formal_metrics_exposed": False,
+        "failure_report": (
+            "reports/phase_b3b/sealed_small_attempt4_failure.md"
         ),
     },
 )
@@ -172,7 +184,7 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "future-time test. Small was not used for model selection, fitting, "
         "history construction, or route parameters.",
         "",
-        "- Sealed attempt number: `4`",
+        "- Sealed attempt number: `5`",
         "- Attempt 1 failed at `small_schema_validation`: "
         "[sealed_small_failure.md](sealed_small_failure.md)",
         "- Attempt 2 failed at "
@@ -182,7 +194,14 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "- Attempt 3 failed at `formal_report_serialization_audit_counts`: "
         "[sealed_small_attempt3_failure.md]"
         "(sealed_small_attempt3_failure.md)",
-        "- Attempts 1, 2, and 3 exposed no formal metrics.",
+        "- Attempt 4 failed at "
+        "`two_tower_checkpoint_numeric_preprocessing_identity_validation`: "
+        "[sealed_small_attempt4_failure.md]"
+        "(sealed_small_attempt4_failure.md)",
+        "- Attempt 3 computed formal metrics in remote memory, but they were "
+        "not returned, written, or observed.",
+        "- Attempts 1, 2, and 4 did not compute formal metrics.",
+        "- Attempts 1 through 4 exposed no formal metrics.",
         "- No model, rule, or parameter was changed based on Small.",
         "",
         "## Audit population",
@@ -372,6 +391,10 @@ def run_sealed() -> dict[str, Any]:
             ),
             report_json=Path("/tmp/sealed_small_runner.json"),
             execute_sealed_small=True,
+            numeric_sidecar_path=(
+                REPOSITORY_DIR
+                / "manifests/phase_b3b_final_numeric_preprocessing.json"
+            ),
             device="cuda:0",
         )
     finally:
