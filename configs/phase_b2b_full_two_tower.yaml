@@ -1,0 +1,81 @@
+phase: phase-b2b-full-two-tower
+scope:
+  fit: canonical_big_train
+  select: canonical_big_validation
+  forbidden: [small_matrix, temporal_final, faiss, hybrid, reranker, serving]
+caption:
+  model_id: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+  resolved_revision: e8f8c211226b894fcb81acc59f3b34ba3efd5f42
+  dimension: 384
+  preprocessing_version: phase-b2a-caption-fallback-v1
+architecture:
+  item_id_dim: 64
+  category_dim: 32
+  caption_projection_dim: 64
+  static_projection_dim: 16
+  upload_type_dim: 8
+  hidden_dim: 256
+  output_dim: 128
+  max_history: 50
+training:
+  optimizer: AdamW
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  batch_size: 256
+  epochs: 3
+  temperature: 0.07
+  gradient_clip_norm: 5.0
+  seed: 20260722
+  diagnostic_seed: 20260723
+  precision: FP32
+  num_workers: 0
+training_contract:
+  full_example_count: 574098
+  training_user_count: 7161
+checkpoint:
+  epochs: [1, 2, 3]
+  directory: artifacts/phase_b2b
+validation:
+  k: 100
+  item_encoding_batch_size: 1024
+  user_encoding_batch_size: 128
+  score_block_size: 128
+  expected:
+    fixed_catalog_count: 9365
+    fixed_catalog_sha256: 8b8e88e2455a27dc0fac79e7bdb2733dc43096bb6d637e549d1ce5853e8ce55b
+    query_count: 6818
+    warm_query_count: 6816
+    target_count: 118565
+    warm_target_count: 118539
+    data_cold_item_count: 1492
+    query_contract_sha256: f25df9d235f32b114357a190f69a60e49d8993d2c4e09f975a0b361c7439f877
+selection:
+  primary: Recall@100
+  tie_break: NDCG@20
+  final_tie_break: earliest_epoch
+frozen_bpr_epoch_20:
+  Recall@100: 0.04843855379304513
+  NDCG@20: 0.012773561140700995
+  Coverage@100: 0.33304858515750135
+  Data-Cold Recall@100: 0.0
+gate:
+  common_ndcg_minimum: 0.002773561140700995
+  A:
+    Recall@100_minimum: 0.05043855379304513
+  B:
+    Recall@100_minimum: 0.02843855379304513
+    Coverage@100_minimum: 0.38304858515750135
+  C:
+    Recall@100_minimum: 0.02843855379304513
+    data_cold_target_denominator_minimum: 100
+    Data-Cold_Recall@100_minimum: 0.05
+preflight:
+  max_training_examples: 2560
+  max_optimizer_steps: 20
+  epochs: 2
+  max_validation_queries: 128
+  claims:
+    formal_gate_executed: false
+    effectiveness_claim: false
+    full_big_train: false
+    full_big_validation: false
