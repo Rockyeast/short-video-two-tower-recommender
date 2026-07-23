@@ -16,9 +16,18 @@ def _weights_from_arrays(
     watch_ratio: np.ndarray,
     play_duration: np.ndarray,
     video_duration: np.ndarray,
+    *,
+    quick_skip_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     weights = np.maximum(np.clip(watch_ratio, 0.0, 4.0), 0.1)
-    weights[is_quick_skip(play_duration, video_duration)] *= 0.25
+    quick = (
+        is_quick_skip(play_duration, video_duration)
+        if quick_skip_mask is None
+        else np.asarray(quick_skip_mask, dtype=bool)
+    )
+    if quick.shape != weights.shape:
+        raise ValueError("quick_skip_mask must match the behavior rows")
+    weights[quick] *= 0.25
     return weights.astype(np.float32)
 
 
@@ -56,7 +65,16 @@ class TwoTowerTrainingDataset:
         self.play_duration = events["play_duration"].to_numpy(np.float64)
         self.video_duration = events["video_duration"].to_numpy(np.float64)
         self.watch_ratio = events["watch_ratio"].to_numpy(np.float64)
-        strong = is_strong_positive(self.watch_ratio)
+        strong = (
+            events["_is_strong_positive"].to_numpy(bool)
+            if "_is_strong_positive" in events.columns
+            else is_strong_positive(self.watch_ratio)
+        )
+        self.quick_skip = (
+            events["_is_quick_skip"].to_numpy(bool)
+            if "_is_quick_skip" in events.columns
+            else is_quick_skip(self.play_duration, self.video_duration)
+        )
         if normal_item_ids is not None:
             strong &= np.isin(
                 self.item_ids, np.asarray(normal_item_ids, dtype=np.int64)
@@ -112,6 +130,7 @@ class TwoTowerTrainingDataset:
             self.watch_ratio[positions],
             self.play_duration[positions],
             self.video_duration[positions],
+            quick_skip_mask=self.quick_skip[positions],
         )
         return TwoTowerTrainingExample(
             user_id=user,
