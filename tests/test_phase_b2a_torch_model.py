@@ -18,6 +18,7 @@ from kuairec_fully_observed.torch_training import (  # noqa: E402
     encode_item_ids,
     encode_query_users_from_precomputed,
     load_checkpoint,
+    load_final_refit_checkpoint_compatible,
     preencode_item_universe,
     record_successful_step_membership,
     resolve_concrete_device,
@@ -501,6 +502,116 @@ def test_checkpoint_rejects_same_size_identity_substitutions(tmp_path):
         torch.save(payload, path)
         with pytest.raises(RuntimeError, match=message):
             load_checkpoint(path, device="cpu", expected_identity=identity)
+
+
+def _legacy_final_refit_checkpoint(tmp_path):
+    dimensions = {
+        "num_items": 8,
+        "num_users": 4,
+        "num_category_tokens": 8,
+        "num_upload_types": 2,
+    }
+    ordered_items = np.arange(8, dtype=np.int64)
+    ordered_users = np.arange(4, dtype=np.int64)
+    identity = _identity_for_payload(
+        ordered_items,
+        ordered_users,
+        ordered_users,
+        ordered_items,
+    )
+    identity["fit_context"] = "canonical_big_train_plus_validation"
+    del identity["feature_identity"]["category_vocab_count"]
+    del identity["feature_identity"]["upload_type_vocab_count"]
+    path = tmp_path / "legacy-final-refit.pt"
+    save_checkpoint(
+        path,
+        model=_model(),
+        model_dimensions=dimensions,
+        ordered_item_ids=ordered_items,
+        ordered_user_ids=ordered_users,
+        touched_user_ids=ordered_users,
+        touched_item_ids=ordered_items,
+        identity=identity,
+    )
+    reconstructed = {
+        **identity["feature_identity"],
+        "category_vocab_count": 8,
+        "upload_type_vocab_count": 2,
+    }
+    return path, identity, reconstructed
+
+
+def test_default_loader_rejects_legacy_missing_vocab_counts(tmp_path):
+    path, identity, _ = _legacy_final_refit_checkpoint(tmp_path)
+    with pytest.raises(
+        RuntimeError, match="feature vocabulary dimensions differ"
+    ):
+        load_checkpoint(path, device="cpu", expected_identity=identity)
+
+
+def test_final_refit_compatibility_accepts_reconstructed_identity(tmp_path):
+    path, identity, reconstructed = _legacy_final_refit_checkpoint(tmp_path)
+    model, payload = load_final_refit_checkpoint_compatible(
+        path,
+        device="cpu",
+        expected_identity=identity,
+        reconstructed_feature_identity=reconstructed,
+        final_refit_artifact_verified=True,
+    )
+    assert payload["identity"] == identity
+    assert model.category_embedding.num_embeddings == 9
+    assert model.upload_type_embedding.num_embeddings == 3
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "category_vocab_sha256",
+        "upload_type_vocab_sha256",
+        "numeric_preprocessing_sha256",
+    ],
+)
+def test_final_refit_compatibility_rejects_reconstructed_sha_mismatch(
+    tmp_path, field
+):
+    path, identity, reconstructed = _legacy_final_refit_checkpoint(tmp_path)
+    reconstructed[field] = "0" * 64
+    with pytest.raises(RuntimeError, match=field):
+        load_final_refit_checkpoint_compatible(
+            path,
+            device="cpu",
+            expected_identity=identity,
+            reconstructed_feature_identity=reconstructed,
+            final_refit_artifact_verified=True,
+        )
+
+
+def test_final_refit_compatibility_rejects_reconstructed_count(tmp_path):
+    path, identity, reconstructed = _legacy_final_refit_checkpoint(tmp_path)
+    reconstructed["category_vocab_count"] = 7
+    with pytest.raises(RuntimeError, match="vocabulary count mismatch"):
+        load_final_refit_checkpoint_compatible(
+            path,
+            device="cpu",
+            expected_identity=identity,
+            reconstructed_feature_identity=reconstructed,
+            final_refit_artifact_verified=True,
+        )
+
+
+def test_final_refit_compatibility_rejects_embedding_shape(tmp_path):
+    path, identity, reconstructed = _legacy_final_refit_checkpoint(tmp_path)
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    payload["state_dict"]["category_embedding.weight"] = torch.zeros(8, 32)
+    torch.save(payload, path)
+    with pytest.raises(RuntimeError, match="category_embedding.weight"):
+        load_final_refit_checkpoint_compatible(
+            path,
+            device="cpu",
+            expected_identity=identity,
+            reconstructed_feature_identity=reconstructed,
+            final_refit_artifact_verified=True,
+        )
 
 
 def test_skipped_batch_ids_are_not_recorded_as_touched():

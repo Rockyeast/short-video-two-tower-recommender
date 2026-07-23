@@ -222,6 +222,34 @@ def prepare_item_feature_store(
     )
 
 
+def final_refit_feature_identity(
+    store: PreparedItemFeatureStore,
+) -> dict[str, Any]:
+    """Reconstruct the exact feature identity used by the B3B final refit."""
+
+    return {
+        "category_vocab_count": len(store.category_vocab),
+        "category_vocab_sha256": canonical_json_sha256(
+            [
+                [level, raw, index]
+                for (level, raw), index in sorted(
+                    store.category_vocab.items()
+                )
+            ],
+            label="phase-b3b-category-vocab-v1",
+        ),
+        "upload_type_vocab_count": len(store.upload_type_vocab),
+        "upload_type_vocab_sha256": canonical_json_sha256(
+            sorted(store.upload_type_vocab.items()),
+            label="phase-b3b-upload-type-vocab-v1",
+        ),
+        "numeric_preprocessing_sha256": canonical_json_sha256(
+            store.preprocessing,
+            label="phase-b3b-numeric-preprocessing-v1",
+        ),
+    }
+
+
 def sample_bounded_example_indices(
     dataset: TwoTowerTrainingDataset,
     *,
@@ -843,6 +871,44 @@ def load_checkpoint(
     device: str | torch.device,
     expected_identity: dict[str, Any],
 ) -> tuple[TwoTowerV1, dict[str, Any]]:
+    """Load a complete schema-v2 checkpoint with the strict default contract."""
+
+    return _load_checkpoint_impl(
+        path,
+        device=device,
+        expected_identity=expected_identity,
+        final_refit_feature_identity=None,
+        final_refit_artifact_verified=False,
+    )
+
+
+def load_final_refit_checkpoint_compatible(
+    path: Path,
+    *,
+    device: str | torch.device,
+    expected_identity: dict[str, Any],
+    reconstructed_feature_identity: dict[str, Any],
+    final_refit_artifact_verified: bool,
+) -> tuple[TwoTowerV1, dict[str, Any]]:
+    """Load only the known final-refit checkpoint missing two count fields."""
+
+    return _load_checkpoint_impl(
+        path,
+        device=device,
+        expected_identity=expected_identity,
+        final_refit_feature_identity=reconstructed_feature_identity,
+        final_refit_artifact_verified=final_refit_artifact_verified,
+    )
+
+
+def _load_checkpoint_impl(
+    path: Path,
+    *,
+    device: str | torch.device,
+    expected_identity: dict[str, Any],
+    final_refit_feature_identity: dict[str, Any] | None,
+    final_refit_artifact_verified: bool,
+) -> tuple[TwoTowerV1, dict[str, Any]]:
     target_device = resolve_concrete_device(device)
     payload = torch.load(
         path, map_location=target_device, weights_only=False
@@ -892,13 +958,67 @@ def load_checkpoint(
     if dimensions["num_users"] != len(ordered_users):
         raise RuntimeError("Checkpoint user mapping and model dimensions differ")
     feature_identity = expected_identity.get("feature_identity", {})
-    if (
-        dimensions["num_category_tokens"]
-        != feature_identity.get("category_vocab_count")
-        or dimensions["num_upload_types"]
-        != feature_identity.get("upload_type_vocab_count")
-    ):
-        raise RuntimeError("Checkpoint feature vocabulary dimensions differ")
+    if final_refit_feature_identity is None:
+        if (
+            dimensions["num_category_tokens"]
+            != feature_identity.get("category_vocab_count")
+            or dimensions["num_upload_types"]
+            != feature_identity.get("upload_type_vocab_count")
+        ):
+            raise RuntimeError(
+                "Checkpoint feature vocabulary dimensions differ"
+            )
+    else:
+        sha_keys = {
+            "category_vocab_sha256",
+            "upload_type_vocab_sha256",
+            "numeric_preprocessing_sha256",
+        }
+        reconstructed_keys = sha_keys | {
+            "category_vocab_count",
+            "upload_type_vocab_count",
+        }
+        if not final_refit_artifact_verified:
+            raise RuntimeError(
+                "Final-refit checkpoint artifact identity is unverified"
+            )
+        if expected_identity.get("schema_version") != 2:
+            raise RuntimeError(
+                "Final-refit checkpoint identity schema is not 2"
+            )
+        if (
+            expected_identity.get("fit_context")
+            != "canonical_big_train_plus_validation"
+        ):
+            raise RuntimeError("Final-refit checkpoint fit context changed")
+        if set(feature_identity) != sha_keys:
+            raise RuntimeError(
+                "Final-refit feature identity has unsupported missing fields"
+            )
+        if set(final_refit_feature_identity) != reconstructed_keys:
+            raise RuntimeError(
+                "Reconstructed final-refit feature identity is incomplete"
+            )
+        for name in sha_keys:
+            expected_sha = feature_identity.get(name)
+            reconstructed_sha = final_refit_feature_identity.get(name)
+            if (
+                not isinstance(expected_sha, str)
+                or len(expected_sha) != 64
+                or reconstructed_sha != expected_sha
+            ):
+                raise RuntimeError(
+                    f"Final-refit reconstructed {name} mismatch"
+                )
+        if (
+            final_refit_feature_identity["category_vocab_count"]
+            != dimensions["num_category_tokens"]
+            or final_refit_feature_identity["upload_type_vocab_count"]
+            != dimensions["num_upload_types"]
+        ):
+            raise RuntimeError(
+                "Final-refit reconstructed vocabulary count mismatch"
+            )
     ordered_item_identity = expected_identity["ordered_item_store"]
     if membership_record(
         ordered_items,
@@ -925,8 +1045,35 @@ def load_checkpoint(
         != touched_identity["items"]["sha256"]
     ):
         raise RuntimeError("Checkpoint touched membership identity mismatch")
+    state_dict = payload.get("state_dict")
+    expected_embedding_shapes = {
+        "item_id_embedding.weight": (
+            dimensions["num_items"] + 1,
+            64,
+        ),
+        "user_id_embedding.weight": (
+            dimensions["num_users"] + 1,
+            64,
+        ),
+        "category_embedding.weight": (
+            dimensions["num_category_tokens"] + 1,
+            32,
+        ),
+        "upload_type_embedding.weight": (
+            dimensions["num_upload_types"] + 1,
+            8,
+        ),
+    }
+    if not isinstance(state_dict, dict):
+        raise RuntimeError("Checkpoint state_dict is missing")
+    for name, expected_shape in expected_embedding_shapes.items():
+        value = state_dict.get(name)
+        if not torch.is_tensor(value) or tuple(value.shape) != expected_shape:
+            raise RuntimeError(
+                f"Checkpoint embedding shape differs: {name}"
+            )
     model = TwoTowerV1(**dimensions).to(target_device)
-    model.load_state_dict(payload["state_dict"], strict=True)
+    model.load_state_dict(state_dict, strict=True)
     model._zero_padding_rows()
     assert_model_device(model, target_device)
     for value in model.state_dict().values():

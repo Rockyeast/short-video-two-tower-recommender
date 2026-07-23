@@ -29,10 +29,14 @@ from kuairec_fully_observed.caption_embeddings import (
     load_caption_cache,
 )
 from kuairec_fully_observed.full_training import load_canonical_train_events
-from kuairec_fully_observed.provenance import verify_phase_b2a_inputs
+from kuairec_fully_observed.provenance import (
+    membership_record,
+    verify_phase_b2a_inputs,
+)
 from kuairec_fully_observed.torch_training import (
     encode_query_users_from_precomputed,
-    load_checkpoint,
+    final_refit_feature_identity,
+    load_final_refit_checkpoint_compatible,
     preencode_item_universe,
     prepare_item_feature_store,
     resolve_concrete_device,
@@ -43,6 +47,26 @@ SMALL_COLUMNS = (
     "user_id",
     "video_id",
     "watch_ratio",
+)
+
+SEALED_ATTEMPT_NUMBER = 3
+PRIOR_SEALED_ATTEMPTS = (
+    {
+        "attempt_number": 1,
+        "failure_stage": "small_schema_validation",
+        "formal_metrics_produced_or_observed": False,
+        "failure_report": "reports/phase_b3b/sealed_small_failure.md",
+    },
+    {
+        "attempt_number": 2,
+        "failure_stage": (
+            "two_tower_checkpoint_feature_vocab_validation"
+        ),
+        "formal_metrics_produced_or_observed": False,
+        "failure_report": (
+            "reports/phase_b3b/sealed_small_attempt2_failure.md"
+        ),
+    },
 )
 
 
@@ -128,24 +152,20 @@ def run(
         score_block_size=128,
     )
 
-    payload = torch.load(
+    checkpoint_payload = torch.load(
         two_tower_checkpoint, map_location="cpu", weights_only=False
     )
-    model, checkpoint = load_checkpoint(
-        two_tower_checkpoint,
-        device=resolve_concrete_device(device),
-        expected_identity=payload["identity"],
-    )
+    checkpoint_identity = checkpoint_payload["identity"]
     ordered_items = np.asarray(
-        checkpoint["ordered_item_ids"], dtype=np.int64
+        checkpoint_payload["ordered_item_ids"], dtype=np.int64
     )
     frame = static.frame.set_index("video_id").reindex(ordered_items)
     caption = load_caption_cache(
         cache_path=caption_cache_path,
         metadata_path=caption_metadata_path,
         expected_item_ids=ordered_items,
-        expected_model_id=checkpoint["identity"]["caption_identity"]["model_id"],
-        expected_revision=checkpoint["identity"]["caption_identity"][
+        expected_model_id=checkpoint_identity["caption_identity"]["model_id"],
+        expected_revision=checkpoint_identity["caption_identity"][
             "resolved_revision"
         ],
         expected_source_sha256=raw_sources[
@@ -166,7 +186,39 @@ def run(
         train_observed_item_ids=observed,
         train_observed_normal_item_ids=observed_normal,
     )
+    reconstructed_feature_identity = final_refit_feature_identity(store)
+    if membership_record(
+        ordered_items,
+        label="phase-b2a-ordered-item-store-v1",
+    ) != checkpoint_identity["ordered_item_store"]:
+        raise RuntimeError(
+            "Final-refit ordered item membership differs"
+        )
+    reconstructed_caption_identity = {
+        "model_id": caption.metadata["model_id"],
+        "resolved_revision": caption.metadata["resolved_revision"],
+        "item_membership_sha256": caption.metadata[
+            "ordered_item_membership_sha256"
+        ],
+        "embedding_payload_sha256": caption.metadata[
+            "embedding_payload_sha256"
+        ],
+    }
+    if (
+        reconstructed_caption_identity
+        != checkpoint_identity["caption_identity"]
+    ):
+        raise RuntimeError("Final-refit caption identity differs")
     target_device = resolve_concrete_device(device)
+    model, checkpoint = load_final_refit_checkpoint_compatible(
+        two_tower_checkpoint,
+        device=target_device,
+        expected_identity=checkpoint_identity,
+        reconstructed_feature_identity=reconstructed_feature_identity,
+        final_refit_artifact_verified=refit_identity["artifacts"][
+            "two_tower_epoch_1"
+        ]["match"],
+    )
     item_vectors = preencode_item_universe(
         model=model,
         store=store,
@@ -219,9 +271,10 @@ def run(
     )
     serializable = {
         "phase": "phase-b3b-sealed-small",
-        "sealed_attempt_number": 2,
+        "sealed_attempt_number": SEALED_ATTEMPT_NUMBER,
+        "prior_attempts": list(PRIOR_SEALED_ATTEMPTS),
         "prior_attempt_metrics_produced": False,
-        "prior_failure_stage": "small_schema_validation",
+        "small_used_for_post_attempt_tuning": False,
         "selection_performed": False,
         "small_matrix_accessed_once": True,
         "temporal_final_accessed": False,
