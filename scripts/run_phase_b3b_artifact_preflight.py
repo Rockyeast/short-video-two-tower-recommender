@@ -22,7 +22,11 @@ from kuairec_fully_observed.features import load_static_item_features
 from kuairec_fully_observed.full_training import load_canonical_train_events
 from kuairec_fully_observed.provenance import (
     membership_record,
+    sha256_file,
     verify_phase_b2a_inputs,
+)
+from kuairec_fully_observed.numeric_sidecar import (
+    load_final_refit_numeric_sidecar,
 )
 from kuairec_fully_observed.sealed_identity import (
     verify_final_refit_artifacts,
@@ -32,7 +36,7 @@ from kuairec_fully_observed.torch_training import (
     final_refit_feature_identity,
     load_final_refit_checkpoint_compatible,
     preencode_item_universe,
-    prepare_item_feature_store,
+    prepare_final_refit_inference_feature_store,
     resolve_concrete_device,
 )
 
@@ -47,6 +51,7 @@ def run(
     bpr_checkpoint_path: Path,
     two_tower_checkpoint_path: Path,
     final_refit_report_path: Path,
+    numeric_sidecar_path: Path,
     report_json: Path,
     device: str,
 ) -> dict[str, Any]:
@@ -101,14 +106,55 @@ def run(
     observed_normal = np.intersect1d(
         observed, static.normal_item_ids, assume_unique=True
     )
-    store = prepare_item_feature_store(
+    sidecar_memberships = {
+        "train_observed_items": membership_record(
+            observed,
+            label="phase-b3b-r3-train-observed-items-v1",
+        ),
+        "train_observed_normal_items": membership_record(
+            observed_normal,
+            label="phase-b3b-r3-train-observed-normal-items-v1",
+        ),
+        "model_item_universe": membership_record(
+            ordered_items,
+            label="phase-b3b-refit-item-universe-v1",
+        ),
+    }
+    sidecar = load_final_refit_numeric_sidecar(
+        numeric_sidecar_path,
+        checkpoint_sha256=refit_identity["artifacts"][
+            "two_tower_epoch_1"
+        ]["actual_sha256"],
+        checkpoint_expected_numeric_sha256=checkpoint_identity[
+            "feature_identity"
+        ]["numeric_preprocessing_sha256"],
+        processed_manifest_sha256=sha256_file(
+            artifact_dir / "manifest.json"
+        ),
+        raw_input_sha256={
+            name: record["actual_sha256"]
+            for name, record in raw_sources.items()
+        },
+        memberships=sidecar_memberships,
+    )
+    store = prepare_final_refit_inference_feature_store(
         static_frame=static.frame,
         caption_cache=caption,
         item_universe=ordered_items,
         train_observed_item_ids=observed,
         train_observed_normal_item_ids=observed_normal,
+        frozen_preprocessing=sidecar["preprocessing"],
     )
     reconstructed = final_refit_feature_identity(store)
+    if sidecar["feature_vocab"] != {
+        "category_count": reconstructed["category_vocab_count"],
+        "category_sha256": reconstructed["category_vocab_sha256"],
+        "upload_type_count": reconstructed["upload_type_vocab_count"],
+        "upload_type_sha256": reconstructed[
+            "upload_type_vocab_sha256"
+        ],
+    }:
+        raise RuntimeError("Final-refit sidecar feature vocab differs")
     if membership_record(
         ordered_items,
         label="phase-b2a-ordered-item-store-v1",
@@ -215,6 +261,18 @@ def run(
         "checkpoint_sha256": refit_identity["artifacts"][
             "two_tower_epoch_1"
         ]["actual_sha256"],
+        "numeric_sidecar": {
+            "sha256": sha256_file(numeric_sidecar_path),
+            "numeric_preprocessing_sha256": sidecar[
+                "numeric_preprocessing_sha256"
+            ],
+            "matches_checkpoint": (
+                sidecar["numeric_preprocessing_sha256"]
+                == checkpoint_identity["feature_identity"][
+                    "numeric_preprocessing_sha256"
+                ]
+            ),
+        },
         "reconstructed_feature_identity": reconstructed,
         "feature_identity_sha_match": {
             name: (

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "purpose": "phase-b3b-final-refit-inference-only-numeric-preprocessing",
+  "checkpoint": {
+    "sha256": "5715a98d47c80f545afdce845c2a96940bc7ce3fec355e4a1156576d2fcab949",
+    "expected_numeric_preprocessing_sha256": "71217e8965b59915874ab879e157eacd61a1c55813604bcdb9e748e08458c489"
+  },
+  "processed_manifest": {
+    "sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5"
+  },
+  "raw_inputs": {
+    "big_matrix.csv": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+    "item_daily_features.csv": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+    "kuairec_caption_category.csv": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9"
+  },
+  "memberships": {
+    "train_observed_items": {
+      "count": 9391,
+      "hash_scheme": "sha256(phase-b3b-r3-train-observed-items-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "2c972e1fb50abe5077f24c41310421ce7d0b5568dd1cd46ba22df9840e814b94"
+    },
+    "train_observed_normal_items": {
+      "count": 9365,
+      "hash_scheme": "sha256(phase-b3b-r3-train-observed-normal-items-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "c13658cdbafe3ff0a4ee778618c2ff94f43d213894b5e7f46b75982b298f8758"
+    },
+    "model_item_universe": {
+      "count": 10725,
+      "hash_scheme": "sha256(phase-b3b-refit-item-universe-v1\\n + sorted-unique-decimal-id\\n)",
+      "sha256": "b9c31f8b2994c9ead960da977fd4e0cc357918cfc491121225689a79c33fa577"
+    }
+  },
+  "feature_vocab": {
+    "category_count": 385,
+    "category_sha256": "e7df6181c02d3900bf770a6a3c3a55c62839109e43d5b1dd374c946cc9afbc76",
+    "upload_type_count": 17,
+    "upload_type_sha256": "784c05aa02b9012625897c52a608274de054cc7b32c62e39a1307125b60658ad"
+  },
+  "preprocessing": {
+    "numeric_fields": [
+      "log1p(video_duration)",
+      "log1p(video_width)",
+      "log1p(video_height)",
+      "upload_dt_ordinal"
+    ],
+    "numeric_scaler_fit_scope": "train-observed NORMAL items",
+    "category_upload_vocab_fit_scope": "all train-observed history/model-context items",
+    "medians": [
+      9.115149797865195,
+      6.580639137284949,
+      7.155396301896734,
+      737636.0
+    ],
+    "means": [
+      9.156702064714265,
+      6.557403227263443,
+      7.091312871046709,
+      737631.1720234917
+    ],
+    "stds": [
+      0.5884286330248873,
+      0.15057195913288995,
+      0.16345549983239863,
+      22.60970377444924
+    ],
+    "missing_value_counts": {
+      "upload_dt": 0,
+      "video_duration": 290,
+      "video_height": 0,
+      "video_width": 0
+    },
+    "category_vocab_size": 385,
+    "upload_type_vocab_size": 17,
+    "unseen_category_uses_zero_unk": true,
+    "unseen_upload_type_uses_zero_unk": true
+  },
+  "preprocessing_float_hex": {
+    "medians": [
+      "0x1.23af4ea0ff1adp+3",
+      "0x1.a529310e5aa82p+2",
+      "0x1.c9f20354a4365p+2",
+      "0x1.682c800000000p+19"
+    ],
+    "means": [
+      "0x1.2503b40c653afp+3",
+      "0x1.a3ac7e95f2018p+2",
+      "0x1.c5d811f0b65dep+2",
+      "0x1.682be5813768ep+19"
+    ],
+    "stds": [
+      "0x1.2d46848dbe66ap-1",
+      "0x1.345f12415d006p-3",
+      "0x1.4ec1c1d10d485p-3",
+      "0x1.69c158beb81dbp+4"
+    ]
+  },
+  "numeric_preprocessing_sha256": "71217e8965b59915874ab879e157eacd61a1c55813604bcdb9e748e08458c489",
+  "source": {
+    "diagnostic_report": "reports/phase_b3b_r3/numeric_provenance_diagnostic.json",
+    "matching_process_index": 2,
+    "small_matrix_accessed": false
+  }
+}
