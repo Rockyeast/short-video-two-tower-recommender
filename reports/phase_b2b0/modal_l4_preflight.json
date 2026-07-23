@@ -1,0 +1,556 @@
+{
+  "b2b_runner_commit": "7feb5675b7fa6577c68a3775d943c0a32b94f603",
+  "input_manifest": {
+    "bundle_sha256": "7a7b8b370335f61d28063c7821600063c28929e2a837473890611cc1315f56a6",
+    "files": [
+      {
+        "logical_path": "raw/big_matrix.csv",
+        "sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "size_bytes": 1083521226
+      },
+      {
+        "logical_path": "raw/item_daily_features.csv",
+        "sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "size_bytes": 85855213
+      },
+      {
+        "logical_path": "raw/kuairec_caption_category.csv",
+        "sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "size_bytes": 1964578
+      },
+      {
+        "logical_path": "processed/manifest.json",
+        "sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+        "size_bytes": 4101
+      },
+      {
+        "logical_path": "processed/events_train_validation.npz",
+        "sha256": "476ebcae49140d3c307ca6cb1461847f42e849d8f5c91dd7a2661396fc2b9a02",
+        "size_bytes": 72458592
+      },
+      {
+        "logical_path": "processed/catalog.npz",
+        "sha256": "877c5174b54aad39a281fdf1d92309ef74f9b2a836595aded1871df6a2c909d5",
+        "size_bytes": 38787
+      },
+      {
+        "logical_path": "caption/caption_embeddings.npz",
+        "sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+        "size_bytes": 12428656
+      },
+      {
+        "logical_path": "caption/caption_cache_metadata.json",
+        "sha256": "a06ccabc7cf36451148b09e4c7d84bf99b25d80f2c8092996cd2edda884a91bc",
+        "size_bytes": 1214
+      }
+    ],
+    "schema_version": 1,
+    "total_size_bytes": 1256272367
+  },
+  "local": {
+    "image_build_timing_scope": "Local module initialization through Modal local-entrypoint start; includes image resolution/build and Modal app startup.",
+    "input_preparation_and_upload_s": 2.5240362060139887,
+    "local_entrypoint_wall_s": 128.87687241099775,
+    "modal_initialization_and_image_build_s": 12.443922218983062,
+    "remote_function_calls": 1
+  },
+  "modal_sdk_local": "1.4.1",
+  "phase": "phase-b2b-modal-l4-preflight",
+  "prior_failed_attempts": {
+    "count": 6,
+    "effectiveness_results_published": false,
+    "stages": [
+      "host_wrapper_import",
+      "remote_entrypoint_module_packaging",
+      "local_volume_file_membership",
+      "remote_clean_checkout_identity",
+      "remote_source_relative_helper_resolution",
+      "remote_cuda_rng_checkpoint_restore"
+    ],
+    "summary": "All attempts failed closed before completing the bounded preflight contract; metrics in this report are from the final successful run only."
+  },
+  "remote": {
+    "checkpoint_save_observations": {
+      "1": {
+        "observed_save_s": 0.025829668000000083,
+        "poll_interval_s": 0.005,
+        "published": 86.536260478,
+        "temporary_first_seen": 86.51043081
+      },
+      "2": {
+        "observed_save_s": 0.013031467000004682,
+        "poll_interval_s": 0.005,
+        "published": 103.165416488,
+        "temporary_first_seen": 103.152385021
+      }
+    },
+    "cpu_gpu_preflight_differences": {
+      "bitwise_equality_required": false,
+      "epochs": [
+        {
+          "Coverage@100_delta_gpu_minus_cpu": 0.0,
+          "NDCG@20_delta_gpu_minus_cpu": 0.0,
+          "Recall@100_delta_gpu_minus_cpu": 0.0,
+          "epoch": 1,
+          "loss_cpu": 5.877541446685791,
+          "loss_delta_gpu_minus_cpu": 1.4305114692803045e-07,
+          "loss_gpu": 5.877541589736938
+        },
+        {
+          "Coverage@100_delta_gpu_minus_cpu": 0.0,
+          "NDCG@20_delta_gpu_minus_cpu": 0.0,
+          "Recall@100_delta_gpu_minus_cpu": 0.0,
+          "epoch": 2,
+          "loss_cpu": 5.074811553955078,
+          "loss_delta_gpu_minus_cpu": -2.384185791015625e-07,
+          "loss_gpu": 5.074811315536499
+        }
+      ],
+      "parameters_changed_due_to_difference": false
+    },
+    "eta_scope": "Raw linear training-only estimate for 6,729 optimizer steps; excludes full-data preparation and fixed validation overhead.",
+    "inputs": {
+      "bundle_sha256": "7a7b8b370335f61d28063c7821600063c28929e2a837473890611cc1315f56a6",
+      "files": [
+        {
+          "logical_path": "raw/big_matrix.csv",
+          "match": true,
+          "remote_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+          "remote_size_bytes": 1083521226,
+          "sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+          "size_bytes": 1083521226
+        },
+        {
+          "logical_path": "raw/item_daily_features.csv",
+          "match": true,
+          "remote_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+          "remote_size_bytes": 85855213,
+          "sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+          "size_bytes": 85855213
+        },
+        {
+          "logical_path": "raw/kuairec_caption_category.csv",
+          "match": true,
+          "remote_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+          "remote_size_bytes": 1964578,
+          "sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+          "size_bytes": 1964578
+        },
+        {
+          "logical_path": "processed/manifest.json",
+          "match": true,
+          "remote_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+          "remote_size_bytes": 4101,
+          "sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+          "size_bytes": 4101
+        },
+        {
+          "logical_path": "processed/events_train_validation.npz",
+          "match": true,
+          "remote_sha256": "476ebcae49140d3c307ca6cb1461847f42e849d8f5c91dd7a2661396fc2b9a02",
+          "remote_size_bytes": 72458592,
+          "sha256": "476ebcae49140d3c307ca6cb1461847f42e849d8f5c91dd7a2661396fc2b9a02",
+          "size_bytes": 72458592
+        },
+        {
+          "logical_path": "processed/catalog.npz",
+          "match": true,
+          "remote_sha256": "877c5174b54aad39a281fdf1d92309ef74f9b2a836595aded1871df6a2c909d5",
+          "remote_size_bytes": 38787,
+          "sha256": "877c5174b54aad39a281fdf1d92309ef74f9b2a836595aded1871df6a2c909d5",
+          "size_bytes": 38787
+        },
+        {
+          "logical_path": "caption/caption_embeddings.npz",
+          "match": true,
+          "remote_sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+          "remote_size_bytes": 12428656,
+          "sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+          "size_bytes": 12428656
+        },
+        {
+          "logical_path": "caption/caption_cache_metadata.json",
+          "match": true,
+          "remote_sha256": "a06ccabc7cf36451148b09e4c7d84bf99b25d80f2c8092996cd2edda884a91bc",
+          "remote_size_bytes": 1214,
+          "sha256": "a06ccabc7cf36451148b09e4c7d84bf99b25d80f2c8092996cd2edda884a91bc",
+          "size_bytes": 1214
+        }
+      ],
+      "total_size_bytes": 1256272367
+    },
+    "memory": {
+      "peak_cuda_allocated_bytes": 173270528,
+      "peak_cuda_reserved_bytes": 245366784,
+      "peak_rss_mb": 5115.6484375
+    },
+    "resource_contract": {
+      "cpu_memory_limit_mib": 16384,
+      "function_timeout_s": 1200,
+      "gpu_name": "NVIDIA L4",
+      "gpu_request": "L4",
+      "gpu_total_memory_bytes": 23659151360,
+      "input_volume_read_only": true,
+      "resolved_device": "cuda:0",
+      "retries": 0,
+      "single_use_container": true,
+      "startup_timeout_s": 600,
+      "visible_gpu_count": 1
+    },
+    "runner_markdown": "# Phase B2B0 Full Runner Preflight\n\nThis is a bounded engineering preflight through the production runner path. It is not a formal effectiveness experiment.\n\n- Execution mode: `preflight`\n- Device: `cuda:0`\n- Current-process wall time: `111.68 s`\n- Peak RSS: `5115.65 MB`\n- Save/load/resume verified: `true`\n- Training examples: `2560`\n- Optimizer steps in this process: `20`\n- Cumulative optimizer steps: `20`\n- Skipped batches in this process / cumulative: `0 / 0`\n- Completed examples in this process / cumulative: `5120 / 5120`\n- Validation queries: `128`\n- Estimated/observed full run: `288.0` to `480.0` minutes\n\n| Epoch | Loss | Recall@100 | NDCG@20 | Coverage@100 |\n|---:|---:|---:|---:|---:|\n| 1 | 5.877542 | 0.002072 | 0.000000 | 0.056167 |\n| 2 | 5.074811 | 0.020326 | 0.003371 | 0.060331 |\n\nRequired claim boundary:\n\n```text\nformal_gate_executed=false\neffectiveness_claim=false\nfull_big_train=false\nfull_big_validation=false\n```\n\nSmall Matrix, temporal final, FAISS and Hybrid were not accessed or run.\n",
+    "runner_report": {
+      "access": {
+        "faiss_run": false,
+        "full_training_started": false,
+        "hybrid_run": false,
+        "small_matrix_accessed": false,
+        "temporal_final_accessed": false
+      },
+      "checkpoints": [
+        {
+          "checkpoint": {
+            "identity_sha256": "8239a14246d35b6c9c2e9e3216fb2576491b2378a770e83f45b9e84ede958849",
+            "locator": "CHECKPOINT_DIR/epoch_001.pt",
+            "sha256": "aa7b4481e4d9a18ad068e8840442e8dafd6d7638d61f80db97822a3e77e70d27"
+          },
+          "epoch": 1,
+          "epoch_loss": 5.877541589736938,
+          "timings_s": {
+            "exact_retrieval_and_metrics_s": 0.6348962329999921,
+            "item_encoding_s": 0.013034066000003008,
+            "user_encoding_s": 0.021901907000000165
+          },
+          "validation": {
+            "cold_user_denominators": {
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 2,
+              "data_cold_target_count": 9,
+              "query_count": 2,
+              "target_count": 26,
+              "user_count": 2
+            },
+            "cold_user_metrics": {
+              "Coverage@100": 0.010678056593699947,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.028066324913547245,
+              "Recall@100": 0.029411764705882353,
+              "Recall@20": 0.029411764705882353,
+              "Recall@50": 0.029411764705882353
+            },
+            "data_cold_is_descriptive": true,
+            "denominators": {
+              "all_query_count": 128,
+              "all_target_count": 2545,
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 123,
+              "data_cold_target_count": 694,
+              "query_count": 126,
+              "target_count": 2519,
+              "user_count": 126
+            },
+            "metrics": {
+              "Coverage@100": 0.05616657768286172,
+              "Data-Cold Recall@100": 0.0009033423667570009,
+              "NDCG@20": 0.0,
+              "Recall@100": 0.0020721771614628758,
+              "Recall@20": 0.0,
+              "Recall@50": 0.0008692365835222978
+            }
+          }
+        },
+        {
+          "checkpoint": {
+            "identity_sha256": "8239a14246d35b6c9c2e9e3216fb2576491b2378a770e83f45b9e84ede958849",
+            "locator": "CHECKPOINT_DIR/epoch_002.pt",
+            "sha256": "3a795b4452afd9adf0c65df984bceb9913b80d40ac6b89606b6dad7cd7625802"
+          },
+          "epoch": 2,
+          "epoch_loss": 5.074811315536499,
+          "timings_s": {
+            "exact_retrieval_and_metrics_s": 0.6202895529999921,
+            "item_encoding_s": 0.013251249999996162,
+            "user_encoding_s": 0.022750962000003483
+          },
+          "validation": {
+            "cold_user_denominators": {
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 2,
+              "data_cold_target_count": 9,
+              "query_count": 2,
+              "target_count": 26,
+              "user_count": 2
+            },
+            "cold_user_metrics": {
+              "Coverage@100": 0.010678056593699947,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.028066324913547245,
+              "Recall@100": 0.029411764705882353,
+              "Recall@20": 0.029411764705882353,
+              "Recall@50": 0.029411764705882353
+            },
+            "data_cold_is_descriptive": true,
+            "denominators": {
+              "all_query_count": 128,
+              "all_target_count": 2545,
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 123,
+              "data_cold_target_count": 694,
+              "query_count": 126,
+              "target_count": 2519,
+              "user_count": 126
+            },
+            "metrics": {
+              "Coverage@100": 0.0603310197544047,
+              "Data-Cold Recall@100": 0.0033662137320673905,
+              "NDCG@20": 0.0033712163467103148,
+              "Recall@100": 0.020325568536071367,
+              "Recall@20": 0.0014910702565279902,
+              "Recall@50": 0.00500894181916187
+            }
+          }
+        }
+      ],
+      "claim_boundary": {
+        "effectiveness_claim": false,
+        "formal_gate_executed": false,
+        "full_big_train": false,
+        "full_big_validation": false
+      },
+      "environment": {
+        "cuda_available": true,
+        "device": "cuda:0",
+        "torch_version": "2.11.0+cu130"
+      },
+      "estimated_full_run_minutes": {
+        "high": 479.9991370348001,
+        "low": 287.99948222088005,
+        "method": "preflight_step_rate_scaled_with_1.5x_to_2.5x_overhead"
+      },
+      "execution_mode": "preflight",
+      "formal_gates": {
+        "A": false,
+        "B": false,
+        "C": false
+      },
+      "frozen_bpr_epoch_20": {
+        "Coverage@100": 0.33304858515750135,
+        "Data-Cold Recall@100": 0.0,
+        "NDCG@20": 0.012773561140700995,
+        "Recall@100": 0.04843855379304513
+      },
+      "input_provenance": {
+        "caption_cache_sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+        "code_commit_at_run": "7feb5675b7fa6577c68a3775d943c0a32b94f603",
+        "config_sha256": "3afb836f7c15855e6fed89399002bf9ae6b57447d31062f263b98fdd55f5bf2d",
+        "input_tree_clean_at_start": true,
+        "processed_manifest_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+        "raw_sources": {
+          "big_matrix.csv": {
+            "actual_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+            "expected_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+            "sha256_match": true,
+            "source_locator": "KUAIREC_DATA_DIR/big_matrix.csv"
+          },
+          "item_daily_features.csv": {
+            "actual_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+            "expected_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+            "sha256_match": true,
+            "source_locator": "KUAIREC_DATA_DIR/item_daily_features.csv"
+          },
+          "kuairec_caption_category.csv": {
+            "actual_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+            "expected_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+            "sha256_match": true,
+            "source_locator": "KUAIREC_DATA_DIR/kuairec_caption_category.csv"
+          }
+        }
+      },
+      "memberships": {
+        "fixed_retrieval_catalog": {
+          "count": 9365,
+          "hash_scheme": "sha256(phase-b2a-fixed-retrieval-catalog-v1\\n + sorted-unique-decimal-id\\n)",
+          "sha256": "8b8e88e2455a27dc0fac79e7bdb2733dc43096bb6d637e549d1ce5853e8ce55b"
+        },
+        "model_item_universe": {
+          "count": 9388,
+          "hash_scheme": "sha256(phase-b2a-model-item-universe-v1\\n + sorted-unique-decimal-id\\n)",
+          "sha256": "36b4f349b5f290c5117d8c19c2ce1cbb38f5a9431272060f46a875fb3aec5d9b"
+        },
+        "normal": {
+          "count": 10699,
+          "hash_scheme": "sha256(normal-video-membership-v1\\n + sorted-unique-decimal-id\\n)",
+          "sha256": "631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e"
+        }
+      },
+      "peak_gpu_memory_mb": 165.24365234375,
+      "peak_rss_mb": 5115.6484375,
+      "phase": "phase-b2b0-full-runner-preflight",
+      "resume": {
+        "checkpoint_epoch": 1,
+        "independent_load_before_continue": true,
+        "verified": true
+      },
+      "runtime_s": 111.684119171,
+      "selected_epoch_by_frozen_rule": 2,
+      "status": "completed",
+      "timings_s": {
+        "checkpoint_loading_s": 0.03467565799999761,
+        "checkpoint_reevaluation_s": 0.0,
+        "report_generation_s": 0.001173910999995087
+      },
+      "training": {
+        "completed_epoch": 2,
+        "cumulative_statistics": {
+          "completed_examples": 5120,
+          "optimizer_steps": 20,
+          "skipped_batches": 0
+        },
+        "current_process_training_and_epoch_validation_s": 34.23979577600001,
+        "epoch_losses": [
+          5.877541589736938,
+          5.074811315536499
+        ],
+        "example_count": 2560,
+        "ordered_user_count": 249,
+        "planned_item_count": 6197,
+        "process_statistics": {
+          "completed_examples": 5120,
+          "optimizer_steps": 20,
+          "skipped_batches": 0
+        },
+        "sample": {
+          "maximum_example_index": 23177,
+          "minimum_example_index": 12,
+          "not_csv_prefix": true,
+          "sample_membership_sha256": "dc7f3cd977e7e42eb1cec784c10b885c2eb8f613a90f43d51fa08d0c1c1562c6",
+          "sampled_examples": 2560,
+          "sampled_items": 5456,
+          "sampled_users": 249,
+          "source_example_population": 23179
+        },
+        "source_example_population": 23179
+      },
+      "validation": {
+        "evaluated_queries": 128,
+        "evaluated_targets": 2545,
+        "fixed_catalog_count": 9365,
+        "frozen_contract": {
+          "data_cold_item_count": 1492,
+          "fixed_catalog_count": 9365,
+          "query_contract_sha256": "f25df9d235f32b114357a190f69a60e49d8993d2c4e09f975a0b361c7439f877",
+          "query_count": 6818,
+          "target_count": 118565,
+          "warm_query_count": 6816,
+          "warm_target_count": 118539
+        }
+      }
+    },
+    "source_identity": {
+      "b2b_runner_commit": "7feb5675b7fa6577c68a3775d943c0a32b94f603",
+      "repository": "https://github.com/Rockyeast/short-video-two-tower-recommender.git",
+      "repository_status_clean_at_start": true,
+      "wrapper_commit": "2426556a123381b8cd2800bb74d19b748ad3459e"
+    },
+    "status": "passed",
+    "timings_s": {
+      "checkpoint_loading": 0.03467565799999761,
+      "checkpoint_save_observed_total": 0.038861135000004765,
+      "container_startup": 4.1925623416900635,
+      "estimated_training_compute": 32.84013501200002,
+      "exact_retrieval": 1.2551857859999842,
+      "raw_linear_eta_6729_steps": 11049.063424787406,
+      "remote_function_wall": 118.270365064,
+      "remote_input_sha_verification": 1.4699607420000005,
+      "runner_data_preparation": 77.443149484,
+      "runner_wall": 111.76738714,
+      "seconds_per_optimizer_step": 1.642006750600001
+    },
+    "versions": {
+      "cuda_runtime": "13.0",
+      "modal_sdk": "1.4.1",
+      "nvidia_smi": "NVIDIA L4, 23034, 580.95.05",
+      "pip_freeze": [
+        "aiohappyeyeballs==2.7.1",
+        "aiohttp==3.14.3",
+        "aiosignal==1.4.0",
+        "annotated-doc==0.0.4",
+        "anyio==4.14.2",
+        "attrs==26.1.0",
+        "cbor2==6.1.3",
+        "certifi==2026.7.22",
+        "click==8.4.2",
+        "cuda-bindings==13.3.1",
+        "cuda-pathfinder==1.6.0",
+        "cuda-toolkit==13.0.2",
+        "filelock==3.32.0",
+        "frozenlist==1.8.0",
+        "fsspec==2026.6.0",
+        "grpclib==0.4.9",
+        "h2==4.3.0",
+        "hpack==4.2.0",
+        "hyperframe==6.1.0",
+        "idna==3.18",
+        "Jinja2==3.1.6",
+        "markdown-it-py==4.2.0",
+        "MarkupSafe==3.0.3",
+        "mdurl==0.1.2",
+        "modal==1.4.1",
+        "mpmath==1.3.0",
+        "multidict==6.7.1",
+        "networkx==3.6.1",
+        "numpy==2.2.6",
+        "nvidia-cublas==13.1.0.3",
+        "nvidia-cuda-cupti==13.0.85",
+        "nvidia-cuda-nvrtc==13.0.88",
+        "nvidia-cuda-runtime==13.0.96",
+        "nvidia-cudnn-cu13==9.19.0.56",
+        "nvidia-cufft==12.0.0.61",
+        "nvidia-cufile==1.15.1.6",
+        "nvidia-curand==10.4.0.35",
+        "nvidia-cusolver==12.0.4.66",
+        "nvidia-cusparse==12.6.3.3",
+        "nvidia-cusparselt-cu13==0.8.0",
+        "nvidia-nccl-cu13==2.28.9",
+        "nvidia-nvjitlink==13.0.88",
+        "nvidia-nvshmem-cu13==3.4.5",
+        "nvidia-nvtx==13.0.85",
+        "pandas==2.3.3",
+        "propcache==0.5.2",
+        "protobuf==6.33.6",
+        "Pygments==2.20.0",
+        "python-dateutil==2.9.0.post0",
+        "pytz==2026.2",
+        "PyYAML==6.0.3",
+        "rich==15.0.0",
+        "scipy==1.16.3",
+        "setuptools==81.0.0",
+        "shellingham==1.5.4",
+        "six==1.17.0",
+        "sympy==1.14.0",
+        "synchronicity==0.12.5",
+        "toml==0.10.2",
+        "torch==2.11.0",
+        "triton==3.6.0",
+        "typer==0.27.0",
+        "types-certifi==2021.10.8.3",
+        "types-toml==0.10.8.20260518",
+        "typing_extensions==4.16.0",
+        "tzdata==2026.3",
+        "uv==0.7.19",
+        "watchfiles==1.2.0",
+        "wheel==0.45.1",
+        "yarl==1.24.5"
+      ],
+      "pip_freeze_sha256": "2403de28650621cdaf66252cf48e09da2f3e764567f102e2101507bb843654a4",
+      "python": "3.12.10 (main, May 21 2025, 23:34:56) [GCC 12.2.0]",
+      "pytorch": "2.11.0+cu130"
+    }
+  },
+  "status": "passed",
+  "volume": {
+    "bundle_reused": true,
+    "version_root": "bundles/7a7b8b370335f61d28063c7821600063c28929e2a837473890611cc1315f56a6",
+    "volume_name": "kuairec-b2b-preflight-inputs"
+  },
+  "wrapper_commit": "2426556a123381b8cd2800bb74d19b748ad3459e"
+}
