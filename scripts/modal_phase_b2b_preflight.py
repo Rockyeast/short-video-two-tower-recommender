@@ -63,21 +63,6 @@ image = (
             f'test "$(git rev-parse HEAD)" = "{B2B_RUNNER_COMMIT}"'
         ),
         f"cd {REPOSITORY_DIR} && test -z \"$(git status --porcelain)\"",
-        "mkdir -p /tmp/runner-package-source /tmp/runner-wheel",
-        (
-            f"git -C {REPOSITORY_DIR} archive --format=tar "
-            "HEAD -o /tmp/runner-source.tar"
-        ),
-        (
-            "tar -xf /tmp/runner-source.tar "
-            "-C /tmp/runner-package-source"
-        ),
-        (
-            "python -m pip wheel --no-deps "
-            "--wheel-dir /tmp/runner-wheel /tmp/runner-package-source"
-        ),
-        "python -m pip install --no-deps /tmp/runner-wheel/*.whl",
-        f"cd {REPOSITORY_DIR} && test -z \"$(git status --porcelain)\"",
     )
     .add_local_file(
         Path(__file__),
@@ -211,6 +196,7 @@ def run_l4_preflight(
     if torch.cuda.device_count() != 1:
         raise RuntimeError("The preflight requires exactly one visible GPU")
     sys.path.insert(0, str(REPOSITORY_DIR))
+    sys.path.insert(0, str(REPOSITORY_DIR / "src"))
     from kuairec_fully_observed.torch_training import (
         resolve_concrete_device,
     )

@@ -238,9 +238,8 @@ def test_modal_wrapper_has_frozen_single_l4_contract() -> None:
     assert "retries=0" in source
     assert "single_use_containers=True" in source
     assert "input_volume.read_only()" in source
-    assert "pip wheel --no-deps" in source
-    assert "/tmp/runner-package-source" in source
-    assert "pip install --no-deps {REPOSITORY_DIR}" not in source
+    assert 'sys.path.insert(0, str(REPOSITORY_DIR / "src"))' in source
+    assert "pip install --no-deps" not in source
     assert source.count(".add_local_file(") == 2
     assert "modal_phase_b2b_preflight.py" in source
     assert "modal_preflight_helpers.py" in source
