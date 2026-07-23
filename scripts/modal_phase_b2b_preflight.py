@@ -440,8 +440,8 @@ def _render_markdown(report: dict[str, Any]) -> str:
         [
             "# Phase B2B Modal NVIDIA L4 Preflight",
             "",
-            "This is the single allowed 20-step GPU preflight. It is not a "
-            "formal full-training or effectiveness run.",
+            "This is the successful bounded 20-step GPU preflight. It is not "
+            "a formal full-training or effectiveness run.",
             "",
             f"- Status: `{remote['status']}`",
             f"- B2B runner commit: "
