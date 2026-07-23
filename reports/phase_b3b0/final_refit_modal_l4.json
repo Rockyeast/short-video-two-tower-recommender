@@ -1,0 +1,128 @@
+{
+  "input_bundle": {
+    "bundle_reused": true,
+    "sha256": "7a7b8b370335f61d28063c7821600063c28929e2a837473890611cc1315f56a6",
+    "version_root": "bundles/7a7b8b370335f61d28063c7821600063c28929e2a837473890611cc1315f56a6"
+  },
+  "phase": "phase-b3b0-final-refit-modal-l4",
+  "remote": {
+    "caption": {
+      "cache_file_sha256": "e23d798f7407ab1fd2ad6593ccac85c93b0912637545b4d67e43091aa600b755",
+      "cache_locator": "artifacts/phase_b2a/caption_embeddings.npz",
+      "cache_reused": true,
+      "cleaned_text_sha256": "a0d4e6644b382c79cabe073c4637b839f135386d9988d7a99ec94a08e2121b0f",
+      "cuda_version": "13.0",
+      "dtype": "float32",
+      "embedding_payload_sha256": "986b77b7e55c355f872a1ba03f13c375c7c837a4a721559e734f714dbf1f070e",
+      "empty_text_count": 0,
+      "item_universe": {
+        "count": 10725,
+        "hash_scheme": "sha256(phase-b3b-refit-item-universe-v1\\n + sorted-unique-decimal-id\\n)",
+        "sha256": "b9c31f8b2994c9ead960da977fd4e0cc357918cfc491121225689a79c33fa577"
+      },
+      "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "nonempty_coverage": 1.0,
+      "nonempty_text_count": 10725,
+      "normal_items": {
+        "count": 10699,
+        "hash_scheme": "sha256(phase-b3b-normal-items-v1\\n + sorted-unique-decimal-id\\n)",
+        "sha256": "49638a1184eaac25c79aa91a975d4a0ea560683fac231c0c9ad33162d4fdcc64"
+      },
+      "ordered_item_membership_sha256": "65a67fd7d966175279ee069456feba9fc4536749dc1536a173df4dd7b6628af5",
+      "preprocessing_version": "phase-b2a-caption-fallback-v1",
+      "purpose": "big-train-validation-refit-plus-all-normal-content-fallback",
+      "resolved_revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+      "schema_version": 1,
+      "sentence_transformers_version": "5.6.0",
+      "shape": [
+        10725,
+        384
+      ],
+      "small_matrix_accessed": false,
+      "source_actual_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+      "source_expected_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+      "source_locator": "KUAIREC_DATA_DIR/kuairec_caption_category.csv",
+      "temporal_final_accessed": false,
+      "torch_version": "2.11.0+cu130"
+    },
+    "checkpoint_files": [
+      "phase-b3b-final-v1/artifacts/final_bpr_epoch_020.npz",
+      "phase-b3b-final-v1/artifacts/final_two_tower_epoch_001.pt"
+    ],
+    "gpu": "NVIDIA L4",
+    "output_root": "phase-b3b-final-v1",
+    "output_volume": "kuairec-b3b-final-refit-artifacts",
+    "refit": {
+      "access": {
+        "small_matrix_accessed": false,
+        "temporal_final_accessed": false
+      },
+      "fit_context": "canonical_big_train_plus_validation",
+      "peak_rss_mb": 8018.36328125,
+      "phase": "phase-b3b0-final-refit",
+      "recipe_frozen_before_small": true,
+      "refit": {
+        "bpr": {
+          "checkpoint_path": "artifacts/phase_b3b/final_bpr_epoch_020.npz",
+          "checkpoint_sha256": "ac423dacece97cbc6c10c4d773e4b9deec0d9cdf540ec8baf7be492dd812f4c2",
+          "epoch_losses": [
+            0.6917632752734837,
+            0.6358166011651909,
+            0.37230016947182504,
+            0.2905533842968002,
+            0.2709722263121693,
+            0.25880797030898395,
+            0.24683677473812912,
+            0.23554554649755632,
+            0.22599924661227738,
+            0.21913665336927501,
+            0.21160092325101398,
+            0.20573453180077952,
+            0.1996672526197474,
+            0.1931170840616685,
+            0.18728687931060944,
+            0.18119352103664915,
+            0.17581624010563904,
+            0.1706527675675171,
+            0.1651904800896054,
+            0.15987104723983625
+          ],
+          "epochs": 20,
+          "final_loss": 0.15987104723983625,
+          "fit_interactions": 10024291,
+          "optimizer_steps": 3680,
+          "strong_positive_events": 752130,
+          "training_items": 9365,
+          "training_users": 7173,
+          "wall_time_s": 63.35198196499999
+        },
+        "global_popularity": {
+          "artifact_path": "artifacts/phase_b3b/final_global_popularity.json",
+          "artifact_sha256": "b47f01c8af900d2b00d80163c57485637785cae912a34832b7e50421492ba780",
+          "strong_positive_items_with_nonzero_count": 9111
+        },
+        "two_tower": {
+          "checkpoint_path": "artifacts/phase_b3b/final_two_tower_epoch_001.pt",
+          "checkpoint_sha256": "5715a98d47c80f545afdce845c2a96940bc7ce3fec355e4a1156576d2fcab949",
+          "device": "cuda:0",
+          "epochs": 1,
+          "final_loss": 4.733988265300837,
+          "fit_interactions": 10024291,
+          "identity_sha256": "56daf414ab7e3ea21a0d51ca4cfd531381fceddf2f10c24db7f9abfc4876e7af",
+          "model_item_universe": 10725,
+          "optimizer_steps": 2692,
+          "skipped_batches": 0,
+          "strong_positive_examples": 689023,
+          "touched_items": 9368,
+          "touched_users": 7171,
+          "training_users": 7171,
+          "wall_time_s": 379.25965270300003
+        }
+      },
+      "runtime_s": 446.440813827,
+      "selection_performed": false
+    }
+  },
+  "runner_commit": "fa4e53c1ea88a81e7c68c9f082d7f645eddd6e66",
+  "wrapper_commit": "20bbf0334b7e8ff72d7987811df7614826d7d8b2"
+}
