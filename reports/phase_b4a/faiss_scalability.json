@@ -1,0 +1,194 @@
+{
+  "benchmark": {
+    "contract": {
+      "hnsw": {
+        "ef_construction": 200,
+        "ef_search": 512,
+        "m": 32
+      },
+      "query_limit": 256,
+      "seed": 20260724,
+      "thread_count": 8,
+      "tie_contract": "inner_product_desc_then_item_position_asc",
+      "top_k": 100,
+      "vector_dimension": 128
+    },
+    "peak_rss_mb": 6713.49609375,
+    "phase": "phase-b4a-faiss-scalability",
+    "runtime_identity": {
+      "cpu_model": "unknown",
+      "faiss_version": "1.14.3",
+      "fixed_thread_count": 8,
+      "logical_cpu_count": 24,
+      "numpy_version": "2.2.6",
+      "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36"
+    },
+    "scales": [
+      {
+        "catalog_count": 10725,
+        "data_scope": "real_10k_catalog",
+        "faiss_hnsw": {
+          "ann_recall_at_100_vs_index_flat_ip": 0.9852343750000001,
+          "config": {
+            "ef_construction": 200,
+            "ef_search": 512,
+            "m": 32
+          },
+          "index_build_s": 0.11007097899999962,
+          "index_size_bytes": 8406302,
+          "p50_ms": 0.2910375000055865,
+          "p95_ms": 0.505950750003592,
+          "passes_99_percent_gate": false,
+          "qps": 3146.996978745971,
+          "top100_overlap_vs_exact": 0.9852343750000001,
+          "total_search_s": 0.08134739300004412
+        },
+        "faiss_index_flat_ip": {
+          "index_build_s": 0.0012224319999916133,
+          "index_size_bytes": 5491245,
+          "p50_ms": 0.3135630000059564,
+          "p95_ms": 0.5999077499936334,
+          "qps": 2528.8868771452285,
+          "top100_overlap_vs_exact": 1.0,
+          "total_search_s": 0.1012303090002149
+        },
+        "numpy_exact": {
+          "index_build_s": 0.0,
+          "index_size_bytes": 5491200,
+          "p50_ms": 0.07095700000547822,
+          "p95_ms": 0.0904777499997067,
+          "qps": 12701.03102620818,
+          "runtime_s": 0.021716477000012446,
+          "top100_overlap_vs_exact": 1.0,
+          "total_search_s": 0.02015584399973136
+        },
+        "peak_rss_mb": 6713.49609375,
+        "query_count": 256,
+        "recommendation_effectiveness_claim": false,
+        "scale_name": "real_10k_catalog",
+        "top_k": 100,
+        "vector_dimension": 128
+      },
+      {
+        "catalog_count": 100000,
+        "data_scope": "synthetic_scale_extension",
+        "faiss_hnsw": {
+          "ann_recall_at_100_vs_index_flat_ip": 0.8427734375,
+          "config": {
+            "ef_construction": 200,
+            "ef_search": 512,
+            "m": 32
+          },
+          "index_build_s": 9.539684074999997,
+          "index_size_bytes": 78420834,
+          "p50_ms": 0.7123639999946363,
+          "p95_ms": 1.8930140000037454,
+          "passes_99_percent_gate": false,
+          "qps": 1134.9670193445838,
+          "top100_overlap_vs_exact": 0.8427734375,
+          "total_search_s": 0.22555721499981018
+        },
+        "faiss_index_flat_ip": {
+          "index_build_s": 0.013012889000009409,
+          "index_size_bytes": 51200045,
+          "p50_ms": 1.2729780000029223,
+          "p95_ms": 1.8558082499993134,
+          "qps": 800.7522516883627,
+          "top100_overlap_vs_exact": 1.0,
+          "total_search_s": 0.31969938200015235
+        },
+        "numpy_exact": {
+          "index_build_s": 0.0,
+          "index_size_bytes": 51200000,
+          "p50_ms": 0.4199960000050851,
+          "p95_ms": 0.5677824999992254,
+          "qps": 2249.4770580949703,
+          "runtime_s": 0.1375097339999911,
+          "top100_overlap_vs_exact": 1.0,
+          "total_search_s": 0.11380422799990697
+        },
+        "peak_rss_mb": 6713.49609375,
+        "query_count": 256,
+        "recommendation_effectiveness_claim": false,
+        "scale_name": "synthetic_scale_extension_100k",
+        "top_k": 100,
+        "vector_dimension": 128
+      },
+      {
+        "catalog_count": 1000000,
+        "data_scope": "synthetic_scale_extension",
+        "faiss_hnsw": {
+          "ann_recall_at_100_vs_index_flat_ip": 0.5465625000000001,
+          "config": {
+            "ef_construction": 200,
+            "ef_search": 512,
+            "m": 32
+          },
+          "index_build_s": 305.954784647,
+          "index_size_bytes": 784129506,
+          "p50_ms": 3.9017309999849203,
+          "p95_ms": 7.956305750013826,
+          "passes_99_percent_gate": false,
+          "qps": 230.496731964304,
+          "top100_overlap_vs_exact": 0.5465625000000001,
+          "total_search_s": 1.1106448139995564
+        },
+        "faiss_index_flat_ip": {
+          "index_build_s": 0.6732576990000041,
+          "index_size_bytes": 512000045,
+          "p50_ms": 13.369979000003696,
+          "p95_ms": 14.911138250013778,
+          "qps": 73.40489253821899,
+          "top100_overlap_vs_exact": 1.0,
+          "total_search_s": 3.4875059570002236
+        },
+        "numpy_exact": {
+          "index_build_s": 0.0,
+          "index_size_bytes": 512000000,
+          "p50_ms": 9.664802000003192,
+          "p95_ms": 11.296700000002602,
+          "qps": 101.31620988492227,
+          "runtime_s": 3.267527247000004,
+          "top100_overlap_vs_exact": 1.0,
+          "total_search_s": 2.5267427619999983
+        },
+        "peak_rss_mb": 6713.49609375,
+        "query_count": 256,
+        "recommendation_effectiveness_claim": false,
+        "scale_name": "synthetic_scale_extension_1m",
+        "top_k": 100,
+        "vector_dimension": 128
+      }
+    ],
+    "scope": {
+      "real_10k_catalog": true,
+      "recommendation_effectiveness_claim": false,
+      "small_labels_accessed": false,
+      "synthetic_scale_extension": true,
+      "temporal_final_accessed": false
+    },
+    "total_wall_time_s": 538.347238828,
+    "vector_identity": {
+      "numeric_preprocessing_sha256": "71217e8965b59915874ab879e157eacd61a1c55813604bcdb9e748e08458c489",
+      "numeric_sidecar_file_sha256": "478fcaccbe71b97bb00f6ac0fa5a95b8795bcd86600f3ffb879e36bb90b40158",
+      "query_selection_seed": 20260724,
+      "query_user_membership": {
+        "count": 256,
+        "hash_scheme": "sha256(phase-b4a-query-users-v1\\n + sorted-unique-decimal-id\\n)",
+        "sha256": "267f632d9dacfabf3169052b63ad5f11dc3edbb5b6cb3d979aa7a662d436a443"
+      },
+      "query_user_order_sha256": "7acef898cbd837ca0fef058266956091955301d77cd9514429e9e8f9c246a55c",
+      "real_item_membership": {
+        "count": 10725,
+        "hash_scheme": "sha256(phase-b3b-refit-item-universe-v1\\n + sorted-unique-decimal-id\\n)",
+        "sha256": "b9c31f8b2994c9ead960da977fd4e0cc357918cfc491121225689a79c33fa577"
+      },
+      "small_matrix_accessed": false,
+      "temporal_final_accessed": false,
+      "two_tower_checkpoint_sha256": "5715a98d47c80f545afdce845c2a96940bc7ce3fec355e4a1156576d2fcab949"
+    }
+  },
+  "gpu_name": "NVIDIA L4",
+  "runner_commit": "af4fa9aebba1cdbcea0cdbb7983fd99952db3db7",
+  "wrapper_commit": "04079513b2ef45fd76681467c2607ddb2732b43f"
+}

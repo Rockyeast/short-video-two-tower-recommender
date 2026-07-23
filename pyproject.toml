@@ -20,6 +20,11 @@ training = [
   "torch==2.11.0",
   "sentence-transformers==5.6.0",
 ]
+benchmark = [
+  "torch==2.11.0",
+  "sentence-transformers==5.6.0",
+  "faiss-cpu==1.14.3",
+]
 
 [tool.pytest.ini_options]
 pythonpath = [".", "src"]
