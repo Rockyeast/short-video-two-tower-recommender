@@ -63,7 +63,21 @@ image = (
             f'test "$(git rev-parse HEAD)" = "{B2B_RUNNER_COMMIT}"'
         ),
         f"cd {REPOSITORY_DIR} && test -z \"$(git status --porcelain)\"",
-        f"python -m pip install --no-deps {REPOSITORY_DIR}",
+        "mkdir -p /tmp/runner-package-source /tmp/runner-wheel",
+        (
+            f"git -C {REPOSITORY_DIR} archive --format=tar "
+            "HEAD -o /tmp/runner-source.tar"
+        ),
+        (
+            "tar -xf /tmp/runner-source.tar "
+            "-C /tmp/runner-package-source"
+        ),
+        (
+            "python -m pip wheel --no-deps "
+            "--wheel-dir /tmp/runner-wheel /tmp/runner-package-source"
+        ),
+        "python -m pip install --no-deps /tmp/runner-wheel/*.whl",
+        f"cd {REPOSITORY_DIR} && test -z \"$(git status --porcelain)\"",
     )
     .add_local_file(
         Path(__file__),
@@ -174,7 +188,6 @@ def _checkpoint_monitor(
     max_containers=1,
     buffer_containers=0,
     single_use_containers=True,
-    max_inputs=1,
     volumes={INPUT_MOUNT: input_volume.read_only()},
     block_network=True,
     restrict_modal_access=True,
