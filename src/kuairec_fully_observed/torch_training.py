@@ -34,6 +34,40 @@ def stable_int_membership_sha256(label: str, values: np.ndarray) -> str:
     return digest.hexdigest()
 
 
+def resolve_concrete_device(
+    requested_device: str | torch.device,
+    *,
+    cuda_available: bool | None = None,
+    current_cuda_device: int | None = None,
+) -> torch.device:
+    """Resolve CPU/CUDA requests to one concrete device used end to end."""
+
+    requested = torch.device(requested_device)
+    if requested.type == "cpu":
+        return torch.device("cpu")
+    if requested.type != "cuda":
+        raise ValueError(f"Unsupported Two-Tower device type: {requested.type}")
+    available = (
+        torch.cuda.is_available()
+        if cuda_available is None
+        else bool(cuda_available)
+    )
+    if not available:
+        raise RuntimeError(
+            f"CUDA device {requested} was requested but CUDA is unavailable"
+        )
+    index = requested.index
+    if index is None:
+        index = (
+            torch.cuda.current_device()
+            if current_cuda_device is None
+            else int(current_cuda_device)
+        )
+    if int(index) < 0:
+        raise ValueError(f"CUDA device index must be non-negative: {index}")
+    return torch.device("cuda", int(index))
+
+
 @dataclass(frozen=True)
 class PreparedItemFeatureStore:
     item_ids: np.ndarray
@@ -339,7 +373,7 @@ def encode_item_ids(
 def assert_model_device(
     model: TwoTowerV1, expected_device: str | torch.device
 ) -> torch.device:
-    expected = torch.device(expected_device)
+    expected = resolve_concrete_device(expected_device)
     devices = {parameter.device for parameter in model.parameters()}
     if devices != {expected}:
         raise RuntimeError(
@@ -772,6 +806,7 @@ def save_checkpoint(
     *,
     model: TwoTowerV1,
     model_dimensions: dict[str, int],
+    ordered_item_ids: np.ndarray,
     ordered_user_ids: np.ndarray,
     touched_user_ids: np.ndarray,
     touched_item_ids: np.ndarray,
@@ -789,6 +824,9 @@ def save_checkpoint(
             "identity_sha256": canonical_json_sha256(
                 identity, label="phase-b2a-checkpoint-identity-v2"
             ),
+            "ordered_item_ids": np.asarray(
+                ordered_item_ids, dtype=np.int64
+            ),
             "ordered_user_ids": np.asarray(
                 ordered_user_ids, dtype=np.int64
             ),
@@ -805,7 +843,7 @@ def load_checkpoint(
     device: str | torch.device,
     expected_identity: dict[str, Any],
 ) -> tuple[TwoTowerV1, dict[str, Any]]:
-    target_device = torch.device(device)
+    target_device = resolve_concrete_device(device)
     payload = torch.load(
         path, map_location=target_device, weights_only=False
     )
@@ -819,13 +857,54 @@ def load_checkpoint(
     )
     if payload.get("identity_sha256") != expected_identity_sha:
         raise RuntimeError("Two-Tower checkpoint identity SHA mismatch")
+    dimensions = payload.get("model_dimensions")
+    expected_dimensions = expected_identity.get("model_dimensions")
+    required_dimensions = {
+        "num_items",
+        "num_users",
+        "num_category_tokens",
+        "num_upload_types",
+    }
+    if (
+        not isinstance(dimensions, dict)
+        or set(dimensions) != required_dimensions
+        or dimensions != expected_dimensions
+    ):
+        raise RuntimeError("Checkpoint model dimensions identity mismatch")
+    ordered_items = np.asarray(payload.get("ordered_item_ids"), dtype=np.int64)
     ordered_users = np.asarray(payload.get("ordered_user_ids"), dtype=np.int64)
     touched_users = np.asarray(payload.get("touched_user_ids"), dtype=np.int64)
     touched_items = np.asarray(payload.get("touched_item_ids"), dtype=np.int64)
+    if not np.array_equal(ordered_items, np.unique(ordered_items)):
+        raise RuntimeError("Checkpoint ordered item mapping is invalid")
     if not np.array_equal(ordered_users, np.unique(ordered_users)):
         raise RuntimeError("Checkpoint ordered user mapping is invalid")
+    if not np.array_equal(touched_users, np.unique(touched_users)):
+        raise RuntimeError("Checkpoint touched user membership is invalid")
+    if not np.array_equal(touched_items, np.unique(touched_items)):
+        raise RuntimeError("Checkpoint touched item membership is invalid")
     if not set(touched_users).issubset(set(ordered_users)):
         raise RuntimeError("Checkpoint touched users escape the user mapping")
+    if not set(touched_items).issubset(set(ordered_items)):
+        raise RuntimeError("Checkpoint touched items escape the item mapping")
+    if dimensions["num_items"] != len(ordered_items):
+        raise RuntimeError("Checkpoint item mapping and model dimensions differ")
+    if dimensions["num_users"] != len(ordered_users):
+        raise RuntimeError("Checkpoint user mapping and model dimensions differ")
+    feature_identity = expected_identity.get("feature_identity", {})
+    if (
+        dimensions["num_category_tokens"]
+        != feature_identity.get("category_vocab_count")
+        or dimensions["num_upload_types"]
+        != feature_identity.get("upload_type_vocab_count")
+    ):
+        raise RuntimeError("Checkpoint feature vocabulary dimensions differ")
+    ordered_item_identity = expected_identity["ordered_item_store"]
+    if membership_record(
+        ordered_items,
+        label="phase-b2a-ordered-item-store-v1",
+    ) != ordered_item_identity:
+        raise RuntimeError("Checkpoint ordered item mapping identity mismatch")
     ordered_identity = expected_identity["ordered_user_position_mapping"]
     if membership_record(
         ordered_users,
@@ -846,9 +925,7 @@ def load_checkpoint(
         != touched_identity["items"]["sha256"]
     ):
         raise RuntimeError("Checkpoint touched membership identity mismatch")
-    if payload["model_dimensions"]["num_users"] != len(ordered_users):
-        raise RuntimeError("Checkpoint user mapping and model dimensions differ")
-    model = TwoTowerV1(**payload["model_dimensions"]).to(target_device)
+    model = TwoTowerV1(**dimensions).to(target_device)
     model.load_state_dict(payload["state_dict"], strict=True)
     model._zero_padding_rows()
     assert_model_device(model, target_device)

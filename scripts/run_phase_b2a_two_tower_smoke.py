@@ -47,6 +47,7 @@ from kuairec_fully_observed.torch_training import (
     load_checkpoint,
     preencode_item_universe,
     prepare_item_feature_store,
+    resolve_concrete_device,
     sample_bounded_example_indices,
     save_checkpoint,
     train_bounded_two_tower,
@@ -582,7 +583,9 @@ def run(
         train_observed_item_ids=train_history_items,
         train_observed_normal_item_ids=train_observed_normal,
     )
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_concrete_device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
     dimensions = {
         "num_items": len(store.item_ids),
         "num_users": int(sample_stats["sampled_users"]),
@@ -621,6 +624,7 @@ def run(
         "processed_manifest_sha256": PHASE1_PROCESSED_MANIFEST_SHA256,
         "raw_inputs": raw_input_traceability,
         "code_commit": code_commit_at_run,
+        "model_dimensions": dimensions,
         "ordered_item_store": membership_record(
             store.item_ids, label="phase-b2a-ordered-item-store-v1"
         ),
@@ -634,6 +638,7 @@ def run(
             "model_item_universe": model_item_universe_membership,
         },
         "feature_identity": {
+            "category_vocab_count": len(store.category_vocab),
             "category_vocab_sha256": canonical_json_sha256(
                 [
                     [level, raw, index]
@@ -643,6 +648,7 @@ def run(
                 ],
                 label="phase-b2a-category-vocab-v1",
             ),
+            "upload_type_vocab_count": len(store.upload_type_vocab),
             "upload_type_vocab_sha256": canonical_json_sha256(
                 sorted(store.upload_type_vocab.items()),
                 label="phase-b2a-upload-type-vocab-v1",
@@ -681,6 +687,7 @@ def run(
         checkpoint_path,
         model=model,
         model_dimensions=dimensions,
+        ordered_item_ids=store.item_ids,
         ordered_user_ids=ordered_user_ids,
         touched_user_ids=training_result["touched_user_ids"],
         touched_item_ids=training_result["touched_item_ids"],

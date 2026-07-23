@@ -20,6 +20,7 @@ from kuairec_fully_observed.torch_training import (  # noqa: E402
     load_checkpoint,
     preencode_item_universe,
     record_successful_step_membership,
+    resolve_concrete_device,
     save_checkpoint,
 )
 from kuairec_fully_observed.training import build_in_batch_logit_mask  # noqa: E402
@@ -47,6 +48,32 @@ def _model() -> TwoTowerV1:
         num_category_tokens=8,
         num_upload_types=2,
     )
+
+
+def test_resolve_concrete_device_cpu_and_mocked_cuda_ordinals():
+    assert resolve_concrete_device("cpu") == torch.device("cpu")
+    assert resolve_concrete_device(
+        "cuda",
+        cuda_available=True,
+        current_cuda_device=0,
+    ) == torch.device("cuda:0")
+    assert resolve_concrete_device(
+        torch.device("cuda"),
+        cuda_available=True,
+        current_cuda_device=2,
+    ) == torch.device("cuda:2")
+    assert resolve_concrete_device(
+        "cuda:1",
+        cuda_available=True,
+        current_cuda_device=2,
+    ) == torch.device("cuda:1")
+
+
+def test_resolve_concrete_device_rejects_unavailable_cuda():
+    with pytest.raises(RuntimeError, match="CUDA is unavailable"):
+        resolve_concrete_device("cuda", cuda_available=False)
+    with pytest.raises(RuntimeError, match="CUDA is unavailable"):
+        resolve_concrete_device("cuda:1", cuda_available=False)
 
 
 def test_tower_shapes_norms_weighted_mean_and_empty_history_are_finite():
@@ -194,6 +221,12 @@ def _checkpoint_identity() -> dict:
             )
         },
         "code_commit": "f" * 40,
+        "model_dimensions": {
+            "num_items": 8,
+            "num_users": 4,
+            "num_category_tokens": 8,
+            "num_upload_types": 2,
+        },
         "ordered_item_store": {"count": 8, "sha256": "1" * 64},
         "ordered_user_position_mapping": {
             "count": 4,
@@ -211,7 +244,9 @@ def _checkpoint_identity() -> dict:
             "model_item_universe": {"count": 8, "sha256": "4" * 64},
         },
         "feature_identity": {
+            "category_vocab_count": 8,
             "category_vocab_sha256": "5" * 64,
+            "upload_type_vocab_count": 2,
             "upload_type_vocab_sha256": "6" * 64,
             "numeric_preprocessing_sha256": "7" * 64,
         },
@@ -234,6 +269,7 @@ def _checkpoint_identity() -> dict:
 
 
 def _identity_for_payload(
+    ordered_items: np.ndarray,
     ordered_users: np.ndarray,
     touched_users: np.ndarray,
     touched_items: np.ndarray,
@@ -244,6 +280,10 @@ def _identity_for_payload(
     )
 
     identity = _checkpoint_identity()
+    identity["ordered_item_store"] = membership_record(
+        ordered_items,
+        label="phase-b2a-ordered-item-store-v1",
+    )
     identity["ordered_user_position_mapping"] = membership_record(
         ordered_users,
         label="phase-b2a-ordered-user-position-mapping-v1",
@@ -304,15 +344,17 @@ def test_toy_batch_overfits_and_cpu_checkpoint_round_trip(tmp_path):
         "num_category_tokens": 8,
         "num_upload_types": 2,
     }
+    ordered_items = np.arange(8, dtype=np.int64)
     ordered_users = np.arange(4, dtype=np.int64)
     touched_items = np.arange(8, dtype=np.int64)
     identity = _identity_for_payload(
-        ordered_users, ordered_users, touched_items
+        ordered_items, ordered_users, ordered_users, touched_items
     )
     save_checkpoint(
         path,
         model=model,
         model_dimensions=dimensions,
+        ordered_item_ids=ordered_items,
         ordered_user_ids=ordered_users,
         touched_user_ids=ordered_users,
         touched_item_ids=touched_items,
@@ -322,6 +364,7 @@ def test_toy_batch_overfits_and_cpu_checkpoint_round_trip(tmp_path):
         path, device="cpu", expected_identity=identity
     )
     assert payload["model_dimensions"] == dimensions
+    np.testing.assert_array_equal(payload["ordered_item_ids"], ordered_items)
     assert {parameter.device.type for parameter in restored.parameters()} == {
         "cpu"
     }
@@ -354,44 +397,110 @@ def test_toy_batch_overfits_and_cpu_checkpoint_round_trip(tmp_path):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
 def test_cuda_checkpoint_round_trip_places_model_and_inputs_on_cuda(tmp_path):
-    model = _model().cuda()
+    device = resolve_concrete_device("cuda")
+    model = _model().to(device)
     dimensions = {
         "num_items": 8,
         "num_users": 4,
         "num_category_tokens": 8,
         "num_upload_types": 2,
     }
+    ordered_items = np.arange(8, dtype=np.int64)
     ordered_users = np.arange(4, dtype=np.int64)
     touched_items = np.arange(8, dtype=np.int64)
     identity = _identity_for_payload(
-        ordered_users, ordered_users, touched_items
+        ordered_items, ordered_users, ordered_users, touched_items
     )
     path = tmp_path / "cuda.pt"
     save_checkpoint(
         path,
         model=model,
         model_dimensions=dimensions,
+        ordered_item_ids=ordered_items,
         ordered_user_ids=ordered_users,
         touched_user_ids=ordered_users,
         touched_item_ids=touched_items,
         identity=identity,
     )
     restored, _ = load_checkpoint(
-        path, device="cuda", expected_identity=identity
+        path, device=device, expected_identity=identity
     )
+    base_features = _features(2)
     features = TorchItemFeatures(
-        item_indices=_features(2).item_indices.cuda(),
-        category_indices=_features(2).category_indices.cuda(),
-        caption_embeddings=_features(2).caption_embeddings.cuda(),
-        caption_present=_features(2).caption_present.cuda(),
-        numeric_features=_features(2).numeric_features.cuda(),
-        upload_type_indices=_features(2).upload_type_indices.cuda(),
+        item_indices=base_features.item_indices.to(device),
+        category_indices=base_features.category_indices.to(device),
+        caption_embeddings=base_features.caption_embeddings.to(device),
+        caption_present=base_features.caption_present.to(device),
+        numeric_features=base_features.numeric_features.to(device),
+        upload_type_indices=base_features.upload_type_indices.to(device),
     )
     with torch.inference_mode():
         output = restored.encode_items(
-            features, use_id_embedding=torch.ones(2, dtype=torch.bool, device="cuda")
+            features,
+            use_id_embedding=torch.ones(2, dtype=torch.bool, device=device),
         )
-    assert output.device.type == "cuda"
+    assert output.device == device
+
+
+def test_checkpoint_rejects_same_size_identity_substitutions(tmp_path):
+    dimensions = {
+        "num_items": 8,
+        "num_users": 4,
+        "num_category_tokens": 8,
+        "num_upload_types": 2,
+    }
+    ordered_items = np.arange(8, dtype=np.int64)
+    ordered_users = np.arange(4, dtype=np.int64)
+    touched_users = np.asarray([0, 1], dtype=np.int64)
+    touched_items = np.asarray([0, 1], dtype=np.int64)
+    identity = _identity_for_payload(
+        ordered_items,
+        ordered_users,
+        touched_users,
+        touched_items,
+    )
+    original = tmp_path / "original.pt"
+    save_checkpoint(
+        original,
+        model=_model(),
+        model_dimensions=dimensions,
+        ordered_item_ids=ordered_items,
+        ordered_user_ids=ordered_users,
+        touched_user_ids=touched_users,
+        touched_item_ids=touched_items,
+        identity=identity,
+    )
+    base = torch.load(original, map_location="cpu", weights_only=False)
+
+    cases = {
+        "dimensions": (
+            "model dimensions identity mismatch",
+            lambda payload: payload["model_dimensions"].update(
+                num_category_tokens=7
+            ),
+        ),
+        "ordered-items": (
+            "ordered item mapping identity mismatch",
+            lambda payload: payload.update(
+                ordered_item_ids=np.asarray(
+                    [0, 1, 2, 3, 4, 5, 6, 99], dtype=np.int64
+                )
+            ),
+        ),
+        "touched-items": (
+            "touched membership identity mismatch",
+            lambda payload: payload.update(
+                touched_item_ids=np.asarray([0, 2], dtype=np.int64)
+            ),
+        ),
+    }
+    for name, (message, mutate) in cases.items():
+        payload = copy.deepcopy(base)
+        mutate(payload)
+        path = tmp_path / f"{name}.pt"
+        torch.save(payload, path)
+        with pytest.raises(RuntimeError, match=message):
+            load_checkpoint(path, device="cpu", expected_identity=identity)
 
 
 def test_skipped_batch_ids_are_not_recorded_as_touched():
