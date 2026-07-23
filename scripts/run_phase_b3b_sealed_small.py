@@ -49,7 +49,7 @@ SMALL_COLUMNS = (
     "watch_ratio",
 )
 
-SEALED_ATTEMPT_NUMBER = 3
+SEALED_ATTEMPT_NUMBER = 4
 PRIOR_SEALED_ATTEMPTS = (
     {
         "attempt_number": 1,
@@ -67,11 +67,45 @@ PRIOR_SEALED_ATTEMPTS = (
             "reports/phase_b3b/sealed_small_attempt2_failure.md"
         ),
     },
+    {
+        "attempt_number": 3,
+        "failure_stage": "formal_report_serialization_audit_counts",
+        "formal_metrics_produced_or_observed": False,
+        "failure_report": (
+            "reports/phase_b3b/sealed_small_attempt3_failure.md"
+        ),
+    },
 )
 
 
 def _load_small_once(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, usecols=list(SMALL_COLUMNS))
+
+
+def _small_audit_counts(
+    *,
+    small: pd.DataFrame,
+    small_observed_normal: pd.DataFrame,
+    queries,
+    cold_items: np.ndarray,
+) -> dict[str, int]:
+    return {
+        "observed_pair_count": int(
+            small[["user_id", "video_id"]].drop_duplicates().shape[0]
+        ),
+        "observed_normal_pair_count": int(
+            small_observed_normal[["user_id", "video_id"]]
+            .drop_duplicates()
+            .shape[0]
+        ),
+        "normal_candidate_item_count": int(
+            small_observed_normal["video_id"].nunique()
+        ),
+        "excluded_zero_relevant_user_count": int(
+            queries.diagnostics["zero_relevant_users_excluded"]
+        ),
+        "data_cold_item_count": int(len(cold_items)),
+    }
 
 
 def _load_bpr(path: Path) -> BPRModel:
@@ -128,7 +162,7 @@ def run(
     )
     static = load_static_item_features(data_dir)
     small = _load_small_once(data_dir / "small_matrix.csv")
-    observed_normal = small[
+    small_observed_normal = small[
         small["video_id"].isin(static.normal_item_ids)
     ]
     queries = build_small_observed_queries(
@@ -176,7 +210,7 @@ def run(
         ),
     )
     observed = np.unique(big_context["video_id"].to_numpy(np.int64))
-    observed_normal = np.intersect1d(
+    train_observed_normal = np.intersect1d(
         observed, static.normal_item_ids, assume_unique=True
     )
     store = prepare_item_feature_store(
@@ -184,7 +218,7 @@ def run(
         caption_cache=caption,
         item_universe=ordered_items,
         train_observed_item_ids=observed,
-        train_observed_normal_item_ids=observed_normal,
+        train_observed_normal_item_ids=train_observed_normal,
     )
     reconstructed_feature_identity = final_refit_feature_identity(store)
     if membership_record(
@@ -287,23 +321,12 @@ def run(
         "warm_user_count": int(queries.warm_user_mask.sum()),
         "cold_user_count": int((~queries.warm_user_mask).sum()),
         "target_count": int(sum(len(row) for row in queries.relevant)),
-        "audit_counts": {
-            "observed_pair_count": int(
-                small[["user_id", "video_id"]].drop_duplicates().shape[0]
-            ),
-            "observed_normal_pair_count": int(
-                observed_normal[["user_id", "video_id"]]
-                .drop_duplicates()
-                .shape[0]
-            ),
-            "normal_candidate_item_count": int(
-                observed_normal["video_id"].nunique()
-            ),
-            "excluded_zero_relevant_user_count": int(
-                queries.diagnostics["zero_relevant_users_excluded"]
-            ),
-            "data_cold_item_count": int(len(cold_items)),
-        },
+        "audit_counts": _small_audit_counts(
+            small=small,
+            small_observed_normal=small_observed_normal,
+            queries=queries,
+            cold_items=cold_items,
+        ),
         "results": {
             name: record["metrics"] for name, record in result["results"].items()
         },
