@@ -17,7 +17,7 @@ import modal
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNNER_COMMIT = "90eced9e062004b5954fab257989b96f2a43339c"
+RUNNER_COMMIT = "cc93f2487ce8f3e6e44575b89feb755c0bbb266a"
 REPOSITORY_URL = (
     "https://github.com/Rockyeast/short-video-two-tower-recommender.git"
 )
@@ -36,7 +36,7 @@ INPUT_MOUNT = Path("/inputs")
 REFIT_MOUNT = Path("/refit")
 SMALL_MOUNT = Path("/sealed-small")
 SMALL_LOGICAL_PATH = f"sha256/{SMALL_SHA256}/small_matrix.csv"
-SEALED_ATTEMPT_NUMBER = 3
+SEALED_ATTEMPT_NUMBER = 4
 PRIOR_SEALED_ATTEMPTS = (
     {
         "attempt_number": 1,
@@ -52,6 +52,16 @@ PRIOR_SEALED_ATTEMPTS = (
         "formal_metrics_produced_or_observed": False,
         "failure_report": (
             "reports/phase_b3b/sealed_small_attempt2_failure.md"
+        ),
+    },
+    {
+        "attempt_number": 3,
+        "failure_stage": "formal_report_serialization_audit_counts",
+        "formal_metrics_produced_or_observed": False,
+        "formal_metrics_computed": True,
+        "formal_metrics_exposed": False,
+        "failure_report": (
+            "reports/phase_b3b/sealed_small_attempt3_failure.md"
         ),
     },
 )
@@ -162,14 +172,17 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "future-time test. Small was not used for model selection, fitting, "
         "history construction, or route parameters.",
         "",
-        "- Sealed attempt number: `3`",
+        "- Sealed attempt number: `4`",
         "- Attempt 1 failed at `small_schema_validation`: "
         "[sealed_small_failure.md](sealed_small_failure.md)",
         "- Attempt 2 failed at "
         "`two_tower_checkpoint_feature_vocab_validation`: "
         "[sealed_small_attempt2_failure.md]"
         "(sealed_small_attempt2_failure.md)",
-        "- Attempts 1 and 2 produced or exposed no formal metrics.",
+        "- Attempt 3 failed at `formal_report_serialization_audit_counts`: "
+        "[sealed_small_attempt3_failure.md]"
+        "(sealed_small_attempt3_failure.md)",
+        "- Attempts 1, 2, and 3 exposed no formal metrics.",
         "- No model, rule, or parameter was changed based on Small.",
         "",
         "## Audit population",
