@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import multiprocessing
 from pathlib import Path
 
@@ -13,6 +14,7 @@ torch = pytest.importorskip("torch")
 
 from kuairec_fully_observed.caption_embeddings import CaptionCache  # noqa: E402
 from kuairec_fully_observed.data import RetrievalQueries  # noqa: E402
+from kuairec_fully_observed.models import PopularityBaseline  # noqa: E402
 from kuairec_fully_observed.full_training import (  # noqa: E402
     build_checkpoint_identity,
     evaluate_frozen_gates,
@@ -33,6 +35,10 @@ from kuairec_fully_observed.training import (  # noqa: E402
     build_two_tower_training_dataset,
 )
 from scripts.run_phase_b2b_full_two_tower import (  # noqa: E402
+    _completed_checkpoint_result,
+    _evaluate_model,
+    _report_mode,
+    _write_markdown,
     validate_config,
 )
 
@@ -174,6 +180,104 @@ def _optimizer_tensors(state):
     return values
 
 
+FROZEN_MUTATION_PATHS = [
+    ("training_contract", "full_example_count"),
+    ("training_contract", "training_user_count"),
+    ("checkpoint", "epochs"),
+    ("checkpoint", "directory"),
+    ("validation", "k"),
+    ("validation", "item_encoding_batch_size"),
+    ("validation", "user_encoding_batch_size"),
+    ("validation", "score_block_size"),
+    ("validation", "expected", "fixed_catalog_count"),
+    ("validation", "expected", "fixed_catalog_sha256"),
+    ("validation", "expected", "query_count"),
+    ("validation", "expected", "warm_query_count"),
+    ("validation", "expected", "target_count"),
+    ("validation", "expected", "warm_target_count"),
+    ("validation", "expected", "data_cold_item_count"),
+    ("validation", "expected", "query_contract_sha256"),
+    ("selection", "primary"),
+    ("selection", "tie_break"),
+    ("selection", "final_tie_break"),
+    ("frozen_bpr_epoch_20", "Recall@100"),
+    ("frozen_bpr_epoch_20", "NDCG@20"),
+    ("frozen_bpr_epoch_20", "Coverage@100"),
+    ("frozen_bpr_epoch_20", "Data-Cold Recall@100"),
+    ("gate", "common_ndcg_minimum"),
+    ("gate", "A", "Recall@100_minimum"),
+    ("gate", "B", "Recall@100_minimum"),
+    ("gate", "B", "Coverage@100_minimum"),
+    ("gate", "C", "Recall@100_minimum"),
+    ("gate", "C", "data_cold_target_denominator_minimum"),
+    ("gate", "C", "Data-Cold_Recall@100_minimum"),
+    ("preflight", "claims", "formal_gate_executed"),
+    ("preflight", "claims", "effectiveness_claim"),
+    ("preflight", "claims", "full_big_train"),
+    ("preflight", "claims", "full_big_validation"),
+]
+
+
+def _mutate_path(config, path):
+    changed = copy.deepcopy(config)
+    cursor = changed
+    for name in path[:-1]:
+        cursor = cursor[name]
+    value = cursor[path[-1]]
+    if isinstance(value, bool):
+        cursor[path[-1]] = not value
+    elif isinstance(value, (int, float)):
+        cursor[path[-1]] = value + 1
+    elif isinstance(value, str):
+        cursor[path[-1]] = value + "-changed"
+    elif isinstance(value, list):
+        cursor[path[-1]] = list(reversed(value))
+    else:
+        raise AssertionError(f"Unsupported test mutation: {path}")
+    return changed
+
+
+def _minimal_report(preflight):
+    mode = _report_mode(preflight)
+    return {
+        "phase": mode["phase"],
+        "claim_boundary": mode["claim_boundary"],
+        "environment": {"device": "cpu"},
+        "runtime_s": 1.0,
+        "peak_rss_mb": 10.0,
+        "resume": {"verified": True},
+        "training": {
+            "example_count": 12,
+            "process_statistics": {
+                "optimizer_steps": 0 if not preflight else 2,
+                "skipped_batches": 0,
+                "completed_examples": 0 if not preflight else 12,
+            },
+            "cumulative_statistics": {
+                "optimizer_steps": 6,
+                "skipped_batches": 1,
+                "completed_examples": 36,
+            },
+        },
+        "validation": {"evaluated_queries": 4},
+        "estimated_full_run_minutes": {"low": 1.0, "high": 2.0},
+        "checkpoints": [
+            {
+                "epoch": epoch,
+                "epoch_loss": 1.0 / epoch,
+                "validation": {
+                    "metrics": {
+                        "Recall@100": 0.01 * epoch,
+                        "NDCG@20": 0.001 * epoch,
+                        "Coverage@100": 0.1 * epoch,
+                    }
+                },
+            }
+            for epoch in (1, 2, 3)
+        ],
+    }
+
+
 def _resume_worker(checkpoint: str, output: str) -> None:
     setup = _toy_setup()
     _, _, _, users, _, dimensions, base = setup
@@ -200,6 +304,15 @@ def _resume_worker(checkpoint: str, output: str) -> None:
         start_epoch=2,
         end_epoch=3,
         prior_epoch_losses=restored["epoch_losses"],
+        prior_optimizer_steps=restored["cumulative_training_statistics"][
+            "optimizer_steps"
+        ],
+        prior_skipped_batches=restored["cumulative_training_statistics"][
+            "skipped_batches"
+        ],
+        prior_completed_examples=restored[
+            "cumulative_training_statistics"
+        ]["completed_examples"],
         touched_user_ids=restored["touched_user_ids"],
         touched_item_ids=restored["touched_item_ids"],
         **_train_kwargs(setup),
@@ -211,6 +324,8 @@ def _resume_worker(checkpoint: str, output: str) -> None:
             "epoch_losses": result["epoch_losses"],
             "touched_user_ids": result["touched_user_ids"],
             "touched_item_ids": result["touched_item_ids"],
+            "process_statistics": result["process_statistics"],
+            "cumulative_statistics": result["cumulative_statistics"],
             "item_vectors": model.encode_items(
                 setup[1].torch_features(torch.device("cpu")),
                 use_id_embedding=torch.ones(
@@ -222,6 +337,124 @@ def _resume_worker(checkpoint: str, output: str) -> None:
     )
 
 
+def _epoch3_finalize_worker(checkpoint_dir: str, output: str) -> None:
+    setup = _toy_setup()
+    _, store, _, users, _, dimensions, base = setup
+    final_path = Path(checkpoint_dir) / "epoch_003.pt"
+    final_inspection = torch.load(
+        final_path, map_location="cpu", weights_only=False
+    )
+    final_identity = build_checkpoint_identity(
+        base_identity=base,
+        model_dimensions=dimensions,
+        ordered_item_ids=store.item_ids,
+        ordered_user_ids=users,
+        touched_user_ids=final_inspection["touched_user_ids"],
+        touched_item_ids=final_inspection["touched_item_ids"],
+        training_seed=20260722,
+    )
+    _, _, restored = load_full_epoch_checkpoint(
+        final_path,
+        device="cpu",
+        expected_identity=final_identity,
+        learning_rate=0.001,
+        weight_decay=0.00001,
+    )
+    completed = _completed_checkpoint_result(restored)
+    histories = tuple(
+        np.asarray([10 + 4 * row], dtype=np.int64)
+        for row in range(len(users))
+    )
+    queries = RetrievalQueries(
+        user_ids=users.copy(),
+        histories=histories,
+        history_weights=tuple(
+            np.ones(1, dtype=np.float32) for _ in users
+        ),
+        candidates=tuple(store.item_ids.copy() for _ in users),
+        relevant=tuple(
+            np.asarray([11 + 4 * row], dtype=np.int64)
+            for row in range(len(users))
+        ),
+        catalog=store.item_ids.copy(),
+        warm_user_mask=np.ones(len(users), dtype=bool),
+    )
+    popularity = PopularityBaseline(
+        {int(item): float(index) for index, item in enumerate(store.item_ids)}
+    )
+    evaluation_config = {
+        "validation": {
+            "k": 10,
+            "item_encoding_batch_size": 8,
+            "user_encoding_batch_size": 4,
+            "score_block_size": 4,
+        }
+    }
+    records = []
+    for epoch in (1, 2, 3):
+        path = Path(checkpoint_dir) / f"epoch_{epoch:03d}.pt"
+        inspection = torch.load(path, map_location="cpu", weights_only=False)
+        identity = build_checkpoint_identity(
+            base_identity=base,
+            model_dimensions=dimensions,
+            ordered_item_ids=store.item_ids,
+            ordered_user_ids=users,
+            touched_user_ids=inspection["touched_user_ids"],
+            touched_item_ids=inspection["touched_item_ids"],
+            training_seed=20260722,
+        )
+        model, _, payload = load_full_epoch_checkpoint(
+            path,
+            device="cpu",
+            expected_identity=identity,
+            learning_rate=0.001,
+            weight_decay=0.00001,
+        )
+        validation, timings = _evaluate_model(
+            model=model,
+            store=store,
+            queries=queries,
+            data_cold_items=np.asarray([], dtype=np.int64),
+            ordered_user_ids=users,
+            touched_user_ids=payload["touched_user_ids"],
+            touched_item_ids=payload["touched_item_ids"],
+            popularity=popularity,
+            device=torch.device("cpu"),
+            config=evaluation_config,
+        )
+        records.append(
+            {
+                "epoch": epoch,
+                "epoch_loss": payload["epoch_losses"][-1],
+                "validation": validation,
+                "timings_s": timings,
+            }
+        )
+    selected = select_checkpoint_epoch(records)
+    report = _minimal_report(False)
+    report["checkpoints"] = records
+    report["training"]["process_statistics"] = completed[
+        "process_statistics"
+    ]
+    report["training"]["cumulative_statistics"] = completed[
+        "cumulative_statistics"
+    ]
+    markdown_path = Path(output).with_suffix(".md")
+    _write_markdown(report, markdown_path)
+    Path(output).write_text(
+        json.dumps(
+            {
+                "process_statistics": completed["process_statistics"],
+                "cumulative_statistics": completed["cumulative_statistics"],
+                "reevaluated_epochs": [row["epoch"] for row in records],
+                "selected_epoch": selected,
+                "markdown": markdown_path.read_text(),
+            },
+            sort_keys=True,
+        )
+    )
+
+
 def test_frozen_config_and_selection_gate_contracts():
     config = yaml.safe_load(
         Path("configs/phase_b2b_full_two_tower.yaml").read_text()
@@ -229,7 +462,7 @@ def test_frozen_config_and_selection_gate_contracts():
     validate_config(config)
     changed = copy.deepcopy(config)
     changed["training"]["learning_rate"] = 0.002
-    with pytest.raises(RuntimeError, match="training configuration"):
+    with pytest.raises(RuntimeError, match="training is not frozen"):
         validate_config(changed)
     records = [
         {
@@ -262,6 +495,61 @@ def test_frozen_config_and_selection_gate_contracts():
         config["gate"],
     )
     assert gates == {"A": True, "B": True, "C": True}
+
+
+@pytest.mark.parametrize("path", FROZEN_MUTATION_PATHS)
+def test_each_frozen_execution_contract_value_fails_closed(path):
+    config = yaml.safe_load(
+        Path("configs/phase_b2b_full_two_tower.yaml").read_text()
+    )
+    with pytest.raises(RuntimeError):
+        validate_config(_mutate_path(config, path))
+
+
+@pytest.mark.parametrize(
+    ("preflight", "expected_phase"),
+    [
+        (True, "phase-b2b0-full-runner-preflight"),
+        (False, "phase-b2b-full-two-tower"),
+    ],
+)
+def test_report_json_and_markdown_match_execution_mode(
+    tmp_path, preflight, expected_phase
+):
+    report = _minimal_report(preflight)
+    json_path = tmp_path / "report.json"
+    markdown_path = tmp_path / "report.md"
+    json_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    _write_markdown(report, markdown_path)
+    loaded = json.loads(json_path.read_text())
+    markdown = markdown_path.read_text()
+    assert loaded["phase"] == expected_phase
+    if preflight:
+        assert loaded["claim_boundary"] == {
+            "formal_gate_executed": False,
+            "effectiveness_claim": False,
+            "full_big_train": False,
+            "full_big_validation": False,
+        }
+        assert "bounded engineering preflight" in markdown
+        assert "full_big_train=false" in markdown
+        assert "full_big_validation=false" in markdown
+    else:
+        assert loaded["claim_boundary"] == {
+            "formal_gate_executed": True,
+            "effectiveness_claim": False,
+            "full_big_train": True,
+            "full_big_validation": True,
+        }
+        for forbidden in (
+            "bounded preflight",
+            "not a formal effectiveness experiment",
+            "full_big_train=false",
+            "full_big_validation=false",
+        ):
+            assert forbidden not in markdown
+        assert "full_big_train=true" in markdown
+        assert "full_big_validation=true" in markdown
 
 
 def test_validation_contract_hash_and_fail_closed_counts():
@@ -347,7 +635,13 @@ def test_three_epochs_equal_one_epoch_then_new_process_resume(tmp_path):
     checkpoint = tmp_path / "epoch_001.pt"
 
     def save_epoch(
-        epoch, model, optimizer, losses, touched_users, touched_items
+        epoch,
+        model,
+        optimizer,
+        losses,
+        touched_users,
+        touched_items,
+        cumulative_statistics,
     ):
         identity = build_checkpoint_identity(
             base_identity=resumed_setup[6],
@@ -370,6 +664,7 @@ def test_three_epochs_equal_one_epoch_then_new_process_resume(tmp_path):
             ordered_user_ids=resumed_setup[3],
             touched_user_ids=touched_users,
             touched_item_ids=touched_items,
+            cumulative_statistics=cumulative_statistics,
             identity=identity,
         )
 
@@ -416,6 +711,18 @@ def test_three_epochs_equal_one_epoch_then_new_process_resume(tmp_path):
     np.testing.assert_array_equal(
         continuous["touched_item_ids"], resumed["touched_item_ids"]
     )
+    assert (
+        continuous["cumulative_statistics"]
+        == resumed["cumulative_statistics"]
+    )
+    assert resumed["process_statistics"] == {
+        "optimizer_steps": continuous["optimizer_steps"]
+        - first["optimizer_steps"],
+        "skipped_batches": continuous["skipped_batches"]
+        - first["skipped_batches"],
+        "completed_examples": continuous["completed_examples"]
+        - first["completed_examples"],
+    }
     with torch.inference_mode():
         continuous_vectors = continuous_model.encode_items(
             continuous_setup[1].torch_features(torch.device("cpu")),
@@ -428,12 +735,94 @@ def test_three_epochs_equal_one_epoch_then_new_process_resume(tmp_path):
     )
 
 
+def test_epoch_three_resume_skips_training_and_reevaluates_all_checkpoints(
+    tmp_path,
+):
+    setup = _toy_setup()
+    model, optimizer = _new_model_optimizer(setup[5])
+    checkpoint_dir = tmp_path / "checkpoints"
+
+    def save_each_epoch(
+        epoch,
+        current,
+        opt,
+        losses,
+        touched_users,
+        touched_items,
+        cumulative_statistics,
+    ):
+        identity = build_checkpoint_identity(
+            base_identity=setup[6],
+            model_dimensions=setup[5],
+            ordered_item_ids=setup[1].item_ids,
+            ordered_user_ids=setup[3],
+            touched_user_ids=touched_users,
+            touched_item_ids=touched_items,
+            training_seed=20260722,
+        )
+        save_full_epoch_checkpoint(
+            checkpoint_dir / f"epoch_{epoch:03d}.pt",
+            model=current,
+            optimizer=opt,
+            completed_epoch=epoch,
+            epoch_losses=losses,
+            order_seed=20260722,
+            model_dimensions=setup[5],
+            ordered_item_ids=setup[1].item_ids,
+            ordered_user_ids=setup[3],
+            touched_user_ids=touched_users,
+            touched_item_ids=touched_items,
+            cumulative_statistics=cumulative_statistics,
+            identity=identity,
+        )
+
+    trained = train_full_two_tower(
+        model=model,
+        optimizer=optimizer,
+        start_epoch=1,
+        end_epoch=3,
+        checkpoint_callback=save_each_epoch,
+        **_train_kwargs(setup),
+    )
+    assert trained["completed_epoch"] == 3
+    output = tmp_path / "epoch3-finalized.json"
+    process = multiprocessing.get_context("spawn").Process(
+        target=_epoch3_finalize_worker,
+        args=(str(checkpoint_dir), str(output)),
+    )
+    process.start()
+    process.join(timeout=60)
+    assert process.exitcode == 0
+    finalized = json.loads(output.read_text())
+    assert finalized["process_statistics"] == {
+        "optimizer_steps": 0,
+        "skipped_batches": 0,
+        "completed_examples": 0,
+    }
+    assert finalized["cumulative_statistics"] == trained[
+        "cumulative_statistics"
+    ]
+    assert finalized["reevaluated_epochs"] == [1, 2, 3]
+    assert finalized["selected_epoch"] in (1, 2, 3)
+    assert "# Phase B2B Full Two-Tower Results" in finalized["markdown"]
+    assert "full_big_train=true" in finalized["markdown"]
+    assert "full_big_validation=true" in finalized["markdown"]
+
+
 def test_incomplete_or_identity_mismatched_checkpoint_is_rejected(tmp_path):
     setup = _toy_setup()
     model, optimizer = _new_model_optimizer(setup[5])
     path = tmp_path / "epoch.pt"
 
-    def save_epoch(epoch, current, opt, losses, touched_users, touched_items):
+    def save_epoch(
+        epoch,
+        current,
+        opt,
+        losses,
+        touched_users,
+        touched_items,
+        cumulative_statistics,
+    ):
         identity = build_checkpoint_identity(
             base_identity=setup[6],
             model_dimensions=setup[5],
@@ -455,6 +844,7 @@ def test_incomplete_or_identity_mismatched_checkpoint_is_rejected(tmp_path):
             ordered_user_ids=setup[3],
             touched_user_ids=touched_users,
             touched_item_ids=touched_items,
+            cumulative_statistics=cumulative_statistics,
             identity=identity,
         )
 

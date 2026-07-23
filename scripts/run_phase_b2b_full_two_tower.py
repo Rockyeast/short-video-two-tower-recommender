@@ -62,37 +62,109 @@ from kuairec_fully_observed.training import (
     build_two_tower_training_dataset,
 )
 
+EXPECTED_ARCHITECTURE = {
+    "item_id_dim": 64,
+    "category_dim": 32,
+    "caption_projection_dim": 64,
+    "static_projection_dim": 16,
+    "upload_type_dim": 8,
+    "hidden_dim": 256,
+    "output_dim": 128,
+    "max_history": 50,
+}
+EXPECTED_TRAINING = {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "weight_decay": 0.00001,
+    "batch_size": 256,
+    "epochs": 3,
+    "temperature": 0.07,
+    "gradient_clip_norm": 5.0,
+    "seed": 20260722,
+    "diagnostic_seed": 20260723,
+    "precision": "FP32",
+    "num_workers": 0,
+}
+EXPECTED_TRAINING_CONTRACT = {
+    "full_example_count": 574098,
+    "training_user_count": 7161,
+}
+EXPECTED_CHECKPOINT = {
+    "epochs": [1, 2, 3],
+    "directory": "artifacts/phase_b2b",
+}
+EXPECTED_VALIDATION = {
+    "k": 100,
+    "item_encoding_batch_size": 1024,
+    "user_encoding_batch_size": 128,
+    "score_block_size": 128,
+    "expected": {
+        "fixed_catalog_count": 9365,
+        "fixed_catalog_sha256": (
+            "8b8e88e2455a27dc0fac79e7bdb2733dc43096bb6d637e549d1ce5853e8ce55b"
+        ),
+        "query_count": 6818,
+        "warm_query_count": 6816,
+        "target_count": 118565,
+        "warm_target_count": 118539,
+        "data_cold_item_count": 1492,
+        "query_contract_sha256": (
+            "f25df9d235f32b114357a190f69a60e49d8993d2c4e09f975a0b361c7439f877"
+        ),
+    },
+}
+EXPECTED_SELECTION = {
+    "primary": "Recall@100",
+    "tie_break": "NDCG@20",
+    "final_tie_break": "earliest_epoch",
+}
+EXPECTED_FROZEN_BPR = {
+    "Recall@100": 0.04843855379304513,
+    "NDCG@20": 0.012773561140700995,
+    "Coverage@100": 0.33304858515750135,
+    "Data-Cold Recall@100": 0.0,
+}
+EXPECTED_GATE = {
+    "common_ndcg_minimum": 0.002773561140700995,
+    "A": {"Recall@100_minimum": 0.05043855379304513},
+    "B": {
+        "Recall@100_minimum": 0.02843855379304513,
+        "Coverage@100_minimum": 0.38304858515750135,
+    },
+    "C": {
+        "Recall@100_minimum": 0.02843855379304513,
+        "data_cold_target_denominator_minimum": 100,
+        "Data-Cold_Recall@100_minimum": 0.05,
+    },
+}
+EXPECTED_PREFLIGHT_CLAIMS = {
+    "formal_gate_executed": False,
+    "effectiveness_claim": False,
+    "full_big_train": False,
+    "full_big_validation": False,
+}
+FULL_RUN_CLAIMS = {
+    "formal_gate_executed": True,
+    "effectiveness_claim": False,
+    "full_big_train": True,
+    "full_big_validation": True,
+}
+
 
 def validate_config(config: dict[str, Any]) -> None:
-    expected_architecture = {
-        "item_id_dim": 64,
-        "category_dim": 32,
-        "caption_projection_dim": 64,
-        "static_projection_dim": 16,
-        "upload_type_dim": 8,
-        "hidden_dim": 256,
-        "output_dim": 128,
-        "max_history": 50,
+    frozen_sections = {
+        "architecture": EXPECTED_ARCHITECTURE,
+        "training": EXPECTED_TRAINING,
+        "training_contract": EXPECTED_TRAINING_CONTRACT,
+        "checkpoint": EXPECTED_CHECKPOINT,
+        "validation": EXPECTED_VALIDATION,
+        "selection": EXPECTED_SELECTION,
+        "frozen_bpr_epoch_20": EXPECTED_FROZEN_BPR,
+        "gate": EXPECTED_GATE,
     }
-    expected_training = {
-        "optimizer": "AdamW",
-        "learning_rate": 0.001,
-        "weight_decay": 0.00001,
-        "batch_size": 256,
-        "epochs": 3,
-        "temperature": 0.07,
-        "gradient_clip_norm": 5.0,
-        "seed": 20260722,
-        "diagnostic_seed": 20260723,
-        "precision": "FP32",
-        "num_workers": 0,
-    }
-    if config.get("architecture") != expected_architecture:
-        raise RuntimeError("Phase B2B architecture is not frozen")
-    if config.get("training") != expected_training:
-        raise RuntimeError("Phase B2B training configuration is not frozen")
-    if config.get("checkpoint", {}).get("epochs") != [1, 2, 3]:
-        raise RuntimeError("Phase B2B checkpoint epochs are not frozen")
+    for name, expected in frozen_sections.items():
+        if config.get(name) != expected:
+            raise RuntimeError(f"Phase B2B {name} is not frozen")
     if config.get("scope", {}).get("forbidden") != [
         "small_matrix",
         "temporal_final",
@@ -102,14 +174,58 @@ def validate_config(config: dict[str, Any]) -> None:
         "serving",
     ]:
         raise RuntimeError("Phase B2B forbidden scope changed")
-    expected_claims = {
-        "formal_gate_executed": False,
-        "effectiveness_claim": False,
-        "full_big_train": False,
-        "full_big_validation": False,
-    }
-    if config.get("preflight", {}).get("claims") != expected_claims:
+    if config.get("preflight", {}).get("claims") != EXPECTED_PREFLIGHT_CLAIMS:
         raise RuntimeError("Phase B2B0 preflight claims changed")
+
+
+def _report_mode(preflight: bool) -> dict[str, Any]:
+    if preflight:
+        return {
+            "phase": "phase-b2b0-full-runner-preflight",
+            "claim_boundary": dict(EXPECTED_PREFLIGHT_CLAIMS),
+            "title": "# Phase B2B0 Full Runner Preflight",
+            "description": (
+                "This is a bounded engineering preflight through the production "
+                "runner path. It is not a formal effectiveness experiment."
+            ),
+        }
+    return {
+        "phase": "phase-b2b-full-two-tower",
+        "claim_boundary": dict(FULL_RUN_CLAIMS),
+        "title": "# Phase B2B Full Two-Tower Results",
+        "description": (
+            "This report records the frozen full Big-train and exact "
+            "Big-validation experiment."
+        ),
+    }
+
+
+def _completed_checkpoint_result(
+    restored: dict[str, Any],
+) -> dict[str, Any]:
+    """Represent an epoch-3 resume without executing another optimizer step."""
+
+    cumulative = dict(restored["cumulative_training_statistics"])
+    return {
+        "epoch_losses": tuple(restored["epoch_losses"]),
+        "optimizer_steps": 0,
+        "skipped_batches": 0,
+        "completed_examples": 0,
+        "process_statistics": {
+            "optimizer_steps": 0,
+            "skipped_batches": 0,
+            "completed_examples": 0,
+        },
+        "cumulative_statistics": cumulative,
+        "touched_user_ids": np.asarray(
+            restored["touched_user_ids"], dtype=np.int64
+        ),
+        "touched_item_ids": np.asarray(
+            restored["touched_item_ids"], dtype=np.int64
+        ),
+        "completed_epoch": int(restored["completed_epoch"]),
+        "fixed_diagnostic_loss": None,
+    }
 
 
 def _stable_key(seed: int, *values: int) -> bytes:
@@ -296,6 +412,13 @@ def _evaluate_model(
 
 
 def _write_markdown(report: dict[str, Any], path: Path) -> None:
+    mode = _report_mode(
+        report["phase"] == "phase-b2b0-full-runner-preflight"
+    )
+    if report["phase"] != mode["phase"]:
+        raise RuntimeError(f"Unknown report phase: {report['phase']}")
+    if report["claim_boundary"] != mode["claim_boundary"]:
+        raise RuntimeError("Report claims do not match the execution mode")
     rows = []
     for record in report["checkpoints"]:
         metrics = record["validation"]["metrics"]
@@ -309,12 +432,14 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
                 coverage=metrics["Coverage@100"],
             )
         )
+    claims = report["claim_boundary"]
+    process_statistics = report["training"]["process_statistics"]
+    cumulative_statistics = report["training"]["cumulative_statistics"]
     text = "\n".join(
         [
-            "# Phase B2B0 Full Runner Preflight",
+            mode["title"],
             "",
-            "This is a bounded engineering preflight through the production "
-            "runner path. It is not a formal effectiveness experiment.",
+            mode["description"],
             "",
             f"- Device: `{report['environment']['device']}`",
             f"- Runtime: `{report['runtime_s']:.2f} s`",
@@ -322,7 +447,16 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
             f"- Save/load/resume verified: "
             f"`{str(report['resume']['verified']).lower()}`",
             f"- Training examples: `{report['training']['example_count']}`",
-            f"- Optimizer steps: `{report['training']['optimizer_steps']}`",
+            f"- Optimizer steps in this process: "
+            f"`{process_statistics['optimizer_steps']}`",
+            f"- Cumulative optimizer steps: "
+            f"`{cumulative_statistics['optimizer_steps']}`",
+            f"- Skipped batches in this process / cumulative: "
+            f"`{process_statistics['skipped_batches']} / "
+            f"{cumulative_statistics['skipped_batches']}`",
+            f"- Completed examples in this process / cumulative: "
+            f"`{process_statistics['completed_examples']} / "
+            f"{cumulative_statistics['completed_examples']}`",
             f"- Validation queries: `{report['validation']['evaluated_queries']}`",
             f"- Estimated full run: "
             f"`{report['estimated_full_run_minutes']['low']:.1f}` to "
@@ -335,10 +469,10 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
             "Required claim boundary:",
             "",
             "```text",
-            "formal_gate_executed=false",
-            "effectiveness_claim=false",
-            "full_big_train=false",
-            "full_big_validation=false",
+            f"formal_gate_executed={str(claims['formal_gate_executed']).lower()}",
+            f"effectiveness_claim={str(claims['effectiveness_claim']).lower()}",
+            f"full_big_train={str(claims['full_big_train']).lower()}",
+            f"full_big_validation={str(claims['full_big_validation']).lower()}",
             "```",
             "",
             "Small Matrix, temporal final, FAISS and Hybrid were not accessed "
@@ -661,6 +795,7 @@ def run(
         losses,
         touched_users,
         touched_items,
+        cumulative_statistics,
     ):
         identity = build_checkpoint_identity(
             base_identity=base_identity,
@@ -684,6 +819,7 @@ def run(
             ordered_user_ids=ordered_users,
             touched_user_ids=touched_users,
             touched_item_ids=touched_items,
+            cumulative_statistics=cumulative_statistics,
             identity=identity,
         )
         validation, timings = _evaluate_model(
@@ -744,11 +880,17 @@ def run(
         prior_losses = tuple(restored["epoch_losses"])
         initial_touched_users = restored["touched_user_ids"]
         initial_touched_items = restored["touched_item_ids"]
+        prior_statistics = restored["cumulative_training_statistics"]
     else:
         start_epoch = 1
         prior_losses = ()
         initial_touched_users = None
         initial_touched_items = None
+        prior_statistics = {
+            "optimizer_steps": 0,
+            "skipped_batches": 0,
+            "completed_examples": 0,
+        }
     if preflight and resume_checkpoint is None:
         first = train_full_two_tower(
             model=model,
@@ -806,15 +948,37 @@ def run(
             prior_epoch_losses=tuple(restored["epoch_losses"]),
             touched_user_ids=restored["touched_user_ids"],
             touched_item_ids=restored["touched_item_ids"],
+            prior_optimizer_steps=int(
+                restored["cumulative_training_statistics"][
+                    "optimizer_steps"
+                ]
+            ),
+            prior_skipped_batches=int(
+                restored["cumulative_training_statistics"][
+                    "skipped_batches"
+                ]
+            ),
+            prior_completed_examples=int(
+                restored["cumulative_training_statistics"][
+                    "completed_examples"
+                ]
+            ),
             checkpoint_callback=checkpoint_callback,
             max_total_steps=int(config["preflight"]["max_optimizer_steps"]) // 2,
         )
         training_result = second
         resume_verified = True
-        total_optimizer_steps = (
-            int(first["optimizer_steps"]) + int(second["optimizer_steps"])
-        )
-    else:
+        process_statistics = {
+            name: int(first["process_statistics"][name])
+            + int(second["process_statistics"][name])
+            for name in (
+                "optimizer_steps",
+                "skipped_batches",
+                "completed_examples",
+            )
+        }
+        cumulative_statistics = dict(second["cumulative_statistics"])
+    elif start_epoch <= int(training["epochs"]):
         training_result = train_full_two_tower(
             model=model,
             optimizer=optimizer,
@@ -832,13 +996,37 @@ def run(
             temperature=float(training["temperature"]),
             gradient_clip_norm=float(training["gradient_clip_norm"]),
             prior_epoch_losses=prior_losses,
+            prior_optimizer_steps=int(
+                prior_statistics["optimizer_steps"]
+            ),
+            prior_skipped_batches=int(
+                prior_statistics["skipped_batches"]
+            ),
+            prior_completed_examples=int(
+                prior_statistics["completed_examples"]
+            ),
             touched_user_ids=initial_touched_users,
             touched_item_ids=initial_touched_items,
             checkpoint_callback=checkpoint_callback,
         )
         resume_verified = resume_checkpoint is not None
-        total_optimizer_steps = int(training_result["optimizer_steps"])
+        process_statistics = dict(training_result["process_statistics"])
+        cumulative_statistics = dict(
+            training_result["cumulative_statistics"]
+        )
+    else:
+        if resume_checkpoint is None or int(restored["completed_epoch"]) != int(
+            training["epochs"]
+        ):
+            raise RuntimeError("Resume checkpoint exceeds the frozen epoch plan")
+        training_result = _completed_checkpoint_result(restored)
+        resume_verified = True
+        process_statistics = dict(training_result["process_statistics"])
+        cumulative_statistics = dict(
+            training_result["cumulative_statistics"]
+        )
     training_wall_s = time.perf_counter() - training_started
+    total_optimizer_steps = int(process_statistics["optimizer_steps"])
     if preflight and total_optimizer_steps > int(
         config["preflight"]["max_optimizer_steps"]
     ):
@@ -917,28 +1105,37 @@ def run(
         )
     )
     runtime_s = time.perf_counter() - started_total
-    steps_per_second = max(
-        total_optimizer_steps / max(training_wall_s, 1e-9), 1e-9
-    )
-    full_steps = (
-        int(
-            np.ceil(
-                int(config["training_contract"]["full_example_count"])
-                / int(training["batch_size"])
-            )
+    if preflight:
+        steps_per_second = max(
+            total_optimizer_steps / max(training_wall_s, 1e-9), 1e-9
         )
-        * int(training["epochs"])
-    )
-    scaled_minutes = full_steps / steps_per_second / 60.0
+        full_steps = (
+            int(
+                np.ceil(
+                    int(config["training_contract"]["full_example_count"])
+                    / int(training["batch_size"])
+                )
+            )
+            * int(training["epochs"])
+        )
+        estimated_full_run = {
+            "method": (
+                "preflight_step_rate_scaled_with_1.5x_to_2.5x_overhead"
+            ),
+            "low": full_steps / steps_per_second / 60.0 * 1.5,
+            "high": full_steps / steps_per_second / 60.0 * 2.5,
+        }
+    else:
+        estimated_full_run = {
+            "method": "completed_full_run_observed_wall_time",
+            "low": runtime_s / 60.0,
+            "high": runtime_s / 60.0,
+        }
+    mode = _report_mode(preflight)
     report = {
-        "phase": "phase-b2b0-full-runner-preflight",
+        "phase": mode["phase"],
         "status": "completed",
-        "claim_boundary": config["preflight"]["claims"] if preflight else {
-            "formal_gate_executed": True,
-            "effectiveness_claim": False,
-            "full_big_train": True,
-            "full_big_validation": True,
-        },
+        "claim_boundary": mode["claim_boundary"],
         "environment": {
             "device": str(device),
             "torch_version": torch.__version__,
@@ -949,11 +1146,11 @@ def run(
             "example_count": int(len(example_indices)),
             "ordered_user_count": int(len(ordered_users)),
             "planned_item_count": int(len(planned_items)),
-            "optimizer_steps": total_optimizer_steps,
             "training_and_epoch_validation_s": training_wall_s,
             "completed_epoch": int(training_result["completed_epoch"]),
             "epoch_losses": list(training_result["epoch_losses"]),
-            "skipped_batches": int(training_result["skipped_batches"]),
+            "process_statistics": process_statistics,
+            "cumulative_statistics": cumulative_statistics,
             "sample": sample_stats,
         },
         "validation": {
@@ -996,11 +1193,7 @@ def run(
             if torch.cuda.is_available()
             else 0.0
         ),
-        "estimated_full_run_minutes": {
-            "method": "preflight_step_rate_scaled_with_1.5x_to_2.5x_overhead",
-            "low": scaled_minutes * 1.5,
-            "high": scaled_minutes * 2.5,
-        },
+        "estimated_full_run_minutes": estimated_full_run,
         "access": {
             "small_matrix_accessed": False,
             "temporal_final_accessed": False,

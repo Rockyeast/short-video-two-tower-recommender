@@ -340,6 +340,7 @@ EpochCheckpointCallback = Callable[
         tuple[float, ...],
         np.ndarray,
         np.ndarray,
+        dict[str, int],
     ],
     None,
 ]
@@ -363,6 +364,9 @@ def train_full_two_tower(
     temperature: float,
     gradient_clip_norm: float,
     prior_epoch_losses: tuple[float, ...] = (),
+    prior_optimizer_steps: int = 0,
+    prior_skipped_batches: int = 0,
+    prior_completed_examples: int = 0,
     touched_user_ids: np.ndarray | None = None,
     touched_item_ids: np.ndarray | None = None,
     checkpoint_callback: EpochCheckpointCallback | None = None,
@@ -376,6 +380,12 @@ def train_full_two_tower(
         raise ValueError("Epoch range is invalid")
     if len(prior_epoch_losses) != start_epoch - 1:
         raise ValueError("Prior loss count does not match resume epoch")
+    if min(
+        prior_optimizer_steps,
+        prior_skipped_batches,
+        prior_completed_examples,
+    ) < 0:
+        raise ValueError("Prior cumulative training statistics are invalid")
     if batch_size <= 1 or log_every_steps <= 0:
         raise ValueError("Batch/log interval is invalid")
     indices = np.asarray(example_indices, dtype=np.int64)
@@ -445,6 +455,7 @@ def train_full_two_tower(
     epoch_losses = list(prior_epoch_losses)
     optimizer_steps = 0
     skipped_batches = 0
+    completed_examples = 0
     model.train()
     for epoch in range(start_epoch, end_epoch + 1):
         order = indices.copy()
@@ -501,6 +512,7 @@ def train_full_two_tower(
             loss_value = float(loss.detach())
             epoch_loss += loss_value * len(batch_indices)
             epoch_examples += len(batch_indices)
+            completed_examples += len(batch_indices)
             optimizer_steps += 1
             epoch_steps += 1
             if optimizer_steps % log_every_steps == 0:
@@ -520,6 +532,13 @@ def train_full_two_tower(
         touched_user_array = np.asarray(sorted(touched_users), dtype=np.int64)
         touched_item_array = np.asarray(sorted(touched_items), dtype=np.int64)
         if checkpoint_callback is not None:
+            cumulative_statistics = {
+                "optimizer_steps": prior_optimizer_steps + optimizer_steps,
+                "skipped_batches": prior_skipped_batches + skipped_batches,
+                "completed_examples": (
+                    prior_completed_examples + completed_examples
+                ),
+            }
             checkpoint_callback(
                 epoch,
                 model,
@@ -527,11 +546,25 @@ def train_full_two_tower(
                 tuple(epoch_losses),
                 touched_user_array,
                 touched_item_array,
+                cumulative_statistics,
             )
+    process_statistics = {
+        "optimizer_steps": optimizer_steps,
+        "skipped_batches": skipped_batches,
+        "completed_examples": completed_examples,
+    }
+    cumulative_statistics = {
+        "optimizer_steps": prior_optimizer_steps + optimizer_steps,
+        "skipped_batches": prior_skipped_batches + skipped_batches,
+        "completed_examples": prior_completed_examples + completed_examples,
+    }
     return {
         "epoch_losses": tuple(epoch_losses),
         "optimizer_steps": optimizer_steps,
         "skipped_batches": skipped_batches,
+        "completed_examples": completed_examples,
+        "process_statistics": process_statistics,
+        "cumulative_statistics": cumulative_statistics,
         "touched_user_ids": np.asarray(sorted(touched_users), dtype=np.int64),
         "touched_item_ids": np.asarray(sorted(touched_items), dtype=np.int64),
         "completed_epoch": len(epoch_losses),
@@ -552,6 +585,7 @@ def save_full_epoch_checkpoint(
     ordered_user_ids: np.ndarray,
     touched_user_ids: np.ndarray,
     touched_item_ids: np.ndarray,
+    cumulative_statistics: dict[str, int],
     identity: dict[str, Any],
 ) -> None:
     """Atomically publish one complete-epoch checkpoint."""
@@ -560,6 +594,19 @@ def save_full_epoch_checkpoint(
         raise ValueError("Only a complete epoch may be checkpointed")
     if identity.get("schema_version") != 2:
         raise ValueError("Checkpoint identity schema must remain v2")
+    expected_statistic_names = {
+        "optimizer_steps",
+        "skipped_batches",
+        "completed_examples",
+    }
+    if (
+        set(cumulative_statistics) != expected_statistic_names
+        or any(
+            not isinstance(value, int) or value < 0
+            for value in cumulative_statistics.values()
+        )
+    ):
+        raise ValueError("Cumulative training statistics are invalid")
     payload = {
         "schema_version": 2,
         "checkpoint_kind": "phase-b2b-full-epoch-v1",
@@ -584,6 +631,7 @@ def save_full_epoch_checkpoint(
         "ordered_user_ids": np.asarray(ordered_user_ids, dtype=np.int64),
         "touched_user_ids": np.asarray(touched_user_ids, dtype=np.int64),
         "touched_item_ids": np.asarray(touched_item_ids, dtype=np.int64),
+        "cumulative_training_statistics": dict(cumulative_statistics),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
@@ -613,6 +661,7 @@ def load_full_epoch_checkpoint(
     completed = payload.get("completed_epoch")
     losses = payload.get("epoch_losses")
     order = payload.get("epoch_order_seed")
+    cumulative_statistics = payload.get("cumulative_training_statistics")
     if (
         not isinstance(completed, int)
         or completed < 1
@@ -625,6 +674,18 @@ def load_full_epoch_checkpoint(
         }
     ):
         raise RuntimeError("Checkpoint epoch/order contract is invalid")
+    if (
+        not isinstance(cumulative_statistics, dict)
+        or set(cumulative_statistics)
+        != {"optimizer_steps", "skipped_batches", "completed_examples"}
+        or any(
+            not isinstance(value, int) or value < 0
+            for value in cumulative_statistics.values()
+        )
+    ):
+        raise RuntimeError(
+            "Checkpoint cumulative training statistics are invalid"
+        )
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=learning_rate, weight_decay=weight_decay
     )
