@@ -33,3 +33,15 @@ def test_numeric_diagnostic_has_no_small_path() -> None:
     ).read_text()
     assert "small_matrix.csv" not in source
     assert "_load_small_once" not in source
+
+
+def test_modal_numeric_diagnostic_uses_three_single_use_processes() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (
+        root / "scripts" / "modal_phase_b3b_r3_numeric_diagnostic.py"
+    ).read_text()
+    assert "single_use_containers=True" in source
+    assert "retries=0" in source
+    assert "results = [reconstruct.remote(index) for index in range(3)]" in source
+    assert "SMALL_VOLUME" not in source
+    assert "small_matrix.csv" not in source
