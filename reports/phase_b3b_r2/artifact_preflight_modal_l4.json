@@ -1,0 +1,59 @@
+{
+  "artifact_preflight": {
+    "checkpoint_sha256": "5715a98d47c80f545afdce845c2a96940bc7ce3fec355e4a1156576d2fcab949",
+    "exact_retrieval": {
+      "candidate_count": 256,
+      "passed": true,
+      "query_count": 8,
+      "top_k": 20
+    },
+    "feature_identity_sha_match": {
+      "category_vocab_sha256": true,
+      "numeric_preprocessing_sha256": true,
+      "upload_type_vocab_sha256": true
+    },
+    "item_encoding": {
+      "finite": true,
+      "l2_normalized": true,
+      "passed": true,
+      "shape": [
+        10725,
+        128
+      ]
+    },
+    "model_loaded": true,
+    "peak_rss_mb": 6711.74609375,
+    "phase": "phase-b3b-r2-artifact-only-preflight",
+    "recommendation_effectiveness_metrics_computed": false,
+    "reconstructed_feature_identity": {
+      "category_vocab_count": 385,
+      "category_vocab_sha256": "e7df6181c02d3900bf770a6a3c3a55c62839109e43d5b1dd374c946cc9afbc76",
+      "numeric_preprocessing_sha256": "71217e8965b59915874ab879e157eacd61a1c55813604bcdb9e748e08458c489",
+      "upload_type_vocab_count": 17,
+      "upload_type_vocab_sha256": "784c05aa02b9012625897c52a608274de054cc7b32c62e39a1307125b60658ad"
+    },
+    "runtime_s": 210.942491332,
+    "small_matrix_accessed": false,
+    "temporal_final_accessed": false,
+    "user_encoding": {
+      "finite": true,
+      "inference_only_user_count": 8,
+      "l2_normalized": true,
+      "passed": true,
+      "shape": [
+        8,
+        128
+      ]
+    }
+  },
+  "phase": "phase-b3b-r2-artifact-only-modal-l4-preflight",
+  "runner_commit": "b0c5bdf20e55f81fcf992cfa8df194983ced2c4c",
+  "runtime": {
+    "gpu_name": "NVIDIA L4",
+    "peak_cuda_allocated_mb": 57.0048828125,
+    "peak_cuda_reserved_mb": 66.0,
+    "peak_rss_mb": 6711.74609375,
+    "wall_time_s": 211.188863066
+  },
+  "wrapper_commit": "c2f1c701419598fa4f2c51c50620560d7d536f6d"
+}
