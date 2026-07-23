@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import multiprocessing
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -34,11 +36,15 @@ from kuairec_fully_observed.torch_training import (  # noqa: E402
 from kuairec_fully_observed.training import (  # noqa: E402
     build_two_tower_training_dataset,
 )
+import scripts.run_phase_b2b_full_two_tower as runner_module  # noqa: E402
 from scripts.run_phase_b2b_full_two_tower import (  # noqa: E402
+    _assert_clean_source_tree,
     _completed_checkpoint_result,
     _evaluate_model,
+    _execution_mode,
     _report_mode,
     _write_markdown,
+    run,
     validate_config,
 )
 
@@ -181,6 +187,14 @@ def _optimizer_tensors(state):
 
 
 FROZEN_MUTATION_PATHS = [
+    ("phase",),
+    ("scope", "fit"),
+    ("scope", "select"),
+    ("scope", "forbidden"),
+    ("caption", "model_id"),
+    ("caption", "resolved_revision"),
+    ("caption", "dimension"),
+    ("caption", "preprocessing_version"),
     ("training_contract", "full_example_count"),
     ("training_contract", "training_user_count"),
     ("checkpoint", "epochs"),
@@ -211,6 +225,10 @@ FROZEN_MUTATION_PATHS = [
     ("gate", "C", "Recall@100_minimum"),
     ("gate", "C", "data_cold_target_denominator_minimum"),
     ("gate", "C", "Data-Cold_Recall@100_minimum"),
+    ("preflight", "max_training_examples"),
+    ("preflight", "max_optimizer_steps"),
+    ("preflight", "epochs"),
+    ("preflight", "max_validation_queries"),
     ("preflight", "claims", "formal_gate_executed"),
     ("preflight", "claims", "effectiveness_claim"),
     ("preflight", "claims", "full_big_train"),
@@ -241,6 +259,9 @@ def _minimal_report(preflight):
     mode = _report_mode(preflight)
     return {
         "phase": mode["phase"],
+        "execution_mode": (
+            "preflight" if preflight else "fresh_full_train"
+        ),
         "claim_boundary": mode["claim_boundary"],
         "environment": {"device": "cpu"},
         "runtime_s": 1.0,
@@ -260,6 +281,11 @@ def _minimal_report(preflight):
             },
         },
         "validation": {"evaluated_queries": 4},
+        "timings_s": {
+            "checkpoint_loading_s": 0.1,
+            "checkpoint_reevaluation_s": 0.2,
+            "report_generation_s": 0.01,
+        },
         "estimated_full_run_minutes": {"low": 1.0, "high": 2.0},
         "checkpoints": [
             {
@@ -275,6 +301,341 @@ def _minimal_report(preflight):
             }
             for epoch in (1, 2, 3)
         ],
+    }
+
+
+def _initialize_clean_test_repo(path: Path) -> Path:
+    path.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "synthetic@example.com"],
+        cwd=path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Synthetic Test"],
+        cwd=path,
+        check=True,
+    )
+    config_path = path / "phase_b2b.yaml"
+    config_path.write_text(
+        Path("configs/phase_b2b_full_two_tower.yaml").read_text()
+    )
+    subprocess.run(["git", "add", "phase_b2b.yaml"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "fixture"],
+        cwd=path,
+        check=True,
+    )
+    return config_path
+
+
+class _FrozenSizeSyntheticDataset:
+    def __init__(self):
+        self.positive_event_indices = np.arange(574098, dtype=np.int64)
+        self.user_ids = (
+            np.arange(574098, dtype=np.int64) % 7161
+        ) + 1
+
+    def __len__(self):
+        return 574098
+
+
+def _patch_terminal_run_dependencies(
+    monkeypatch,
+    *,
+    artifact_dir: Path,
+    checkpoint_dir: Path,
+):
+    setup = _toy_setup()
+    store = setup[1]
+    item_ids = store.item_ids.copy()
+    static_frame = pd.DataFrame(
+        {
+            "video_id": item_ids,
+            "caption_text": [f"item {value}" for value in item_ids],
+            "category_ids": [(1, 2, 3)] * len(item_ids),
+            "video_duration": np.full(len(item_ids), 1000.0),
+            "video_width": np.full(len(item_ids), 720.0),
+            "video_height": np.full(len(item_ids), 1280.0),
+            "upload_type": ["A"] * len(item_ids),
+            "upload_dt": ["2020-01-01"] * len(item_ids),
+        }
+    )
+    event_users = np.asarray([1, 2, 3, 4], dtype=np.int64)
+    event_items = np.asarray([0, 4, 8, 12], dtype=np.int64)
+    event_times = np.asarray([1.0, 1.0, 1.0, 1.0], dtype=np.float64)
+    event_strong = np.ones(4, dtype=bool)
+    user_indptr = np.arange(5, dtype=np.int64)
+    actual_user_ids = np.asarray([1, 2, 3, 4], dtype=np.int64)
+    artifact_dir.mkdir()
+    np.savez(
+        artifact_dir / "events_train_validation.npz",
+        user=event_users,
+        item=event_items,
+        timestamp=event_times,
+        strong=event_strong,
+        user_indptr=user_indptr,
+        user_ids=actual_user_ids,
+    )
+    np.savez(
+        artifact_dir / "catalog.npz",
+        video_ids=item_ids,
+        train_end=np.asarray([10.0], dtype=np.float64),
+    )
+    (artifact_dir / "manifest.json").write_text("{}\n")
+    manifest = {
+        "files": {
+            "events_train_validation.npz": "a" * 64,
+            "catalog.npz": "b" * 64,
+        }
+    }
+    raw_sources = {
+        name: {
+            "locator": f"KUAIREC_DATA_DIR/{name}",
+            "actual_sha256": character * 64,
+            "expected_sha256": character * 64,
+            "match": True,
+        }
+        for name, character in (
+            ("big_matrix.csv", "1"),
+            ("item_daily_features.csv", "2"),
+            ("kuairec_caption_category.csv", "3"),
+        )
+    }
+    queries = RetrievalQueries(
+        user_ids=actual_user_ids,
+        histories=tuple(
+            np.asarray([item_ids[index * 4]], dtype=np.int64)
+            for index in range(4)
+        ),
+        history_weights=tuple(
+            np.ones(1, dtype=np.float32) for _ in range(4)
+        ),
+        candidates=tuple(item_ids.copy() for _ in range(4)),
+        relevant=tuple(
+            np.asarray([item_ids[index * 4 + 1]], dtype=np.int64)
+            for index in range(4)
+        ),
+        catalog=item_ids,
+        warm_user_mask=np.ones(4, dtype=bool),
+    )
+    validation_counts = {
+        "fixed_catalog_count": 9365,
+        "fixed_catalog_sha256": (
+            "8b8e88e2455a27dc0fac79e7bdb2733dc43096bb6d637e549d1ce5853e8ce55b"
+        ),
+        "query_count": 6818,
+        "warm_query_count": 6816,
+        "target_count": 118565,
+        "warm_target_count": 118539,
+        "data_cold_item_count": 1492,
+        "query_contract_sha256": (
+            "f25df9d235f32b114357a190f69a60e49d8993d2c4e09f975a0b361c7439f877"
+        ),
+    }
+    train_rows = []
+    for user, history in zip(
+        actual_user_ids, queries.histories, strict=True
+    ):
+        train_rows.append(
+            {
+                "user_id": int(user),
+                "video_id": int(history[0]),
+                "timestamp": 1.0,
+                "play_duration": 3000.0,
+                "video_duration": 1000.0,
+                "watch_ratio": 3.0,
+                "_is_strong_positive": True,
+                "_is_quick_skip": False,
+            }
+        )
+    train_frame = pd.DataFrame(train_rows)
+    checkpoint_dir.mkdir()
+    for epoch in (1, 2, 3):
+        torch.save(
+            {
+                "touched_user_ids": actual_user_ids,
+                "touched_item_ids": item_ids,
+            },
+            checkpoint_dir / f"epoch_{epoch:03d}.pt",
+        )
+    real_sha256_file = runner_module.sha256_file
+
+    def fake_sha256_file(path):
+        path = Path(path)
+        if path == artifact_dir / "manifest.json":
+            return runner_module.PHASE1_PROCESSED_MANIFEST_SHA256
+        if path.parent == artifact_dir and path.name in manifest["files"]:
+            return manifest["files"][path.name]
+        return real_sha256_file(path)
+
+    loaded_epochs = []
+    evaluated_epochs = []
+    gate_calls = []
+
+    def fake_load_checkpoint(path, **_kwargs):
+        epoch = int(Path(path).stem.split("_")[-1])
+        loaded_epochs.append(epoch)
+        return (
+            SimpleNamespace(epoch=epoch),
+            SimpleNamespace(),
+            {
+                "completed_epoch": epoch,
+                "epoch_losses": tuple(4.0 / value for value in range(1, epoch + 1)),
+                "touched_user_ids": actual_user_ids,
+                "touched_item_ids": item_ids,
+                "cumulative_training_statistics": {
+                    "optimizer_steps": epoch * 10,
+                    "skipped_batches": epoch,
+                    "completed_examples": epoch * 2560,
+                },
+                "identity_sha256": str(epoch) * 64,
+            },
+        )
+
+    metrics_by_epoch = {
+        1: {
+            "Recall@100": 0.03,
+            "NDCG@20": 0.003,
+            "Coverage@100": 0.39,
+            "Data-Cold Recall@100": 0.06,
+        },
+        2: {
+            "Recall@100": 0.06,
+            "NDCG@20": 0.004,
+            "Coverage@100": 0.40,
+            "Data-Cold Recall@100": 0.06,
+        },
+        3: {
+            "Recall@100": 0.05,
+            "NDCG@20": 0.005,
+            "Coverage@100": 0.41,
+            "Data-Cold Recall@100": 0.06,
+        },
+    }
+
+    def fake_evaluate(*, model, **_kwargs):
+        evaluated_epochs.append(model.epoch)
+        return (
+            {
+                "metrics": metrics_by_epoch[model.epoch],
+                "denominators": {"data_cold_target_count": 100},
+            },
+            {
+                "item_encoding_s": 0.01,
+                "user_encoding_s": 0.01,
+                "exact_retrieval_and_metrics_s": 0.01,
+            },
+        )
+
+    real_evaluate_gates = runner_module.evaluate_frozen_gates
+
+    def tracking_gates(metrics, denominators, gate):
+        gate_calls.append((metrics, denominators))
+        return real_evaluate_gates(metrics, denominators, gate)
+
+    def training_must_not_run(**_kwargs):
+        raise AssertionError("terminal resume called the training function")
+
+    monkeypatch.setattr(
+        runner_module,
+        "verify_phase_b2a_inputs",
+        lambda **_kwargs: (manifest, raw_sources),
+    )
+    monkeypatch.setattr(runner_module, "sha256_file", fake_sha256_file)
+    monkeypatch.setattr(
+        runner_module,
+        "load_static_item_features",
+        lambda _path: SimpleNamespace(
+            frame=static_frame,
+            normal_item_ids=item_ids,
+        ),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "normal_membership_record",
+        lambda _items: {
+            "count": 10699,
+            "sha256": (
+                "631a7c7cc93413f250f36f548feb720f8322050010e291afcc88338155f52c8e"
+            ),
+            "hash_scheme": (
+                "sha256(normal-video-membership-v1\\n + "
+                "sorted-unique-decimal-id\\n)"
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "build_validation_contract",
+        lambda **_kwargs: (
+            queries,
+            np.asarray([], dtype=np.int64),
+            validation_counts,
+        ),
+    )
+    monkeypatch.setattr(
+        runner_module, "verify_validation_contract", lambda **_kwargs: None
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "load_canonical_train_events",
+        lambda *_args, **_kwargs: train_frame,
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "build_two_tower_training_dataset",
+        lambda *_args, **_kwargs: _FrozenSizeSyntheticDataset(),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "planned_training_membership",
+        lambda *_args, **_kwargs: (actual_user_ids, item_ids),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "load_caption_cache",
+        lambda **_kwargs: SimpleNamespace(
+            metadata={
+                "model_id": "toy-caption",
+                "resolved_revision": "4" * 40,
+                "ordered_item_membership_sha256": "5" * 64,
+                "embedding_payload_sha256": "6" * 64,
+                "cache_file_sha256": "7" * 64,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "prepare_item_feature_store",
+        lambda **_kwargs: store,
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "attach_train_histories",
+        lambda *_args, **_kwargs: queries,
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "_processed_popularity",
+        lambda **_kwargs: PopularityBaseline({}),
+    )
+    monkeypatch.setattr(
+        runner_module, "load_full_epoch_checkpoint", fake_load_checkpoint
+    )
+    monkeypatch.setattr(
+        runner_module, "train_full_two_tower", training_must_not_run
+    )
+    monkeypatch.setattr(runner_module, "_evaluate_model", fake_evaluate)
+    monkeypatch.setattr(
+        runner_module, "evaluate_frozen_gates", tracking_gates
+    )
+    return {
+        "loaded_epochs": loaded_epochs,
+        "evaluated_epochs": evaluated_epochs,
+        "gate_calls": gate_calls,
+        "checkpoint": checkpoint_dir / "epoch_003.pt",
     }
 
 
@@ -432,6 +793,12 @@ def _epoch3_finalize_worker(checkpoint_dir: str, output: str) -> None:
         )
     selected = select_checkpoint_epoch(records)
     report = _minimal_report(False)
+    report["execution_mode"] = "finalize_completed_checkpoint"
+    report["estimated_full_run_minutes"] = {
+        "method": "unavailable_from_checkpoint_finalization_process",
+        "low": None,
+        "high": None,
+    }
     report["checkpoints"] = records
     report["training"]["process_statistics"] = completed[
         "process_statistics"
@@ -550,6 +917,156 @@ def test_report_json_and_markdown_match_execution_mode(
             assert forbidden not in markdown
         assert "full_big_train=true" in markdown
         assert "full_big_validation=true" in markdown
+
+
+@pytest.mark.parametrize(
+    ("preflight", "resume_epoch", "expected"),
+    [
+        (True, None, "preflight"),
+        (False, None, "fresh_full_train"),
+        (False, 1, "resumed_full_train"),
+        (False, 2, "resumed_full_train"),
+        (False, 3, "finalize_completed_checkpoint"),
+    ],
+)
+def test_execution_mode_is_explicit(preflight, resume_epoch, expected):
+    assert (
+        _execution_mode(
+            preflight=preflight,
+            resume_completed_epoch=resume_epoch,
+            frozen_epoch_count=3,
+        )
+        == expected
+    )
+
+
+def test_clean_guard_allows_only_report_targets_and_named_temps(tmp_path):
+    repo = tmp_path / "repo"
+    _initialize_clean_test_repo(repo)
+    report_json = repo / "reports" / "full.json"
+    report_markdown = repo / "reports" / "full.md"
+    report_json.parent.mkdir()
+    report_json.write_text("previous complete json")
+    report_markdown.write_text("previous complete markdown")
+    subprocess.run(["git", "add", "reports"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "tracked reports"],
+        cwd=repo,
+        check=True,
+    )
+    report_json.write_text("incomplete")
+    report_markdown.write_text("incomplete")
+    report_json.with_name(report_json.name + ".tmp").write_text("stale")
+    report_markdown.with_name(report_markdown.name + ".tmp").write_text(
+        "stale"
+    )
+    _assert_clean_source_tree(
+        repo_root=repo,
+        report_json=report_json,
+        report_markdown=report_markdown,
+    )
+    (repo / "unrelated.txt").write_text("dirty")
+    with pytest.raises(RuntimeError, match="unexpected changes"):
+        _assert_clean_source_tree(
+            repo_root=repo,
+            report_json=report_json,
+            report_markdown=report_markdown,
+        )
+
+
+@pytest.mark.parametrize("stale_target", ["json", "markdown"])
+def test_production_run_terminal_resume_recovers_stale_reports(
+    tmp_path, monkeypatch, stale_target
+):
+    repo = tmp_path / "repo"
+    config_path = _initialize_clean_test_repo(repo)
+    artifact_dir = tmp_path / "processed"
+    checkpoint_dir = tmp_path / "checkpoints"
+    tracking = _patch_terminal_run_dependencies(
+        monkeypatch,
+        artifact_dir=artifact_dir,
+        checkpoint_dir=checkpoint_dir,
+    )
+    report_json = repo / "reports" / "phase_b2b" / "full.json"
+    report_markdown = repo / "reports" / "phase_b2b" / "full.md"
+    report_json.parent.mkdir(parents=True)
+    stale_path = (
+        report_json if stale_target == "json" else report_markdown
+    )
+    stale_path.write_text("incomplete")
+    report = run(
+        repo_root=repo,
+        data_dir=tmp_path / "raw",
+        artifact_dir=artifact_dir,
+        caption_cache_path=tmp_path / "caption.npz",
+        caption_metadata_path=tmp_path / "caption.json",
+        config_path=config_path,
+        checkpoint_dir=checkpoint_dir,
+        report_json=report_json,
+        report_markdown=report_markdown,
+        preflight=False,
+        resume_checkpoint=tracking["checkpoint"],
+    )
+    published = json.loads(report_json.read_text())
+    markdown = report_markdown.read_text()
+    assert report == published
+    assert report["execution_mode"] == "finalize_completed_checkpoint"
+    assert report["training"]["process_statistics"] == {
+        "optimizer_steps": 0,
+        "skipped_batches": 0,
+        "completed_examples": 0,
+    }
+    assert report["training"]["cumulative_statistics"] == {
+        "optimizer_steps": 30,
+        "skipped_batches": 3,
+        "completed_examples": 7680,
+    }
+    assert report["access"]["full_training_started"] is False
+    assert report["estimated_full_run_minutes"] == {
+        "method": "unavailable_from_checkpoint_finalization_process",
+        "low": None,
+        "high": None,
+    }
+    assert tracking["loaded_epochs"] == [3, 1, 2, 3]
+    assert tracking["evaluated_epochs"] == [1, 2, 3]
+    assert len(tracking["gate_calls"]) == 1
+    assert report["selected_epoch_by_frozen_rule"] == 2
+    assert report["formal_gates"] == {"A": True, "B": True, "C": True}
+    assert report["claim_boundary"]["formal_gate_executed"] is True
+    assert report["timings_s"]["checkpoint_loading_s"] >= 0.0
+    assert report["timings_s"]["checkpoint_reevaluation_s"] >= 0.0
+    assert report["timings_s"]["report_generation_s"] >= 0.0
+    assert "# Phase B2B Full Two-Tower Results" in markdown
+    assert "finalize_completed_checkpoint" in markdown
+    assert "full_big_train=true" in markdown
+    assert "full_big_validation=true" in markdown
+    assert "bounded preflight" not in markdown
+    assert not report_json.with_name(report_json.name + ".tmp").exists()
+    assert not report_markdown.with_name(
+        report_markdown.name + ".tmp"
+    ).exists()
+
+
+def test_production_run_rejects_unrelated_dirty_file(tmp_path):
+    repo = tmp_path / "repo"
+    config_path = _initialize_clean_test_repo(repo)
+    report_json = repo / "reports" / "full.json"
+    report_markdown = repo / "reports" / "full.md"
+    (repo / "unrelated.txt").write_text("dirty")
+    with pytest.raises(RuntimeError, match="unexpected changes"):
+        run(
+            repo_root=repo,
+            data_dir=tmp_path / "raw",
+            artifact_dir=tmp_path / "processed",
+            caption_cache_path=tmp_path / "caption.npz",
+            caption_metadata_path=tmp_path / "caption.json",
+            config_path=config_path,
+            checkpoint_dir=tmp_path / "checkpoints",
+            report_json=report_json,
+            report_markdown=report_markdown,
+            preflight=False,
+            resume_checkpoint=tmp_path / "epoch_003.pt",
+        )
 
 
 def test_validation_contract_hash_and_fail_closed_counts():

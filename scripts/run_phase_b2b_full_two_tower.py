@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 import resource
 import subprocess
 import time
@@ -89,6 +90,24 @@ EXPECTED_TRAINING_CONTRACT = {
     "full_example_count": 574098,
     "training_user_count": 7161,
 }
+EXPECTED_SCOPE = {
+    "fit": "canonical_big_train",
+    "select": "canonical_big_validation",
+    "forbidden": [
+        "small_matrix",
+        "temporal_final",
+        "faiss",
+        "hybrid",
+        "reranker",
+        "serving",
+    ],
+}
+EXPECTED_CAPTION = {
+    "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "resolved_revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+    "dimension": 384,
+    "preprocessing_version": "phase-b2a-caption-fallback-v1",
+}
 EXPECTED_CHECKPOINT = {
     "epochs": [1, 2, 3],
     "directory": "artifacts/phase_b2b",
@@ -143,6 +162,13 @@ EXPECTED_PREFLIGHT_CLAIMS = {
     "full_big_train": False,
     "full_big_validation": False,
 }
+EXPECTED_PREFLIGHT = {
+    "max_training_examples": 2560,
+    "max_optimizer_steps": 20,
+    "epochs": 2,
+    "max_validation_queries": 128,
+    "claims": EXPECTED_PREFLIGHT_CLAIMS,
+}
 FULL_RUN_CLAIMS = {
     "formal_gate_executed": True,
     "effectiveness_claim": False,
@@ -152,7 +178,11 @@ FULL_RUN_CLAIMS = {
 
 
 def validate_config(config: dict[str, Any]) -> None:
+    if config.get("phase") != "phase-b2b-full-two-tower":
+        raise RuntimeError("Phase B2B phase is not frozen")
     frozen_sections = {
+        "scope": EXPECTED_SCOPE,
+        "caption": EXPECTED_CAPTION,
         "architecture": EXPECTED_ARCHITECTURE,
         "training": EXPECTED_TRAINING,
         "training_contract": EXPECTED_TRAINING_CONTRACT,
@@ -161,23 +191,11 @@ def validate_config(config: dict[str, Any]) -> None:
         "selection": EXPECTED_SELECTION,
         "frozen_bpr_epoch_20": EXPECTED_FROZEN_BPR,
         "gate": EXPECTED_GATE,
+        "preflight": EXPECTED_PREFLIGHT,
     }
     for name, expected in frozen_sections.items():
         if config.get(name) != expected:
             raise RuntimeError(f"Phase B2B {name} is not frozen")
-    if config.get("scope", {}).get("forbidden") != [
-        "small_matrix",
-        "temporal_final",
-        "faiss",
-        "hybrid",
-        "reranker",
-        "serving",
-    ]:
-        raise RuntimeError("Phase B2B forbidden scope changed")
-    if config.get("preflight", {}).get("claims") != EXPECTED_PREFLIGHT_CLAIMS:
-        raise RuntimeError("Phase B2B0 preflight claims changed")
-
-
 def _report_mode(preflight: bool) -> dict[str, Any]:
     if preflight:
         return {
@@ -198,6 +216,84 @@ def _report_mode(preflight: bool) -> dict[str, Any]:
             "Big-validation experiment."
         ),
     }
+
+
+def _execution_mode(
+    *,
+    preflight: bool,
+    resume_completed_epoch: int | None,
+    frozen_epoch_count: int,
+) -> str:
+    if preflight:
+        return "preflight"
+    if resume_completed_epoch is None:
+        return "fresh_full_train"
+    if resume_completed_epoch < frozen_epoch_count:
+        return "resumed_full_train"
+    if resume_completed_epoch == frozen_epoch_count:
+        return "finalize_completed_checkpoint"
+    raise RuntimeError("Resume checkpoint exceeds the frozen epoch plan")
+
+
+def _report_temporary_path(path: Path) -> Path:
+    return path.with_name(path.name + ".tmp")
+
+
+def _repo_relative_path(repo_root: Path, path: Path) -> str | None:
+    try:
+        return path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return None
+
+
+def _assert_clean_source_tree(
+    *,
+    repo_root: Path,
+    report_json: Path,
+    report_markdown: Path,
+) -> None:
+    allowed = {
+        relative
+        for path in (
+            report_json,
+            report_markdown,
+            _report_temporary_path(report_json),
+            _report_temporary_path(report_markdown),
+        )
+        if (relative := _repo_relative_path(repo_root, path)) is not None
+    }
+    output = subprocess.check_output(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=repo_root,
+        text=True,
+    )
+    unexpected: list[str] = []
+    for line in output.splitlines():
+        if len(line) < 4:
+            unexpected.append(line)
+            continue
+        status = line[:2]
+        locator = line[3:]
+        if "R" in status or "C" in status or " -> " in locator:
+            unexpected.append(line)
+            continue
+        if locator.startswith('"') or locator not in allowed:
+            unexpected.append(line)
+    if unexpected:
+        raise RuntimeError(
+            "Phase B2B runner requires a clean input tree; unexpected "
+            f"changes: {unexpected}"
+        )
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = _report_temporary_path(path)
+    try:
+        temporary.write_text(text)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _completed_checkpoint_result(
@@ -411,7 +507,7 @@ def _evaluate_model(
     }
 
 
-def _write_markdown(report: dict[str, Any], path: Path) -> None:
+def _render_markdown(report: dict[str, Any]) -> str:
     mode = _report_mode(
         report["phase"] == "phase-b2b0-full-runner-preflight"
     )
@@ -435,32 +531,56 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
     claims = report["claim_boundary"]
     process_statistics = report["training"]["process_statistics"]
     cumulative_statistics = report["training"]["cumulative_statistics"]
-    text = "\n".join(
+    estimate = report["estimated_full_run_minutes"]
+    if estimate["low"] is None or estimate["high"] is None:
+        timing_line = (
+            f"- Complete full-run wall time: unavailable from this "
+            f"`{report['execution_mode']}` process"
+        )
+    else:
+        timing_line = (
+            f"- Estimated/observed full run: `{estimate['low']:.1f}` to "
+            f"`{estimate['high']:.1f}` minutes"
+        )
+    lines = [
+        mode["title"],
+        "",
+        mode["description"],
+        "",
+        f"- Execution mode: `{report['execution_mode']}`",
+        f"- Device: `{report['environment']['device']}`",
+        f"- Current-process wall time: `{report['runtime_s']:.2f} s`",
+        f"- Peak RSS: `{report['peak_rss_mb']:.2f} MB`",
+        f"- Save/load/resume verified: "
+        f"`{str(report['resume']['verified']).lower()}`",
+        f"- Training examples: `{report['training']['example_count']}`",
+        f"- Optimizer steps in this process: "
+        f"`{process_statistics['optimizer_steps']}`",
+        f"- Cumulative optimizer steps: "
+        f"`{cumulative_statistics['optimizer_steps']}`",
+        f"- Skipped batches in this process / cumulative: "
+        f"`{process_statistics['skipped_batches']} / "
+        f"{cumulative_statistics['skipped_batches']}`",
+        f"- Completed examples in this process / cumulative: "
+        f"`{process_statistics['completed_examples']} / "
+        f"{cumulative_statistics['completed_examples']}`",
+        f"- Validation queries: `{report['validation']['evaluated_queries']}`",
+        timing_line,
+    ]
+    if report["execution_mode"] == "finalize_completed_checkpoint":
+        timings = report["timings_s"]
+        lines.extend(
+            [
+                f"- Checkpoint loading: "
+                f"`{timings['checkpoint_loading_s']:.3f} s`",
+                f"- Three-checkpoint reevaluation: "
+                f"`{timings['checkpoint_reevaluation_s']:.3f} s`",
+                f"- Report generation: "
+                f"`{timings['report_generation_s']:.3f} s`",
+            ]
+        )
+    lines.extend(
         [
-            mode["title"],
-            "",
-            mode["description"],
-            "",
-            f"- Device: `{report['environment']['device']}`",
-            f"- Runtime: `{report['runtime_s']:.2f} s`",
-            f"- Peak RSS: `{report['peak_rss_mb']:.2f} MB`",
-            f"- Save/load/resume verified: "
-            f"`{str(report['resume']['verified']).lower()}`",
-            f"- Training examples: `{report['training']['example_count']}`",
-            f"- Optimizer steps in this process: "
-            f"`{process_statistics['optimizer_steps']}`",
-            f"- Cumulative optimizer steps: "
-            f"`{cumulative_statistics['optimizer_steps']}`",
-            f"- Skipped batches in this process / cumulative: "
-            f"`{process_statistics['skipped_batches']} / "
-            f"{cumulative_statistics['skipped_batches']}`",
-            f"- Completed examples in this process / cumulative: "
-            f"`{process_statistics['completed_examples']} / "
-            f"{cumulative_statistics['completed_examples']}`",
-            f"- Validation queries: `{report['validation']['evaluated_queries']}`",
-            f"- Estimated full run: "
-            f"`{report['estimated_full_run_minutes']['low']:.1f}` to "
-            f"`{report['estimated_full_run_minutes']['high']:.1f}` minutes",
             "",
             "| Epoch | Loss | Recall@100 | NDCG@20 | Coverage@100 |",
             "|---:|---:|---:|---:|---:|",
@@ -480,10 +600,14 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
             "",
         ]
     )
+    text = "\n".join(lines)
     if "/home/" in text:
         raise RuntimeError("Generated Markdown contains a host path")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+    return text
+
+
+def _write_markdown(report: dict[str, Any], path: Path) -> None:
+    _atomic_write_text(path, _render_markdown(report))
 
 
 def run(
@@ -506,10 +630,11 @@ def run(
     code_commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True
     ).strip()
-    if subprocess.check_output(
-        ["git", "status", "--porcelain"], cwd=repo_root, text=True
-    ).strip():
-        raise RuntimeError("Phase B2B runner requires a clean input tree")
+    _assert_clean_source_tree(
+        repo_root=repo_root,
+        report_json=report_json,
+        report_markdown=report_markdown,
+    )
     manifest, raw_sources = verify_phase_b2a_inputs(
         data_dir=data_dir,
         artifact_dir=artifact_dir,
@@ -851,8 +976,11 @@ def run(
             }
         )
 
-    training_started = time.perf_counter()
+    checkpoint_loading_s = 0.0
+    checkpoint_reevaluation_s = 0.0
+    resume_completed_epoch: int | None = None
     if resume_checkpoint is not None:
+        checkpoint_load_started = time.perf_counter()
         inspection = torch.load(
             resume_checkpoint, map_location="cpu", weights_only=False
         )
@@ -876,6 +1004,8 @@ def run(
             learning_rate=float(training["learning_rate"]),
             weight_decay=float(training["weight_decay"]),
         )
+        checkpoint_loading_s += time.perf_counter() - checkpoint_load_started
+        resume_completed_epoch = int(restored["completed_epoch"])
         start_epoch = int(restored["completed_epoch"]) + 1
         prior_losses = tuple(restored["epoch_losses"])
         initial_touched_users = restored["touched_user_ids"]
@@ -891,6 +1021,12 @@ def run(
             "skipped_batches": 0,
             "completed_examples": 0,
         }
+    execution_mode = _execution_mode(
+        preflight=preflight,
+        resume_completed_epoch=resume_completed_epoch,
+        frozen_epoch_count=int(training["epochs"]),
+    )
+    training_started = time.perf_counter()
     if preflight and resume_checkpoint is None:
         first = train_full_two_tower(
             model=model,
@@ -922,6 +1058,7 @@ def run(
             training_seed=int(training["seed"]),
         )
         del model, optimizer
+        checkpoint_load_started = time.perf_counter()
         model, optimizer, restored = load_full_epoch_checkpoint(
             first_checkpoint,
             device=device,
@@ -929,6 +1066,7 @@ def run(
             learning_rate=float(training["learning_rate"]),
             weight_decay=float(training["weight_decay"]),
         )
+        checkpoint_loading_s += time.perf_counter() - checkpoint_load_started
         second = train_full_two_tower(
             model=model,
             optimizer=optimizer,
@@ -1015,10 +1153,8 @@ def run(
             training_result["cumulative_statistics"]
         )
     else:
-        if resume_checkpoint is None or int(restored["completed_epoch"]) != int(
-            training["epochs"]
-        ):
-            raise RuntimeError("Resume checkpoint exceeds the frozen epoch plan")
+        if execution_mode != "finalize_completed_checkpoint":
+            raise RuntimeError("Terminal resume mode was not resolved")
         training_result = _completed_checkpoint_result(restored)
         resume_verified = True
         process_statistics = dict(training_result["process_statistics"])
@@ -1040,6 +1176,7 @@ def run(
             raise RuntimeError(
                 f"Complete checkpoint for epoch {epoch} is missing"
             )
+        checkpoint_load_started = time.perf_counter()
         inspection = torch.load(
             checkpoint_path, map_location="cpu", weights_only=False
         )
@@ -1063,6 +1200,8 @@ def run(
             learning_rate=float(training["learning_rate"]),
             weight_decay=float(training["weight_decay"]),
         )
+        checkpoint_loading_s += time.perf_counter() - checkpoint_load_started
+        reevaluation_started = time.perf_counter()
         validation, timings = _evaluate_model(
             model=checkpoint_model,
             store=store,
@@ -1074,6 +1213,9 @@ def run(
             popularity=popularity,
             device=device,
             config=config,
+        )
+        checkpoint_reevaluation_s += (
+            time.perf_counter() - reevaluation_started
         )
         records.append(
             {
@@ -1104,7 +1246,6 @@ def run(
             config["gate"],
         )
     )
-    runtime_s = time.perf_counter() - started_total
     if preflight:
         steps_per_second = max(
             total_optimizer_steps / max(training_wall_s, 1e-9), 1e-9
@@ -1125,16 +1266,31 @@ def run(
             "low": full_steps / steps_per_second / 60.0 * 1.5,
             "high": full_steps / steps_per_second / 60.0 * 2.5,
         }
-    else:
+    elif execution_mode == "fresh_full_train":
+        runtime_before_report_s = time.perf_counter() - started_total
         estimated_full_run = {
             "method": "completed_full_run_observed_wall_time",
-            "low": runtime_s / 60.0,
-            "high": runtime_s / 60.0,
+            "low": runtime_before_report_s / 60.0,
+            "high": runtime_before_report_s / 60.0,
+        }
+    elif execution_mode == "resumed_full_train":
+        estimated_full_run = {
+            "method": "unavailable_from_partial_resumed_process",
+            "low": None,
+            "high": None,
+        }
+    else:
+        estimated_full_run = {
+            "method": "unavailable_from_checkpoint_finalization_process",
+            "low": None,
+            "high": None,
         }
     mode = _report_mode(preflight)
+    report_generation_started = time.perf_counter()
     report = {
         "phase": mode["phase"],
         "status": "completed",
+        "execution_mode": execution_mode,
         "claim_boundary": mode["claim_boundary"],
         "environment": {
             "device": str(device),
@@ -1146,7 +1302,9 @@ def run(
             "example_count": int(len(example_indices)),
             "ordered_user_count": int(len(ordered_users)),
             "planned_item_count": int(len(planned_items)),
-            "training_and_epoch_validation_s": training_wall_s,
+            "current_process_training_and_epoch_validation_s": (
+                training_wall_s
+            ),
             "completed_epoch": int(training_result["completed_epoch"]),
             "epoch_losses": list(training_result["epoch_losses"]),
             "process_statistics": process_statistics,
@@ -1185,7 +1343,12 @@ def run(
             "input_tree_clean_at_start": True,
         },
         "frozen_bpr_epoch_20": config["frozen_bpr_epoch_20"],
-        "runtime_s": runtime_s,
+        "runtime_s": 0.0,
+        "timings_s": {
+            "checkpoint_loading_s": checkpoint_loading_s,
+            "checkpoint_reevaluation_s": checkpoint_reevaluation_s,
+            "report_generation_s": 0.0,
+        },
         "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         / 1024.0,
         "peak_gpu_memory_mb": (
@@ -1199,14 +1362,20 @@ def run(
             "temporal_final_accessed": False,
             "faiss_run": False,
             "hybrid_run": False,
-            "full_training_started": not preflight,
+            "full_training_started": execution_mode
+            in {"fresh_full_train", "resumed_full_train"},
         },
     }
+    json.dumps(report, indent=2, sort_keys=True)
+    _render_markdown(report)
+    report["timings_s"]["report_generation_s"] = (
+        time.perf_counter() - report_generation_started
+    )
+    report["runtime_s"] = time.perf_counter() - started_total
     serialized = json.dumps(report, indent=2, sort_keys=True)
     if "/home/" in serialized:
         raise RuntimeError("Generated JSON contains a host path")
-    report_json.parent.mkdir(parents=True, exist_ok=True)
-    report_json.write_text(serialized + "\n")
+    _atomic_write_text(report_json, serialized + "\n")
     _write_markdown(report, report_markdown)
     return report
 
