@@ -19,6 +19,7 @@ from kuairec_fully_observed import (
     build_two_tower_training_examples,
     build_two_tower_training_dataset,
     data_cold_items,
+    evaluate_frozen_small_routes,
     evaluate_retrieval,
     in_batch_softmax_loss,
     is_quick_skip,
@@ -197,6 +198,74 @@ def test_small_retains_cold_users_without_using_small_feedback_as_history():
     assert len(queries.histories[1]) == 0
     assert queries.warm_user_mask.tolist() == [True, False]
     assert queries.diagnostics["cold_users_retained"] == 1
+
+
+def test_sealed_small_routes_share_cold_fallback_and_keep_frozen_hybrid():
+    observed = _events(
+        [
+            (7, 1, 10.0, 3000.0, 1000.0, 3.0),
+            (7, 2, 11.0, 1000.0, 1000.0, 1.0),
+            (7, 3, 12.0, 1000.0, 1000.0, 1.0),
+            (8, 1, 10.0, 1000.0, 1000.0, 1.0),
+            (8, 2, 11.0, 3000.0, 1000.0, 3.0),
+            (8, 3, 12.0, 1000.0, 1000.0, 1.0),
+        ]
+    )
+    big = _events([(7, 99, 1.0, 500.0, 1000.0, 0.5)])
+    queries = build_small_observed_queries(
+        observed,
+        big_history_events=big,
+        normal_item_ids=np.asarray([1, 2, 3, 4]),
+    )
+    popularity = np.asarray([[3, 2, 1], [3, 2, 1]])
+    result = evaluate_frozen_small_routes(
+        queries=queries,
+        random_topk=np.asarray([[2, 3, 1], [1, 3, 2]]),
+        popularity_topk=popularity,
+        bpr_topk=np.asarray([[1, 2, 3], [2, 1, 3]]),
+        two_tower_topk=np.asarray([[1, 3, 2], [2, 3, 1]]),
+        data_cold_item_ids=np.asarray([3]),
+    )
+
+    assert result["recipe"] == {
+        "alpha": 0.75,
+        "route_top_k": 500,
+        "rank_constant": 60,
+        "output_k": 100,
+        "cold_user_fallback": "refit_global_popularity",
+    }
+    for name in ("random", "bpr", "two_tower", "hybrid_alpha_0.75"):
+        np.testing.assert_array_equal(
+            result["results"][name]["topk"][1, :3], popularity[1]
+        )
+    np.testing.assert_array_equal(
+        result["results"]["hybrid_alpha_0.75"]["topk"][0, :3],
+        [1, 3, 2],
+    )
+    assert (
+        result["results"]["two_tower"]["metrics"][
+            "cold_user_denominators"
+        ]["query_count"]
+        == 1
+    )
+
+
+def test_sealed_small_rejects_blocked_or_unobserved_ranked_item():
+    queries = _queries(
+        user_ids=[1],
+        candidates=[np.asarray([1, 2])],
+        relevant=[np.asarray([1])],
+        catalog=np.asarray([1, 2, 3]),
+    )
+    with pytest.raises(ValueError, match="unavailable Small pair"):
+        evaluate_frozen_small_routes(
+            queries=queries,
+            random_topk=np.asarray([[1, 2]]),
+            popularity_topk=np.asarray([[1, 2]]),
+            bpr_topk=np.asarray([[1, 3]]),
+            two_tower_topk=np.asarray([[1, 2]]),
+            data_cold_item_ids=np.asarray([], dtype=np.int64),
+        )
 
 
 def test_data_cold_uses_any_train_interaction_not_only_positive():

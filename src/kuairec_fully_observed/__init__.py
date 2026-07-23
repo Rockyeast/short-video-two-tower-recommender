@@ -27,6 +27,14 @@ from .models import (
     train_bpr_sgd,
 )
 from .retrieval import ExactDotProductRetriever
+from .sealed_small import (
+    FROZEN_OUTPUT_K,
+    FROZEN_ROUTE_TOP_K,
+    FROZEN_SMALL_ALPHA,
+    FROZEN_SMALL_METHODS,
+    evaluate_frozen_small_routes,
+    require_sealed_execution,
+)
 from .training import (
     BPRTrainingDataset,
     TwoTowerTrainingDataset,
@@ -42,6 +50,10 @@ __all__ = [
     "BPRTrainingDataset",
     "BPRTrainingResult",
     "ExactDotProductRetriever",
+    "FROZEN_OUTPUT_K",
+    "FROZEN_ROUTE_TOP_K",
+    "FROZEN_SMALL_ALPHA",
+    "FROZEN_SMALL_METHODS",
     "NumpyTwoTowerReference",
     "MODEL_ITEM_FEATURE_COLUMNS",
     "PopularityBaseline",
@@ -58,6 +70,8 @@ __all__ = [
     "build_two_tower_training_examples",
     "data_cold_items",
     "evaluate_retrieval",
+    "evaluate_frozen_small_routes",
+    "require_sealed_execution",
     "in_batch_softmax_loss",
     "is_quick_skip",
     "is_strong_positive",

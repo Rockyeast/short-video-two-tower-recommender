@@ -1,0 +1,57 @@
+phase: phase-b3b-final-refit-and-sealed-small
+fit_context: canonical_big_train_plus_validation
+selection_complete: true
+forbidden_during_b3b0: [small_matrix, temporal_final, faiss, reranker, serving]
+popularity:
+  positive_label: watch_ratio_strictly_greater_than_2
+bpr:
+  selected_epoch: 20
+  seed: 20260722
+  embedding_dim: 64
+  learning_rate: 0.05
+  l2: 0.0001
+  batch_size: 4096
+  epochs: 20
+two_tower:
+  selected_epoch: 1
+  architecture:
+    item_id_dim: 64
+    category_dim: 32
+    caption_projection_dim: 64
+    static_projection_dim: 16
+    upload_type_dim: 8
+    hidden_dim: 256
+    output_dim: 128
+    max_history: 50
+  training:
+    optimizer: AdamW
+    learning_rate: 0.001
+    weight_decay: 0.00001
+    batch_size: 256
+    epochs: 1
+    temperature: 0.07
+    gradient_clip_norm: 5.0
+    seed: 20260722
+    diagnostic_seed: 20260723
+    precision: FP32
+    num_workers: 0
+  caption:
+    model_id: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+    resolved_revision: e8f8c211226b894fcb81acc59f3b34ba3efd5f42
+    dimension: 384
+    preprocessing_version: phase-b2a-caption-fallback-v1
+hybrid:
+  routes: [two_tower, bpr]
+  route_top_k: 500
+  rank_constant: 60
+  alpha: 0.75
+  output_k: 100
+sealed_small:
+  candidates: observed_small_pairs_intersect_normal
+  relevance: watch_ratio_strictly_greater_than_2
+  big_history_max_length: 50
+  cold_user_fallback: refit_global_popularity
+  methods: [random, global_popularity, bpr, two_tower, hybrid_alpha_0.75]
+  metrics:
+    [Recall@20, Recall@50, Recall@100, NDCG@20, Coverage@100,
+     Data-Cold Recall@100]
