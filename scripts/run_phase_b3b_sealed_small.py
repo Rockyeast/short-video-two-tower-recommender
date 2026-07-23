@@ -71,6 +71,8 @@ PRIOR_SEALED_ATTEMPTS = (
         "attempt_number": 3,
         "failure_stage": "formal_report_serialization_audit_counts",
         "formal_metrics_produced_or_observed": False,
+        "formal_metrics_computed": True,
+        "formal_metrics_exposed": False,
         "failure_report": (
             "reports/phase_b3b/sealed_small_attempt3_failure.md"
         ),
