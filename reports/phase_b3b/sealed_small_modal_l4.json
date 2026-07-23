@@ -1,0 +1,289 @@
+{
+  "claim_boundary": {
+    "cross_seed_claim": false,
+    "future_time_test": false,
+    "rerun_or_retuning_permitted": false,
+    "sealed_nearly_fully_observed_audit": true,
+    "significance_claim": false,
+    "small_used_for_model_selection": false,
+    "temporal_final_accessed": false
+  },
+  "phase": "phase-b3b-sealed-small-modal-l4",
+  "prior_attempt_metrics_produced": false,
+  "prior_attempts": [
+    {
+      "attempt_number": 1,
+      "failure_report": "reports/phase_b3b/sealed_small_failure.md",
+      "failure_stage": "small_schema_validation",
+      "formal_metrics_produced_or_observed": false
+    },
+    {
+      "attempt_number": 2,
+      "failure_report": "reports/phase_b3b/sealed_small_attempt2_failure.md",
+      "failure_stage": "two_tower_checkpoint_feature_vocab_validation",
+      "formal_metrics_produced_or_observed": false
+    },
+    {
+      "attempt_number": 3,
+      "failure_report": "reports/phase_b3b/sealed_small_attempt3_failure.md",
+      "failure_stage": "formal_report_serialization_audit_counts",
+      "formal_metrics_computed": true,
+      "formal_metrics_exposed": false,
+      "formal_metrics_produced_or_observed": false
+    },
+    {
+      "attempt_number": 4,
+      "failure_report": "reports/phase_b3b/sealed_small_attempt4_failure.md",
+      "failure_stage": "two_tower_checkpoint_numeric_preprocessing_identity_validation",
+      "formal_metrics_computed": false,
+      "formal_metrics_exposed": false,
+      "formal_metrics_produced_or_observed": false
+    }
+  ],
+  "runner_commit": "82e3a462d1c71828a4fb0ffd53ca77da1fad28e2",
+  "runtime": {
+    "gpu_name": "NVIDIA L4",
+    "peak_cuda_allocated_mb": 57.0048828125,
+    "peak_cuda_reserved_mb": 66.0,
+    "peak_rss_mb": 8324.6875,
+    "wall_time_s": 285.646366481
+  },
+  "sealed_attempt_number": 5,
+  "sealed_result": {
+    "audit_counts": {
+      "data_cold_item_count": 1334,
+      "excluded_zero_relevant_user_count": 0,
+      "normal_candidate_item_count": 3327,
+      "observed_normal_pair_count": 4676570,
+      "observed_pair_count": 4676570
+    },
+    "cold_user_count": 0,
+    "input_identity": {
+      "final_refit": {
+        "artifacts": {
+          "bpr_epoch_20": {
+            "actual_sha256": "ac423dacece97cbc6c10c4d773e4b9deec0d9cdf540ec8baf7be492dd812f4c2",
+            "expected_sha256": "ac423dacece97cbc6c10c4d773e4b9deec0d9cdf540ec8baf7be492dd812f4c2",
+            "match": true
+          },
+          "global_popularity": {
+            "actual_sha256": "b47f01c8af900d2b00d80163c57485637785cae912a34832b7e50421492ba780",
+            "expected_sha256": "b47f01c8af900d2b00d80163c57485637785cae912a34832b7e50421492ba780",
+            "match": true
+          },
+          "two_tower_epoch_1": {
+            "actual_sha256": "5715a98d47c80f545afdce845c2a96940bc7ce3fec355e4a1156576d2fcab949",
+            "expected_sha256": "5715a98d47c80f545afdce845c2a96940bc7ce3fec355e4a1156576d2fcab949",
+            "match": true
+          }
+        },
+        "bpr_epochs": 20,
+        "fit_context": "canonical_big_train_plus_validation",
+        "recipe_frozen_before_small": true,
+        "selection_performed": false,
+        "two_tower_epochs": 1
+      },
+      "numeric_preprocessing_sidecar": {
+        "locator": "manifests/phase_b3b_final_numeric_preprocessing.json",
+        "numeric_preprocessing_sha256": "71217e8965b59915874ab879e157eacd61a1c55813604bcdb9e748e08458c489",
+        "sha256": "478fcaccbe71b97bb00f6ac0fa5a95b8795bcd86600f3ffb879e36bb90b40158"
+      },
+      "small_matrix": {
+        "actual_sha256": "6b601cd38b2600d8734b4aede309ad73d1e201fdc4bd76d4bc7d2534793d7d15",
+        "expected_sha256": "6b601cd38b2600d8734b4aede309ad73d1e201fdc4bd76d4bc7d2534793d7d15",
+        "match": true,
+        "size_bytes": 406155844,
+        "source_locator": "KUAIREC_DATA_DIR/small_matrix.csv"
+      }
+    },
+    "phase": "phase-b3b-sealed-small",
+    "prior_attempt_metrics_produced": false,
+    "prior_attempts": [
+      {
+        "attempt_number": 1,
+        "failure_report": "reports/phase_b3b/sealed_small_failure.md",
+        "failure_stage": "small_schema_validation",
+        "formal_metrics_produced_or_observed": false
+      },
+      {
+        "attempt_number": 2,
+        "failure_report": "reports/phase_b3b/sealed_small_attempt2_failure.md",
+        "failure_stage": "two_tower_checkpoint_feature_vocab_validation",
+        "formal_metrics_produced_or_observed": false
+      },
+      {
+        "attempt_number": 3,
+        "failure_report": "reports/phase_b3b/sealed_small_attempt3_failure.md",
+        "failure_stage": "formal_report_serialization_audit_counts",
+        "formal_metrics_computed": true,
+        "formal_metrics_exposed": false,
+        "formal_metrics_produced_or_observed": false
+      },
+      {
+        "attempt_number": 4,
+        "failure_report": "reports/phase_b3b/sealed_small_attempt4_failure.md",
+        "failure_stage": "two_tower_checkpoint_numeric_preprocessing_identity_validation",
+        "formal_metrics_computed": false,
+        "formal_metrics_exposed": false,
+        "formal_metrics_produced_or_observed": false
+      }
+    ],
+    "query_count": 1411,
+    "recipe": {
+      "alpha": 0.75,
+      "cold_user_fallback": "refit_global_popularity",
+      "output_k": 100,
+      "rank_constant": 60,
+      "route_top_k": 500
+    },
+    "results": {
+      "bpr": {
+        "cold_user_denominators": {
+          "query_count": 0,
+          "target_count": 0
+        },
+        "cold_user_metrics": null,
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 1411,
+          "all_target_count": 217175,
+          "candidate_union_count": 3327,
+          "data_cold_query_count": 88,
+          "data_cold_target_count": 88,
+          "query_count": 1411,
+          "target_count": 217175,
+          "user_count": 1411
+        },
+        "metrics": {
+          "Coverage@100": 0.4033663961526901,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.5694535183934828,
+          "Recall@100": 0.31985036643798687,
+          "Recall@20": 0.17328436473967165,
+          "Recall@50": 0.2519861503756058
+        }
+      },
+      "global_popularity": {
+        "cold_user_denominators": {
+          "query_count": 0,
+          "target_count": 0
+        },
+        "cold_user_metrics": null,
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 1411,
+          "all_target_count": 217175,
+          "candidate_union_count": 3327,
+          "data_cold_query_count": 88,
+          "data_cold_target_count": 88,
+          "query_count": 1411,
+          "target_count": 217175,
+          "user_count": 1411
+        },
+        "metrics": {
+          "Coverage@100": 0.03216110610159303,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.5149466712500561,
+          "Recall@100": 0.26841651832674795,
+          "Recall@20": 0.1406006803814203,
+          "Recall@50": 0.21262939682427878
+        }
+      },
+      "hybrid_alpha_0.75": {
+        "cold_user_denominators": {
+          "query_count": 0,
+          "target_count": 0
+        },
+        "cold_user_metrics": null,
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 1411,
+          "all_target_count": 217175,
+          "candidate_union_count": 3327,
+          "data_cold_query_count": 88,
+          "data_cold_target_count": 88,
+          "query_count": 1411,
+          "target_count": 217175,
+          "user_count": 1411
+        },
+        "metrics": {
+          "Coverage@100": 0.17883979561166216,
+          "Data-Cold Recall@100": 0.25,
+          "NDCG@20": 0.20617323756304104,
+          "Recall@100": 0.10395036870609295,
+          "Recall@20": 0.039512641390523406,
+          "Recall@50": 0.06802761618513323
+        }
+      },
+      "random": {
+        "cold_user_denominators": {
+          "query_count": 0,
+          "target_count": 0
+        },
+        "cold_user_metrics": null,
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 1411,
+          "all_target_count": 217175,
+          "candidate_union_count": 3327,
+          "data_cold_query_count": 88,
+          "data_cold_target_count": 88,
+          "query_count": 1411,
+          "target_count": 217175,
+          "user_count": 1411
+        },
+        "metrics": {
+          "Coverage@100": 1.0,
+          "Data-Cold Recall@100": 0.045454545454545456,
+          "NDCG@20": 0.04565571835020675,
+          "Recall@100": 0.030569834813013178,
+          "Recall@20": 0.005842244123860933,
+          "Recall@50": 0.01503923593757726
+        }
+      },
+      "two_tower": {
+        "cold_user_denominators": {
+          "query_count": 0,
+          "target_count": 0
+        },
+        "cold_user_metrics": null,
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 1411,
+          "all_target_count": 217175,
+          "candidate_union_count": 3327,
+          "data_cold_query_count": 88,
+          "data_cold_target_count": 88,
+          "query_count": 1411,
+          "target_count": 217175,
+          "user_count": 1411
+        },
+        "metrics": {
+          "Coverage@100": 0.1761346558461076,
+          "Data-Cold Recall@100": 0.29545454545454547,
+          "NDCG@20": 0.15916498999203904,
+          "Recall@100": 0.08974083454782236,
+          "Recall@20": 0.03406135361763415,
+          "Recall@50": 0.0587203166010015
+        }
+      }
+    },
+    "sealed_attempt_number": 5,
+    "selection_performed": false,
+    "small_matrix_accessed_once": true,
+    "small_used_for_post_attempt_tuning": false,
+    "target_count": 217175,
+    "temporal_final_accessed": false,
+    "warm_user_count": 1411
+  },
+  "small_upload_identity": {
+    "actual_sha256": "6b601cd38b2600d8734b4aede309ad73d1e201fdc4bd76d4bc7d2534793d7d15",
+    "actual_size_bytes": 406155844,
+    "expected_sha256": "6b601cd38b2600d8734b4aede309ad73d1e201fdc4bd76d4bc7d2534793d7d15",
+    "expected_size_bytes": 406155844,
+    "match": true,
+    "volume_reused": true
+  },
+  "small_used_for_post_attempt_tuning": false,
+  "wrapper_commit": "07137e3e5c19e3d9c11c378234516e97ab48f299"
+}

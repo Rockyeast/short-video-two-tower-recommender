@@ -30,8 +30,9 @@ Two-Tower histories, epoch-resampled BPR negatives/training, blocked Exact
 scoring and a shared cold-user fallback. Phase B2A now adds one real PyTorch
 Two-Tower V1 engineering path, including immutable MiniLM caption embeddings,
 content-only cold-item encoding, masked in-batch training and sampled Exact
-retrieval. Full Big Two-Tower training, formal validation, Small evaluation and
-FAISS remain unrun.
+retrieval. Subsequent phases completed frozen Big validation, final
+train+validation refit, and the sealed Small Matrix audit described below.
+FAISS remains unrun.
 
 The original bounded 100K-interaction plumbing smoke is committed at
 [`reports/phase_b0/smoke_100k.json`](reports/phase_b0/smoke_100k.json). After
@@ -115,6 +116,30 @@ and the accompanying JSON for cache identity, gradients, false-negative-mask,
 timing and resource details. Caption vectors and the smoke checkpoint are
 ignored artifacts, not committed files.
 
+## Sealed Small Matrix audit
+
+Attempt 5 completed the frozen, nearly-fully-observed Small Matrix audit on
+1,411 warm users, 217,175 relevant targets, 4,676,570 observed NORMAL pairs,
+and a 3,327-item candidate union. This is not a future-time test. Small was not
+used for training, model selection, history construction, or post-result
+tuning. The complete report and the transparent history of four earlier
+pre-metric/reporting failures are in
+[`reports/phase_b3b/sealed_small_modal_l4.md`](reports/phase_b3b/sealed_small_modal_l4.md).
+
+| Method | Recall@20 | Recall@50 | Recall@100 | NDCG@20 | Coverage@100 | Data-Cold Recall@100 |
+|---|---:|---:|---:|---:|---:|---:|
+| Random | 0.005842 | 0.015039 | 0.030570 | 0.045656 | 1.000000 | 0.045455 |
+| Global Popularity | 0.140601 | 0.212629 | 0.268417 | 0.514947 | 0.032161 | 0.000000 |
+| BPR epoch 20 | **0.173284** | **0.251986** | **0.319850** | **0.569454** | 0.403366 | 0.000000 |
+| Two-Tower epoch 1 | 0.034061 | 0.058720 | 0.089741 | 0.159165 | 0.176135 | **0.295455** |
+| Hybrid alpha=0.75 | 0.039513 | 0.068028 | 0.103950 | 0.206173 | 0.178840 | 0.250000 |
+
+Under this frozen audit, BPR was strongest on overall Recall and NDCG, while
+the content-aware Two-Tower was strongest on the descriptive 88-target
+Data-Cold slice. The preselected Hybrid improved over Two-Tower overall but did
+not approach BPR. These are single-run point estimates; no significance,
+cross-seed, or post-Small selection claim is made.
+
 The older protocol-v2.1.1 temporal route remains in the repository as an
 optional production-like stress test. Its Phase 0 audit and all **97/97**
 temporal-validation baseline rows remain preserved and are now permanently
@@ -123,7 +148,8 @@ completed the 97/97 segment-only correction without changing overall
 Recall/NDCG/Coverage or any selected configuration. Its corrected Warm/Tail/Cold
 metrics and artifact lineage are documented in
 [`reports/phase1/ERRATUM-001.md`](reports/phase1/ERRATUM-001.md). Temporal final
-and Small Matrix model metrics have not been run.
+has not been run; the separate fully-observed Small Matrix audit is reported
+above.
 
 All future raw-data commands must set `KUAIREC_DATA_DIR` to the existing shared
 KuaiRec `data/` directory. This worktree does not copy or modify raw data.
