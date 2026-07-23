@@ -18,6 +18,7 @@ from kuairec_fully_observed.caption_embeddings import CaptionCache  # noqa: E402
 from kuairec_fully_observed.data import RetrievalQueries  # noqa: E402
 from kuairec_fully_observed.models import PopularityBaseline  # noqa: E402
 from kuairec_fully_observed.full_training import (  # noqa: E402
+    _restore_cuda_rng_state_all,
     build_checkpoint_identity,
     evaluate_frozen_gates,
     load_full_epoch_checkpoint,
@@ -1132,6 +1133,99 @@ def test_canonical_labels_override_representative_row_labels():
     np.testing.assert_array_equal(example.history, [10])
     # Canonical quick-skip=false wins over the representative row's duration.
     np.testing.assert_allclose(example.history_weights, [3.0])
+
+
+def test_cuda_rng_restore_normalizes_states_to_cpu_byte_tensors(
+    monkeypatch,
+):
+    restored = []
+    monkeypatch.setattr(
+        torch.cuda,
+        "set_rng_state_all",
+        lambda states: restored.extend(states),
+    )
+
+    _restore_cuda_rng_state_all(
+        [torch.arange(16, dtype=torch.uint8)]
+    )
+
+    assert len(restored) == 1
+    assert restored[0].device.type == "cpu"
+    assert restored[0].dtype == torch.uint8
+
+
+@pytest.mark.parametrize(
+    "invalid_state",
+    [
+        None,
+        [],
+        [torch.ones(2, dtype=torch.float32)],
+        ["not-a-tensor"],
+    ],
+)
+def test_cuda_rng_restore_rejects_invalid_states(invalid_state):
+    with pytest.raises(RuntimeError, match="CUDA checkpoint RNG state"):
+        _restore_cuda_rng_state_all(invalid_state)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+def test_full_epoch_checkpoint_restores_cuda_rng_state(tmp_path):
+    setup = _toy_setup()
+    model, optimizer = _new_model_optimizer(setup[5])
+    device = torch.device("cuda", torch.cuda.current_device())
+    model.to(device)
+    touched_users = setup[3].copy()
+    touched_items = setup[1].item_ids.copy()
+    identity = build_checkpoint_identity(
+        base_identity=setup[6],
+        model_dimensions=setup[5],
+        ordered_item_ids=setup[1].item_ids,
+        ordered_user_ids=setup[3],
+        touched_user_ids=touched_users,
+        touched_item_ids=touched_items,
+        training_seed=20260722,
+    )
+    path = tmp_path / "cuda_epoch_001.pt"
+    torch.cuda.manual_seed_all(20260722)
+    expected_rng_states = [
+        state.clone() for state in torch.cuda.get_rng_state_all()
+    ]
+    save_full_epoch_checkpoint(
+        path,
+        model=model,
+        optimizer=optimizer,
+        completed_epoch=1,
+        epoch_losses=(1.0,),
+        order_seed=20260722,
+        model_dimensions=setup[5],
+        ordered_item_ids=setup[1].item_ids,
+        ordered_user_ids=setup[3],
+        touched_user_ids=touched_users,
+        touched_item_ids=touched_items,
+        cumulative_statistics={
+            "optimizer_steps": 1,
+            "skipped_batches": 0,
+            "completed_examples": 8,
+        },
+        identity=identity,
+    )
+    torch.cuda.manual_seed_all(20260723)
+
+    restored_model, _, _ = load_full_epoch_checkpoint(
+        path,
+        device=device,
+        expected_identity=identity,
+        learning_rate=0.001,
+        weight_decay=0.00001,
+    )
+
+    assert next(restored_model.parameters()).device == device
+    for expected, actual in zip(
+        expected_rng_states,
+        torch.cuda.get_rng_state_all(),
+        strict=True,
+    ):
+        torch.testing.assert_close(expected, actual, rtol=0, atol=0)
 
 
 def test_three_epochs_equal_one_epoch_then_new_process_resume(tmp_path):
