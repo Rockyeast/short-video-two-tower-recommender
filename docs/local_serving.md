@@ -33,6 +33,9 @@ dynamic user tower + BPR              Popularity fallback
 frozen weighted RRF                         |
        +-----------------+-----------------+
                          |
+              optional local LightGBM
+          (reorder only; Top-100 unchanged)
+                         |
                        Top-K
 ```
 
@@ -41,10 +44,10 @@ in input order. It is an API convenience, not a vectorized throughput claim.
 
 ## Start the API
 
-Install the serving dependencies:
+Install the serving and optional reranking dependencies:
 
 ```bash
-.venv/bin/pip install -e '.[serving]'
+.venv/bin/pip install -e '.[serving,reranking]'
 ```
 
 After exporting `artifacts/serving/serving_bundle_v1.npz` and its JSON metadata:
@@ -53,6 +56,9 @@ After exporting `artifacts/serving/serving_bundle_v1.npz` and its JSON metadata:
 PYTHONPATH=.:src .venv/bin/python scripts/serve_recommendation.py \
   --bundle artifacts/serving/serving_bundle_v1.npz \
   --metadata artifacts/serving/serving_bundle_v1.json \
+  --reranker-model artifacts/phase_b5b/local_lightgbm_reranker.txt \
+  --reranker-features artifacts/serving/reranker_features_v1.npz \
+  --reranker-metadata artifacts/serving/reranker_features_v1.json \
   --port 8000
 ```
 
@@ -65,7 +71,8 @@ curl -X POST http://127.0.0.1:8000/v1/recommend \
     "user_id": 0,
     "history": [0, 53],
     "history_weights": [1.0, 0.1],
-    "top_k": 10
+    "top_k": 10,
+    "use_reranker": true
   }'
 ```
 
@@ -87,6 +94,12 @@ Readiness and loaded bundle identity:
 ```bash
 curl http://127.0.0.1:8000/healthz
 ```
+
+The reranker is loaded only when all three identity-checked files are supplied,
+and remains disabled unless the request sets `use_reranker=true` (or the local
+config default is explicitly changed). Its model was selected on train-only
+route scores while the serving bundle contains final-refit routes, so current
+parity tests establish feature/ranking consistency—not online effectiveness.
 
 The API has no authentication, online feature store, feedback ingestion,
 autoscaling, production monitoring or concurrent-load benchmark.

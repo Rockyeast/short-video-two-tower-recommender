@@ -47,6 +47,7 @@ flowchart LR
     H --> I[Sealed Small audit]
     H --> J[Identity-checked serving bundle]
     J --> K[Dynamic history API]
+    K --> L[Optional local LightGBM rerank]
 ```
 
 ### Model paths
@@ -81,6 +82,11 @@ content-only cold-item encoding and reproducible reports. The local serving
 path recomputes the trained user tower from request history, uses frozen
 Two-Tower + BPR RRF for warm users and Popularity for unknown users. See
 [`docs/local_serving.md`](docs/local_serving.md).
+
+An optional, default-off LightGBM stage may reorder only the frozen Hybrid
+Top-100. On reused Big-validation development users it improved NDCG@20 while
+preserving the Top-100 set; this is not a new sealed or online-effectiveness
+claim.
 
 ## Dataset and Leakage-Safe Protocol
 
@@ -299,6 +305,8 @@ final remains guarded and is outside this project's reported results.
 | Sealed Small | [Attempt 5](reports/phase_b3b/sealed_small_modal_l4.md) |
 | Retrieval scale | [Exact/FAISS benchmark](reports/phase_b4a/faiss_scalability.md) |
 | Local inference | [Serving bundle and FastAPI](docs/local_serving.md) |
+| Local reranker | [Validation](reports/phase_b5b/local_reranker_validation.md) |
+| Reranker serving parity | [Offline/Pipeline/HTTP](reports/pipeline/reranker_parity.md) |
 
 Machine-readable JSON accompanies each result report. Contracts, manifests and
 failure records remain committed for auditability.

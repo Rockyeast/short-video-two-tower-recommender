@@ -60,7 +60,11 @@ def main() -> None:
         help="Optional comma-separated weights aligned with --history",
     )
     parser.add_argument("--top-k", type=int, default=None)
-    parser.add_argument("--use-reranker", action="store_true")
+    parser.add_argument(
+        "--use-reranker",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+    )
     parser.add_argument("--reranker-model", type=Path)
     parser.add_argument("--reranker-features", type=Path)
     parser.add_argument("--reranker-metadata", type=Path)
