@@ -16,43 +16,46 @@ from kuairec_fully_observed.pipeline import (
     RecommendationEngine,
     TwoTowerRetriever,
 )
+from kuairec_fully_observed.serving_bundle import load_serving_bundle
 
 
 def load_engine(
-    *, config_path: Path, bundle_path: Path
+    *, config_path: Path, bundle_path: Path, metadata_path: Path
 ) -> RecommendationEngine:
     """Load the thin pipeline; model training/export remains outside this CLI."""
 
-    with np.load(bundle_path) as payload:
-        catalog = payload["catalog"].astype(np.int64, copy=True)
-        popularity_ids = payload["popularity_item_ids"].astype(
-            np.int64, copy=True
-        )
-        popularity_scores = payload["popularity_scores"].astype(
-            np.float64, copy=True
-        )
-        bpr = BPRRetriever(
-            user_ids=payload["bpr_user_ids"].astype(np.int64, copy=True),
-            item_ids=payload["bpr_item_ids"].astype(np.int64, copy=True),
-            user_factors=payload["bpr_user_factors"].astype(
-                np.float32, copy=True
-            ),
-            item_factors=payload["bpr_item_factors"].astype(
-                np.float32, copy=True
-            ),
-        )
-        two_item_ids = payload["two_tower_item_ids"].astype(
-            np.int64, copy=True
-        )
-        two_item_vectors = payload["two_tower_item_vectors"].astype(
+    payload, _ = load_serving_bundle(
+        bundle_path=bundle_path, metadata_path=metadata_path
+    )
+    catalog = payload["catalog"].astype(np.int64, copy=True)
+    popularity_ids = payload["popularity_item_ids"].astype(
+        np.int64, copy=True
+    )
+    popularity_scores = payload["popularity_scores"].astype(
+        np.float64, copy=True
+    )
+    bpr = BPRRetriever(
+        user_ids=payload["bpr_user_ids"].astype(np.int64, copy=True),
+        item_ids=payload["bpr_item_ids"].astype(np.int64, copy=True),
+        user_factors=payload["bpr_user_factors"].astype(
             np.float32, copy=True
-        )
-        two_user_ids = payload["two_tower_user_ids"].astype(
-            np.int64, copy=True
-        )
-        two_user_vectors = payload["two_tower_user_vectors"].astype(
+        ),
+        item_factors=payload["bpr_item_factors"].astype(
             np.float32, copy=True
-        )
+        ),
+    )
+    two_item_ids = payload["two_tower_item_ids"].astype(
+        np.int64, copy=True
+    )
+    two_item_vectors = payload["two_tower_item_vectors"].astype(
+        np.float32, copy=True
+    )
+    two_user_ids = payload["two_tower_user_ids"].astype(
+        np.int64, copy=True
+    )
+    two_user_vectors = payload["two_tower_user_vectors"].astype(
+        np.float32, copy=True
+    )
 
     if len(popularity_ids) != len(popularity_scores):
         raise ValueError("Popularity IDs and scores differ in length")
@@ -100,6 +103,7 @@ def _parse_history(raw: str) -> list[int]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle", type=Path, required=True)
+    parser.add_argument("--metadata", type=Path, required=True)
     parser.add_argument(
         "--config",
         type=Path,
@@ -110,7 +114,9 @@ def main() -> None:
     parser.add_argument("--top-k", type=int, default=None)
     arguments = parser.parse_args()
     engine = load_engine(
-        config_path=arguments.config, bundle_path=arguments.bundle
+        config_path=arguments.config,
+        bundle_path=arguments.bundle,
+        metadata_path=arguments.metadata,
     )
     result = engine.recommend(
         arguments.user_id,

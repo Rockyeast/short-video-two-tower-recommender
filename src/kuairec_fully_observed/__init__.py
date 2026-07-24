@@ -51,6 +51,7 @@ from .sealed_identity import (
     verify_final_refit_artifacts,
     verify_frozen_small_source,
 )
+from .serving_bundle import load_serving_bundle, write_serving_bundle
 from .training import (
     BPRTrainingDataset,
     TwoTowerTrainingDataset,
@@ -104,8 +105,10 @@ __all__ = [
     "is_quick_skip",
     "is_strong_positive",
     "load_static_item_features",
+    "load_serving_bundle",
     "resolve_kuairec_data_dir",
     "stable_random_rank",
     "train_bpr_sgd",
     "validate_model_item_feature_columns",
+    "write_serving_bundle",
 ]

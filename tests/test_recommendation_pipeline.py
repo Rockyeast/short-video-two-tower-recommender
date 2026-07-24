@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from kuairec_fully_observed.pipeline import (
@@ -15,7 +16,12 @@ from kuairec_fully_observed.pipeline import (
     RecommendationEngine,
     TwoTowerRetriever,
 )
+from kuairec_fully_observed.serving_bundle import (
+    load_serving_bundle,
+    write_serving_bundle,
+)
 from scripts.recommend import load_engine
+from scripts import export_serving_bundle
 
 
 def _routes() -> tuple[
@@ -114,32 +120,41 @@ def test_config_rejects_unexpected_sections(tmp_path):
         PipelineConfig.from_yaml(config)
 
 
-def _write_bundle(path: Path) -> None:
+def _write_bundle(path: Path) -> Path:
     two, bpr, popularity = _routes()
-    np.savez(
-        path,
-        catalog=np.arange(1, 7, dtype=np.int64),
-        popularity_item_ids=np.asarray(
+    arrays = {
+        "catalog": np.arange(1, 7, dtype=np.int64),
+        "popularity_item_ids": np.asarray(
             list(popularity.scores), dtype=np.int64
         ),
-        popularity_scores=np.asarray(
+        "popularity_scores": np.asarray(
             list(popularity.scores.values()), dtype=np.float64
         ),
-        bpr_user_ids=bpr.user_ids,
-        bpr_item_ids=bpr.item_ids,
-        bpr_user_factors=bpr.user_factors,
-        bpr_item_factors=bpr.item_factors,
-        two_tower_user_ids=np.asarray([10], dtype=np.int64),
-        two_tower_user_vectors=np.asarray([[1, 0]], dtype=np.float32),
-        two_tower_item_ids=two.item_ids,
-        two_tower_item_vectors=two.item_vectors,
+        "bpr_user_ids": bpr.user_ids,
+        "bpr_item_ids": bpr.item_ids,
+        "bpr_user_factors": bpr.user_factors,
+        "bpr_item_factors": bpr.item_factors,
+        "two_tower_user_ids": np.asarray([10], dtype=np.int64),
+        "two_tower_user_vectors": np.asarray(
+            [[1, 0]], dtype=np.float32
+        ),
+        "two_tower_item_ids": two.item_ids,
+        "two_tower_item_vectors": two.item_vectors,
+    }
+    metadata = path.with_suffix(".json")
+    write_serving_bundle(
+        bundle_path=path,
+        metadata_path=metadata,
+        arrays=arrays,
+        source_identity={"fixture": True},
     )
+    return metadata
 
 
 def test_serving_bundle_loader_and_cli(tmp_path):
     bundle = tmp_path / "bundle.npz"
     config = tmp_path / "pipeline.yaml"
-    _write_bundle(bundle)
+    metadata = _write_bundle(bundle)
     config.write_text(
         "pipeline:\n"
         "  route_top_k: 6\n"
@@ -148,7 +163,11 @@ def test_serving_bundle_loader_and_cli(tmp_path):
         "  rank_constant: 60\n"
         "  max_history: 50\n"
     )
-    engine = load_engine(config_path=config, bundle_path=bundle)
+    engine = load_engine(
+        config_path=config,
+        bundle_path=bundle,
+        metadata_path=metadata,
+    )
     assert engine.recommend(10, [1]).item_ids == (2, 4, 3)
 
     completed = subprocess.run(
@@ -157,6 +176,8 @@ def test_serving_bundle_loader_and_cli(tmp_path):
             "scripts/recommend.py",
             "--bundle",
             str(bundle),
+            "--metadata",
+            str(metadata),
             "--config",
             str(config),
             "--user-id",
@@ -171,3 +192,60 @@ def test_serving_bundle_loader_and_cli(tmp_path):
     output = json.loads(completed.stdout)
     assert output["item_ids"] == [2, 4, 3]
     assert output["strategy"] == "two_tower_bpr_rrf"
+
+
+def test_serving_bundle_rejects_payload_or_metadata_tampering(tmp_path):
+    bundle = tmp_path / "bundle.npz"
+    metadata = _write_bundle(bundle)
+    payload, record = load_serving_bundle(
+        bundle_path=bundle, metadata_path=metadata
+    )
+    assert len(payload["catalog"]) == record["catalog_count"] == 6
+
+    metadata_payload = json.loads(metadata.read_text())
+    metadata_payload["catalog_count"] = 99
+    metadata.write_text(json.dumps(metadata_payload))
+    with pytest.raises(RuntimeError, match="catalog_count"):
+        load_serving_bundle(bundle_path=bundle, metadata_path=metadata)
+
+    metadata = _write_bundle(bundle)
+    with bundle.open("ab") as stream:
+        stream.write(b"tampered")
+    with pytest.raises(RuntimeError, match="SHA256"):
+        load_serving_bundle(bundle_path=bundle, metadata_path=metadata)
+
+
+def test_export_snapshot_uses_only_history_before_validation_end(
+    tmp_path, monkeypatch
+):
+    frame = pd.DataFrame(
+        {
+            "user_id": np.ones(55, dtype=np.int64),
+            "video_id": np.arange(1, 56, dtype=np.int64),
+            "timestamp": np.arange(55, dtype=np.float64),
+            "watch_ratio": np.ones(55),
+            "play_duration": np.full(55, 10.0),
+            "video_duration": np.full(55, 10.0),
+            "_is_quick_skip": np.zeros(55, dtype=bool),
+        }
+    )
+    monkeypatch.setattr(
+        export_serving_bundle.audit_phase0,
+        "iter_user_frames",
+        lambda path, columns: iter([(1, frame)]),
+    )
+    monkeypatch.setattr(
+        export_serving_bundle.audit_phase0,
+        "canonicalize_behavior_events",
+        lambda raw: (raw, {}, {}, {}),
+    )
+
+    histories, weights = export_serving_bundle._snapshot_histories(
+        data_dir=tmp_path,
+        user_ids=np.asarray([1], dtype=np.int64),
+        validation_end=50.0,
+        max_history=50,
+    )
+
+    assert histories[0].tolist() == list(range(1, 51))
+    assert np.array_equal(weights[0], np.ones(50, dtype=np.float32))
