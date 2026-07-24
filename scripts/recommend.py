@@ -7,91 +7,21 @@ import argparse
 import json
 from pathlib import Path
 
-import numpy as np
-
-from kuairec_fully_observed.pipeline import (
-    BPRRetriever,
-    DynamicTwoTowerRetriever,
-    PipelineConfig,
-    PopularityRetriever,
-    RecommendationEngine,
-)
-from kuairec_fully_observed.serving_bundle import load_serving_bundle
+from kuairec_fully_observed.pipeline import RecommendationEngine
+from kuairec_fully_observed.serving import load_recommendation_engine
 
 
 def load_engine(
     *, config_path: Path, bundle_path: Path, metadata_path: Path
 ) -> RecommendationEngine:
-    """Load the thin pipeline; model training/export remains outside this CLI."""
+    """Backward-compatible CLI loader used by existing tests and callers."""
 
-    payload, _ = load_serving_bundle(
-        bundle_path=bundle_path, metadata_path=metadata_path
+    engine, _ = load_recommendation_engine(
+        config_path=config_path,
+        bundle_path=bundle_path,
+        metadata_path=metadata_path,
     )
-    catalog = payload["catalog"].astype(np.int64, copy=True)
-    popularity_ids = payload["popularity_item_ids"].astype(
-        np.int64, copy=True
-    )
-    popularity_scores = payload["popularity_scores"].astype(
-        np.float64, copy=True
-    )
-    bpr = BPRRetriever(
-        user_ids=payload["bpr_user_ids"].astype(np.int64, copy=True),
-        item_ids=payload["bpr_item_ids"].astype(np.int64, copy=True),
-        user_factors=payload["bpr_user_factors"].astype(
-            np.float32, copy=True
-        ),
-        item_factors=payload["bpr_item_factors"].astype(
-            np.float32, copy=True
-        ),
-    )
-    two_item_ids = payload["two_tower_item_ids"].astype(
-        np.int64, copy=True
-    )
-    two_item_vectors = payload["two_tower_item_vectors"].astype(
-        np.float32, copy=True
-    )
-    two_user_ids = payload["two_tower_user_ids"].astype(
-        np.int64, copy=True
-    )
-    user_id_embeddings = payload[
-        "two_tower_user_id_embeddings"
-    ].astype(np.float32, copy=True)
-
-    if len(popularity_ids) != len(popularity_scores):
-        raise ValueError("Popularity IDs and scores differ in length")
-
-    return RecommendationEngine(
-        catalog=catalog,
-        two_tower=DynamicTwoTowerRetriever(
-            item_ids=two_item_ids,
-            item_vectors=two_item_vectors,
-            user_ids=two_user_ids,
-            user_id_embeddings=user_id_embeddings,
-            mlp_input_weight=payload[
-                "two_tower_mlp_input_weight"
-            ].astype(np.float32, copy=True),
-            mlp_input_bias=payload["two_tower_mlp_input_bias"].astype(
-                np.float32, copy=True
-            ),
-            mlp_output_weight=payload[
-                "two_tower_mlp_output_weight"
-            ].astype(np.float32, copy=True),
-            mlp_output_bias=payload["two_tower_mlp_output_bias"].astype(
-                np.float32, copy=True
-            ),
-        ),
-        bpr=bpr,
-        popularity=PopularityRetriever(
-            dict(
-                zip(
-                    (int(value) for value in popularity_ids),
-                    (float(value) for value in popularity_scores),
-                    strict=True,
-                )
-            )
-        ),
-        config=PipelineConfig.from_yaml(config_path),
-    )
+    return engine
 
 
 def _parse_history(raw: str) -> list[int]:

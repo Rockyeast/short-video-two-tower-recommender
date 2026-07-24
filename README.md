@@ -27,9 +27,9 @@ The main result is deliberately mixed:
 - at the real 10K catalog size, sequential Exact retrieval is faster than the
   tested FAISS routes.
 
-This is an offline MLE/recommender-systems project, not a production deployment.
-It does not claim online A/B impact, statistical significance, or a universal
-Two-Tower win.
+This is an offline MLE/recommender-systems project with a local FastAPI
+inference interface, not a production deployment. It does not claim online A/B
+impact, statistical significance, or a universal Two-Tower win.
 
 ## System Architecture
 
@@ -45,6 +45,8 @@ flowchart LR
     F --> G[Frozen selection]
     G --> H[Big train + validation refit]
     H --> I[Sealed Small audit]
+    H --> J[Identity-checked serving bundle]
+    J --> K[Dynamic history API]
 ```
 
 ### Model paths
@@ -75,7 +77,10 @@ flowchart LR
 
 The implementation includes deterministic data adapters, lazy training
 examples, exact blocked matrix scoring, checkpoint identity validation,
-content-only cold-item encoding and reproducible reports.
+content-only cold-item encoding and reproducible reports. The local serving
+path recomputes the trained user tower from request history, uses frozen
+Two-Tower + BPR RRF for warm users and Popularity for unknown users. See
+[`docs/local_serving.md`](docs/local_serving.md).
 
 ## Dataset and Leakage-Safe Protocol
 
@@ -230,8 +235,8 @@ See the complete [FAISS scalability report](reports/phase_b4a/faiss_scalability.
   quality or real catalog drift.
 - B4A is one sequential single-query run on one Modal environment; it is not a
   concurrent service benchmark.
-- No online A/B test, API, deployment, monitoring or production reliability
-  claim is made.
+- A local FastAPI single/batch interface is included, but there is no online
+  A/B test, production deployment, monitoring or reliability claim.
 - Frozen MiniLM caption vectors provide content features, but the language
   model is not fine-tuned end to end.
 - The repository contains extensive provenance and failure records because the
@@ -293,6 +298,7 @@ final remains guarded and is outside this project's reported results.
 | Final refit | [Report](reports/phase_b3b0/final_refit.md) |
 | Sealed Small | [Attempt 5](reports/phase_b3b/sealed_small_modal_l4.md) |
 | Retrieval scale | [Exact/FAISS benchmark](reports/phase_b4a/faiss_scalability.md) |
+| Local inference | [Serving bundle and FastAPI](docs/local_serving.md) |
 
 Machine-readable JSON accompanies each result report. Contracts, manifests and
 failure records remain committed for auditability.
