@@ -38,6 +38,36 @@ class CandidateRetriever(Protocol):
     ) -> np.ndarray:
         """Return unique candidate IDs in descending score order."""
 
+    def score_candidates(
+        self,
+        *,
+        user_id: int,
+        history: np.ndarray,
+        history_weights: np.ndarray,
+        candidates: np.ndarray,
+    ) -> np.ndarray:
+        """Return one finite score for each supplied candidate."""
+
+
+class LocalReranker(Protocol):
+    """Optional ranker that may only reorder a frozen candidate set."""
+
+    name: str
+
+    def rerank(
+        self,
+        *,
+        user_id: int,
+        history: np.ndarray,
+        history_weights: np.ndarray,
+        candidates: np.ndarray,
+        two_tower_ranked: np.ndarray,
+        bpr_ranked: np.ndarray,
+        two_tower_scores: np.ndarray,
+        bpr_scores: np.ndarray,
+    ) -> np.ndarray:
+        """Return exactly the same candidates in a potentially new order."""
+
 
 def _validate_ids(values: Sequence[int] | np.ndarray, *, name: str) -> np.ndarray:
     array = np.asarray(values, dtype=np.int64)
@@ -81,6 +111,19 @@ class PopularityRetriever:
             dtype=np.float64,
         )
         return _stable_topk(candidates, values, k=k)
+
+    def score_candidates(
+        self,
+        *,
+        user_id: int,
+        history: np.ndarray,
+        history_weights: np.ndarray,
+        candidates: np.ndarray,
+    ) -> np.ndarray:
+        return np.asarray(
+            [self.scores.get(int(item), 0.0) for item in candidates],
+            dtype=np.float64,
+        )
 
 
 @dataclass(frozen=True)
@@ -149,6 +192,22 @@ class BPRRetriever:
         candidates: np.ndarray,
         k: int,
     ) -> np.ndarray:
+        scores = self.score_candidates(
+            user_id=user_id,
+            history=history,
+            history_weights=history_weights,
+            candidates=candidates,
+        )
+        return _stable_topk(candidates, scores, k=k)
+
+    def score_candidates(
+        self,
+        *,
+        user_id: int,
+        history: np.ndarray,
+        history_weights: np.ndarray,
+        candidates: np.ndarray,
+    ) -> np.ndarray:
         position = self._user_positions.get(int(user_id))
         if position is None:
             raise ValueError("BPR route received an unknown user")
@@ -163,7 +222,7 @@ class BPRRetriever:
             self.item_factors[candidate_positions[present]]
             @ self.user_factors[position]
         )
-        return _stable_topk(candidates, scores, k=k)
+        return scores
 
 
 UserEncoder = Callable[[int, np.ndarray, np.ndarray], np.ndarray]
@@ -206,6 +265,22 @@ class TwoTowerRetriever:
         candidates: np.ndarray,
         k: int,
     ) -> np.ndarray:
+        scores = self.score_candidates(
+            user_id=user_id,
+            history=history,
+            history_weights=history_weights,
+            candidates=candidates,
+        )
+        return _stable_topk(candidates, scores, k=k)
+
+    def score_candidates(
+        self,
+        *,
+        user_id: int,
+        history: np.ndarray,
+        history_weights: np.ndarray,
+        candidates: np.ndarray,
+    ) -> np.ndarray:
         if not self.supports_user(user_id):
             raise ValueError("Two-Tower route received an unknown user")
         user_vector = np.asarray(
@@ -220,9 +295,10 @@ class TwoTowerRetriever:
                 dtype=np.int64,
             )
         except KeyError as exc:
-            raise ValueError("Two-Tower has no content vector for a candidate") from exc
-        scores = self.item_vectors[rows] @ user_vector
-        return _stable_topk(candidates, scores, k=k)
+            raise ValueError(
+                "Two-Tower has no content vector for a candidate"
+            ) from exc
+        return self.item_vectors[rows] @ user_vector
 
 
 @dataclass(frozen=True)
@@ -340,6 +416,24 @@ class DynamicTwoTowerRetriever:
         candidates: np.ndarray,
         k: int,
     ) -> np.ndarray:
+        scores = self.score_candidates(
+            user_id=user_id,
+            history=history,
+            history_weights=history_weights,
+            candidates=candidates,
+        )
+        return _stable_topk(
+            candidates, scores, k=k
+        )
+
+    def score_candidates(
+        self,
+        *,
+        user_id: int,
+        history: np.ndarray,
+        history_weights: np.ndarray,
+        candidates: np.ndarray,
+    ) -> np.ndarray:
         user_vector = self.encode_user(user_id, history, history_weights)
         try:
             rows = np.asarray(
@@ -347,10 +441,10 @@ class DynamicTwoTowerRetriever:
                 dtype=np.int64,
             )
         except KeyError as exc:
-            raise ValueError("Two-Tower has no vector for a candidate") from exc
-        return _stable_topk(
-            candidates, self.item_vectors[rows] @ user_vector, k=k
-        )
+            raise ValueError(
+                "Two-Tower has no vector for a candidate"
+            ) from exc
+        return self.item_vectors[rows] @ user_vector
 
 
 @dataclass(frozen=True)
@@ -360,6 +454,7 @@ class PipelineConfig:
     alpha: float = 0.75
     rank_constant: int = 60
     max_history: int = 50
+    reranker_enabled_by_default: bool = False
 
     @classmethod
     def from_yaml(cls, path: Path) -> "PipelineConfig":
@@ -395,6 +490,7 @@ class RecommendationEngine:
     bpr: CandidateRetriever
     popularity: CandidateRetriever
     config: PipelineConfig = PipelineConfig()
+    reranker: LocalReranker | None = None
 
     def __post_init__(self) -> None:
         _validate_ids(self.catalog, name="catalog")
@@ -406,6 +502,7 @@ class RecommendationEngine:
         *,
         top_k: int | None = None,
         history_weights: Sequence[float] | np.ndarray | None = None,
+        use_reranker: bool | None = None,
     ) -> RecommendationResult:
         history = np.asarray(recent_history, dtype=np.int64)
         if history.ndim != 1:
@@ -459,16 +556,57 @@ class RecommendationEngine:
         else:
             two_ranked = self.two_tower.retrieve(**route_arguments)
             bpr_ranked = self.bpr.retrieve(**route_arguments)
+            hybrid_k = min(self.config.output_k, len(candidates))
             ranked = weighted_reciprocal_rank_fusion(
                 two_ranked[None, :],
                 bpr_ranked[None, :],
                 candidates=(candidates,),
                 alpha=self.config.alpha,
-                output_k=output_k,
+                output_k=hybrid_k,
                 rank_constant=self.config.rank_constant,
             )[0]
             ranked = ranked[ranked >= 0]
-            strategy = "two_tower_bpr_rrf"
+            reranker_enabled = (
+                self.config.reranker_enabled_by_default
+                if use_reranker is None
+                else bool(use_reranker)
+            )
+            if reranker_enabled:
+                if self.reranker is None:
+                    raise ValueError(
+                        "reranker requested but no compatible artifact is loaded"
+                    )
+                reranked = self.reranker.rerank(
+                    user_id=int(user_id),
+                    history=history,
+                    history_weights=weights,
+                    candidates=ranked,
+                    two_tower_ranked=two_ranked,
+                    bpr_ranked=bpr_ranked,
+                    two_tower_scores=self.two_tower.score_candidates(
+                        user_id=int(user_id),
+                        history=history,
+                        history_weights=weights,
+                        candidates=ranked,
+                    ),
+                    bpr_scores=self.bpr.score_candidates(
+                        user_id=int(user_id),
+                        history=history,
+                        history_weights=weights,
+                        candidates=ranked,
+                    ),
+                )
+                if not np.array_equal(
+                    np.sort(reranked), np.sort(ranked)
+                ):
+                    raise RuntimeError(
+                        "Local reranker changed the frozen candidate set"
+                    )
+                ranked = reranked
+                strategy = "two_tower_bpr_rrf_lightgbm"
+            else:
+                strategy = "two_tower_bpr_rrf"
+            ranked = ranked[:output_k]
         return RecommendationResult(
             user_id=int(user_id),
             item_ids=tuple(int(item) for item in ranked),

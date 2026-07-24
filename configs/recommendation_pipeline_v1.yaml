@@ -4,3 +4,4 @@ pipeline:
   alpha: 0.75
   rank_constant: 60
   max_history: 50
+  reranker_enabled_by_default: false

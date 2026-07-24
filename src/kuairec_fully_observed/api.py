@@ -23,6 +23,7 @@ class RecommendationRequest(BaseModel):
         default=None, max_length=50
     )
     top_k: int | None = Field(default=None, ge=1)
+    use_reranker: bool | None = None
 
     @model_validator(mode="after")
     def validate_history_weights(self) -> "RecommendationRequest":
@@ -65,6 +66,8 @@ class HealthResponse(BaseModel):
     fit_context: str
     bundle_sha256: str
     catalog_count: int
+    reranker_loaded: bool
+    reranker_enabled_by_default: bool
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,7 @@ def _recommend(
             payload.history,
             top_k=payload.top_k,
             history_weights=payload.history_weights,
+            use_reranker=payload.use_reranker,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -111,6 +115,9 @@ def create_app(
     config_path: Path,
     bundle_path: Path,
     metadata_path: Path,
+    reranker_model_path: Path | None = None,
+    reranker_feature_path: Path | None = None,
+    reranker_metadata_path: Path | None = None,
 ) -> FastAPI:
     """Create an app whose engine is loaded and verified exactly once."""
 
@@ -120,6 +127,9 @@ def create_app(
             config_path=config_path,
             bundle_path=bundle_path,
             metadata_path=metadata_path,
+            reranker_model_path=reranker_model_path,
+            reranker_feature_path=reranker_feature_path,
+            reranker_metadata_path=reranker_metadata_path,
         )
         app.state.recommendation_service = ServiceState(engine, metadata)
         yield
@@ -140,6 +150,10 @@ def create_app(
             fit_context=str(metadata["fit_context"]),
             bundle_sha256=str(metadata["bundle_sha256"]),
             catalog_count=int(metadata["catalog_count"]),
+            reranker_loaded=bool(metadata["reranker_loaded"]),
+            reranker_enabled_by_default=bool(
+                metadata["reranker_enabled_by_default"]
+            ),
         )
 
     @app.post("/v1/recommend", response_model=RecommendationResponse)

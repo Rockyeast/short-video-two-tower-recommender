@@ -68,6 +68,8 @@ def _metadata() -> dict[str, object]:
         "fit_context": "canonical_big_train_plus_validation",
         "bundle_sha256": "a" * 64,
         "catalog_count": 6,
+        "reranker_loaded": False,
+        "reranker_enabled_by_default": False,
     }
 
 
@@ -114,6 +116,8 @@ def test_api_loads_engine_once_and_reports_bundle_health(monkeypatch):
             "fit_context": "canonical_big_train_plus_validation",
             "bundle_sha256": "a" * 64,
             "catalog_count": 6,
+            "reranker_loaded": False,
+            "reranker_enabled_by_default": False,
         }
 
     asyncio.run(_with_client(application, exercise))

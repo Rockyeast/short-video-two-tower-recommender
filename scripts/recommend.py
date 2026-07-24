@@ -12,7 +12,13 @@ from kuairec_fully_observed.serving import load_recommendation_engine
 
 
 def load_engine(
-    *, config_path: Path, bundle_path: Path, metadata_path: Path
+    *,
+    config_path: Path,
+    bundle_path: Path,
+    metadata_path: Path,
+    reranker_model_path: Path | None = None,
+    reranker_feature_path: Path | None = None,
+    reranker_metadata_path: Path | None = None,
 ) -> RecommendationEngine:
     """Backward-compatible CLI loader used by existing tests and callers."""
 
@@ -20,6 +26,9 @@ def load_engine(
         config_path=config_path,
         bundle_path=bundle_path,
         metadata_path=metadata_path,
+        reranker_model_path=reranker_model_path,
+        reranker_feature_path=reranker_feature_path,
+        reranker_metadata_path=reranker_metadata_path,
     )
     return engine
 
@@ -51,17 +60,25 @@ def main() -> None:
         help="Optional comma-separated weights aligned with --history",
     )
     parser.add_argument("--top-k", type=int, default=None)
+    parser.add_argument("--use-reranker", action="store_true")
+    parser.add_argument("--reranker-model", type=Path)
+    parser.add_argument("--reranker-features", type=Path)
+    parser.add_argument("--reranker-metadata", type=Path)
     arguments = parser.parse_args()
     engine = load_engine(
         config_path=arguments.config,
         bundle_path=arguments.bundle,
         metadata_path=arguments.metadata,
+        reranker_model_path=arguments.reranker_model,
+        reranker_feature_path=arguments.reranker_features,
+        reranker_metadata_path=arguments.reranker_metadata,
     )
     result = engine.recommend(
         arguments.user_id,
         _parse_history(arguments.history),
         top_k=arguments.top_k,
         history_weights=_parse_history_weights(arguments.history_weights),
+        use_reranker=arguments.use_reranker,
     )
     print(
         json.dumps(

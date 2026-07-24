@@ -25,6 +25,106 @@ RERANK_FEATURE_NAMES = (
 )
 
 
+def build_rerank_feature_matrix(
+    *,
+    item_ids: np.ndarray,
+    two_tower_scores: np.ndarray,
+    bpr_scores: np.ndarray,
+    two_tower_ranked: np.ndarray,
+    bpr_ranked: np.ndarray,
+    popularity_scores: np.ndarray,
+    item_categories: np.ndarray,
+    history_categories: set[int],
+    data_cold_mask: np.ndarray,
+    video_duration: np.ndarray,
+    history_length: int,
+    alpha: float,
+    rank_constant: int,
+) -> np.ndarray:
+    """Shared offline/online feature transform for local reranking."""
+
+    items = np.asarray(item_ids, dtype=np.int64)
+    row_count = len(items)
+    arrays = (
+        np.asarray(two_tower_scores),
+        np.asarray(bpr_scores),
+        np.asarray(popularity_scores),
+        np.asarray(data_cold_mask),
+        np.asarray(video_duration),
+    )
+    if (
+        items.ndim != 1
+        or len(np.unique(items)) != row_count
+        or any(values.shape != (row_count,) for values in arrays)
+        or np.asarray(item_categories).shape != (row_count, 3)
+        or not 0.0 <= alpha <= 1.0
+        or rank_constant <= 0
+        or history_length < 0
+    ):
+        raise ValueError("Local rerank feature inputs do not align")
+    if any(
+        not np.isfinite(values.astype(np.float64)).all()
+        for values in (arrays[0], arrays[1], arrays[2], arrays[4])
+    ):
+        raise ValueError("Local rerank numeric inputs must be finite")
+    two_rank = {
+        int(item): rank
+        for rank, item in enumerate(
+            np.asarray(two_tower_ranked, dtype=np.int64), 1
+        )
+        if item >= 0
+    }
+    bpr_rank = {
+        int(item): rank
+        for rank, item in enumerate(
+            np.asarray(bpr_ranked, dtype=np.int64), 1
+        )
+        if item >= 0
+    }
+    two_rr = np.asarray(
+        [
+            0.0
+            if int(item) not in two_rank
+            else 1.0 / (rank_constant + two_rank[int(item)])
+            for item in items
+        ],
+        dtype=np.float32,
+    )
+    bpr_rr = np.asarray(
+        [
+            0.0
+            if int(item) not in bpr_rank
+            else 1.0 / (rank_constant + bpr_rank[int(item)])
+            for item in items
+        ],
+        dtype=np.float32,
+    )
+    affinity = np.zeros(row_count, dtype=np.float32)
+    if history_categories:
+        for row, categories in enumerate(item_categories):
+            valid = {int(value) for value in categories if value >= 0}
+            if valid:
+                affinity[row] = len(valid & history_categories) / len(valid)
+    return np.column_stack(
+        (
+            arrays[0],
+            arrays[1],
+            two_rr,
+            bpr_rr,
+            alpha * two_rr + (1.0 - alpha) * bpr_rr,
+            np.log1p(np.maximum(arrays[2], 0.0)),
+            affinity,
+            arrays[3].astype(np.float32),
+            np.full(
+                row_count,
+                np.log1p(history_length),
+                dtype=np.float32,
+            ),
+            np.log1p(np.maximum(arrays[4], 0.0)),
+        )
+    ).astype(np.float32)
+
+
 def stable_fit_mask(
     user_ids: np.ndarray,
     *,
@@ -192,66 +292,33 @@ class RerankFeatureBuilder:
             [self._catalog_positions[int(item)] for item in items],
             dtype=np.int64,
         )
-        two_rank = {int(item): rank for rank, item in enumerate(two, 1)}
-        bpr_rank = {int(item): rank for rank, item in enumerate(bpr, 1)}
-        two_rr = np.asarray(
-            [
-                0.0
-                if int(item) not in two_rank
-                else 1.0 / (self.rank_constant + two_rank[int(item)])
-                for item in items
-            ],
-            dtype=np.float32,
-        )
-        bpr_rr = np.asarray(
-            [
-                0.0
-                if int(item) not in bpr_rank
-                else 1.0 / (self.rank_constant + bpr_rank[int(item)])
-                for item in items
-            ],
-            dtype=np.float32,
-        )
         history_categories = {
             category
             for item in self.queries.histories[query_index]
             for category in self.category_lookup.get(int(item), ())
             if category >= 0
         }
-        affinity = np.zeros(len(items), dtype=np.float32)
-        if history_categories:
-            for row, categories in enumerate(
-                self.catalog_categories[catalog_rows]
-            ):
-                valid = {int(value) for value in categories if value >= 0}
-                if valid:
-                    affinity[row] = len(valid & history_categories) / len(
-                        valid
-                    )
-        features = np.column_stack(
-            (
+        features = build_rerank_feature_matrix(
+            item_ids=items,
+            two_tower_scores=(
                 self.two_tower_catalog_vectors[catalog_rows]
-                @ self.two_tower_user_vectors[query_index],
+                @ self.two_tower_user_vectors[query_index]
+            ),
+            bpr_scores=(
                 self.bpr_catalog_vectors[catalog_rows]
-                @ self.bpr_user_vectors[query_index],
-                two_rr,
-                bpr_rr,
-                self.alpha * two_rr + (1.0 - self.alpha) * bpr_rr,
-                np.log1p(
-                    np.maximum(self.popularity_scores[catalog_rows], 0.0)
-                ),
-                affinity,
-                self.data_cold_mask[catalog_rows].astype(np.float32),
-                np.full(
-                    len(items),
-                    np.log1p(len(self.queries.histories[query_index])),
-                    dtype=np.float32,
-                ),
-                np.log1p(
-                    np.maximum(self.video_duration[catalog_rows], 0.0)
-                ),
-            )
-        ).astype(np.float32)
+                @ self.bpr_user_vectors[query_index]
+            ),
+            two_tower_ranked=two,
+            bpr_ranked=bpr,
+            popularity_scores=self.popularity_scores[catalog_rows],
+            item_categories=self.catalog_categories[catalog_rows],
+            history_categories=history_categories,
+            data_cold_mask=self.data_cold_mask[catalog_rows],
+            video_duration=self.video_duration[catalog_rows],
+            history_length=len(self.queries.histories[query_index]),
+            alpha=self.alpha,
+            rank_constant=self.rank_constant,
+        )
         relevant = set(
             int(item) for item in self.queries.relevant[query_index]
         )

@@ -19,6 +19,14 @@ from kuairec_fully_observed.pipeline import (
     RecommendationEngine,
     TwoTowerRetriever,
 )
+from kuairec_fully_observed.reranker_serving import (
+    LocalLightGBMReranker,
+    load_local_lightgbm_reranker,
+    write_reranker_feature_bundle,
+)
+from kuairec_fully_observed.reranking import (
+    build_rerank_feature_matrix,
+)
 from kuairec_fully_observed.serving_bundle import (
     load_serving_bundle,
     write_serving_bundle,
@@ -83,6 +91,39 @@ def test_unknown_user_uses_popularity_for_every_route():
     assert result.strategy == "cold_user_popularity"
     assert result.item_ids == (4, 5, 6)
     assert 3 not in result.item_ids
+
+
+class _ReverseReranker:
+    name = "reverse"
+
+    def rerank(self, **kwargs):
+        return kwargs["candidates"][::-1].copy()
+
+
+def test_reranker_is_request_switchable_and_preserves_candidate_set():
+    two, bpr, popularity = _routes()
+    engine = RecommendationEngine(
+        catalog=np.arange(1, 7, dtype=np.int64),
+        two_tower=two,
+        bpr=bpr,
+        popularity=popularity,
+        config=PipelineConfig(route_top_k=6, output_k=3),
+        reranker=_ReverseReranker(),
+    )
+    baseline = engine.recommend(10, [1], top_k=3)
+    reranked = engine.recommend(
+        10, [1], top_k=3, use_reranker=True
+    )
+
+    assert baseline.strategy == "two_tower_bpr_rrf"
+    assert reranked.strategy == "two_tower_bpr_rrf_lightgbm"
+    assert set(baseline.item_ids) == set(reranked.item_ids)
+    assert reranked.item_ids == tuple(reversed(baseline.item_ids))
+
+
+def test_requesting_missing_reranker_fails_closed():
+    with pytest.raises(ValueError, match="no compatible artifact"):
+        _engine().recommend(10, [], use_reranker=True)
 
 
 def test_empty_candidate_catalog_returns_an_explicit_empty_result():
@@ -220,6 +261,96 @@ def test_config_rejects_unexpected_sections(tmp_path):
     config.write_text("pipeline: {}\nextra: true\n")
     with pytest.raises(ValueError, match="exactly one pipeline"):
         PipelineConfig.from_yaml(config)
+
+
+class _FakeBooster:
+    def num_feature(self):
+        return 10
+
+    def predict(self, features):
+        return np.asarray(features)[:, 0]
+
+
+def test_online_and_offline_rerank_feature_transform_are_identical():
+    items = np.asarray([3, 4], dtype=np.int64)
+    categories = np.asarray([[1, -1, -1], [2, -1, -1]])
+    reranker = LocalLightGBMReranker(
+        booster=_FakeBooster(),
+        item_ids=np.asarray([1, 3, 4], dtype=np.int64),
+        category_ids=np.asarray(
+            [[2, -1, -1], [1, -1, -1], [2, -1, -1]]
+        ),
+        video_duration=np.asarray([4.0, 5.0, 6.0]),
+        train_data_cold_mask=np.asarray([False, False, True]),
+        train_popularity_scores=np.asarray([2.0, 10.0, 3.0]),
+    )
+    online = reranker.build_features(
+        history=np.asarray([1], dtype=np.int64),
+        candidates=items,
+        two_tower_ranked=np.asarray([4, 3], dtype=np.int64),
+        bpr_ranked=np.asarray([3, 4], dtype=np.int64),
+        two_tower_scores=np.asarray([0.2, 0.8]),
+        bpr_scores=np.asarray([0.7, 0.1]),
+    )
+    offline = build_rerank_feature_matrix(
+        item_ids=items,
+        two_tower_scores=np.asarray([0.2, 0.8]),
+        bpr_scores=np.asarray([0.7, 0.1]),
+        two_tower_ranked=np.asarray([4, 3], dtype=np.int64),
+        bpr_ranked=np.asarray([3, 4], dtype=np.int64),
+        popularity_scores=np.asarray([10.0, 3.0]),
+        item_categories=categories,
+        history_categories={2},
+        data_cold_mask=np.asarray([False, True]),
+        video_duration=np.asarray([5.0, 6.0]),
+        history_length=1,
+        alpha=0.75,
+        rank_constant=60,
+    )
+    assert np.array_equal(online, offline)
+
+
+def test_reranker_feature_bundle_is_bound_to_serving_bundle(
+    tmp_path, monkeypatch
+):
+    model = tmp_path / "model.txt"
+    model.write_text("fixture")
+    features = tmp_path / "features.npz"
+    metadata = tmp_path / "features.json"
+    arrays = {
+        "item_ids": np.asarray([1, 2], dtype=np.int64),
+        "category_ids": np.asarray([[1, -1, -1], [2, -1, -1]]),
+        "video_duration": np.asarray([1.0, 2.0]),
+        "train_data_cold_mask": np.asarray([False, True]),
+        "train_popularity_scores": np.asarray([3.0, 1.0]),
+    }
+    write_reranker_feature_bundle(
+        feature_path=features,
+        metadata_path=metadata,
+        arrays=arrays,
+        model_path=model,
+        serving_bundle_sha256="a" * 64,
+        source_identity={"fixture": True},
+    )
+    monkeypatch.setattr(
+        "kuairec_fully_observed.reranker_serving.lgb.Booster",
+        lambda model_file: _FakeBooster(),
+    )
+    loaded, record = load_local_lightgbm_reranker(
+        model_path=model,
+        feature_path=features,
+        metadata_path=metadata,
+        serving_bundle_sha256="a" * 64,
+    )
+    assert loaded.item_ids.tolist() == [1, 2]
+    assert record["enabled_by_default"] is False
+    with pytest.raises(RuntimeError, match="serving_bundle_sha256"):
+        load_local_lightgbm_reranker(
+            model_path=model,
+            feature_path=features,
+            metadata_path=metadata,
+            serving_bundle_sha256="b" * 64,
+        )
 
 
 def _write_bundle(path: Path) -> Path:
