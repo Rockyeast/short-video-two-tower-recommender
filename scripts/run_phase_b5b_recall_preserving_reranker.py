@@ -83,20 +83,27 @@ def recall_preserving_gate(
         "ndcg20_strictly_higher": (
             reranker_metrics["NDCG@20"] > hybrid_metrics["NDCG@20"]
         ),
-        "recall100_exactly_equal": np.isclose(
-            reranker_metrics["Recall@100"],
-            hybrid_metrics["Recall@100"],
-            rtol=0.0,
-            atol=1e-15,
+        "recall100_exactly_equal": bool(
+            np.isclose(
+                reranker_metrics["Recall@100"],
+                hybrid_metrics["Recall@100"],
+                rtol=0.0,
+                atol=1e-15,
+            )
         ),
-        "coverage100_exactly_equal": np.isclose(
-            reranker_metrics["Coverage@100"],
-            hybrid_metrics["Coverage@100"],
-            rtol=0.0,
-            atol=1e-15,
+        "coverage100_exactly_equal": bool(
+            np.isclose(
+                reranker_metrics["Coverage@100"],
+                hybrid_metrics["Coverage@100"],
+                rtol=0.0,
+                atol=1e-15,
+            )
         ),
     }
-    return {"passed": all(checks.values()), "checks": checks}
+    return {
+        "passed": bool(all(checks.values())),
+        "checks": {name: bool(value) for name, value in checks.items()},
+    }
 
 
 def _render_markdown(report: dict[str, Any]) -> str:

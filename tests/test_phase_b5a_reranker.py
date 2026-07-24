@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import replace
 
 import numpy as np
@@ -203,3 +204,4 @@ def test_local_reranking_preserves_topk_set_and_gate() -> None:
         },
     )
     assert gate["passed"] is True
+    assert json.loads(json.dumps(gate)) == gate
