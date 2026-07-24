@@ -11,10 +11,10 @@ import numpy as np
 
 from kuairec_fully_observed.pipeline import (
     BPRRetriever,
+    DynamicTwoTowerRetriever,
     PipelineConfig,
     PopularityRetriever,
     RecommendationEngine,
-    TwoTowerRetriever,
 )
 from kuairec_fully_observed.serving_bundle import load_serving_bundle
 
@@ -53,34 +53,32 @@ def load_engine(
     two_user_ids = payload["two_tower_user_ids"].astype(
         np.int64, copy=True
     )
-    two_user_vectors = payload["two_tower_user_vectors"].astype(
-        np.float32, copy=True
-    )
+    user_id_embeddings = payload[
+        "two_tower_user_id_embeddings"
+    ].astype(np.float32, copy=True)
 
     if len(popularity_ids) != len(popularity_scores):
         raise ValueError("Popularity IDs and scores differ in length")
-    if len(two_user_ids) != len(two_user_vectors):
-        raise ValueError("Two-Tower user IDs and vectors differ in length")
-    user_vectors = {
-        int(user): two_user_vectors[index]
-        for index, user in enumerate(two_user_ids)
-    }
-
-    def encode_user(
-        user_id: int, history: np.ndarray, history_weights: np.ndarray
-    ) -> np.ndarray:
-        # The bundle contains vectors already produced by the trained user
-        # tower. A live exporter can replace this callback with dynamic
-        # history encoding without changing RecommendationEngine.
-        return user_vectors[int(user_id)]
 
     return RecommendationEngine(
         catalog=catalog,
-        two_tower=TwoTowerRetriever(
+        two_tower=DynamicTwoTowerRetriever(
             item_ids=two_item_ids,
             item_vectors=two_item_vectors,
-            trained_user_ids=frozenset(user_vectors),
-            encode_user=encode_user,
+            user_ids=two_user_ids,
+            user_id_embeddings=user_id_embeddings,
+            mlp_input_weight=payload[
+                "two_tower_mlp_input_weight"
+            ].astype(np.float32, copy=True),
+            mlp_input_bias=payload["two_tower_mlp_input_bias"].astype(
+                np.float32, copy=True
+            ),
+            mlp_output_weight=payload[
+                "two_tower_mlp_output_weight"
+            ].astype(np.float32, copy=True),
+            mlp_output_bias=payload["two_tower_mlp_output_bias"].astype(
+                np.float32, copy=True
+            ),
         ),
         bpr=bpr,
         popularity=PopularityRetriever(
@@ -100,6 +98,12 @@ def _parse_history(raw: str) -> list[int]:
     return [] if not raw.strip() else [int(value) for value in raw.split(",")]
 
 
+def _parse_history_weights(raw: str) -> list[float] | None:
+    if not raw.strip():
+        return None
+    return [float(value) for value in raw.split(",")]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle", type=Path, required=True)
@@ -111,6 +115,11 @@ def main() -> None:
     )
     parser.add_argument("--user-id", type=int, required=True)
     parser.add_argument("--history", default="")
+    parser.add_argument(
+        "--history-weights",
+        default="",
+        help="Optional comma-separated weights aligned with --history",
+    )
     parser.add_argument("--top-k", type=int, default=None)
     arguments = parser.parse_args()
     engine = load_engine(
@@ -122,6 +131,7 @@ def main() -> None:
         arguments.user_id,
         _parse_history(arguments.history),
         top_k=arguments.top_k,
+        history_weights=_parse_history_weights(arguments.history_weights),
     )
     print(
         json.dumps(

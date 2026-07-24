@@ -21,8 +21,13 @@ SERVING_BUNDLE_KEYS = {
     "bpr_item_factors",
     "two_tower_user_ids",
     "two_tower_user_vectors",
+    "two_tower_user_id_embeddings",
     "two_tower_item_ids",
     "two_tower_item_vectors",
+    "two_tower_mlp_input_weight",
+    "two_tower_mlp_input_bias",
+    "two_tower_mlp_output_weight",
+    "two_tower_mlp_output_bias",
 }
 
 
@@ -43,7 +48,7 @@ def int_membership_sha256(values: np.ndarray) -> str:
 
 def _validate_arrays(arrays: Mapping[str, np.ndarray]) -> dict[str, Any]:
     if set(arrays) != SERVING_BUNDLE_KEYS:
-        raise ValueError("Serving bundle fields differ from schema v1")
+        raise ValueError("Serving bundle fields differ from schema v2")
     values = {name: np.asarray(value) for name, value in arrays.items()}
     for name in (
         "catalog",
@@ -65,6 +70,7 @@ def _validate_arrays(arrays: Mapping[str, np.ndarray]) -> dict[str, Any]:
         ("bpr_user_ids", "bpr_user_factors"),
         ("bpr_item_ids", "bpr_item_factors"),
         ("two_tower_user_ids", "two_tower_user_vectors"),
+        ("two_tower_user_ids", "two_tower_user_id_embeddings"),
         ("two_tower_item_ids", "two_tower_item_vectors"),
     )
     for ids_name, values_name in aligned:
@@ -76,16 +82,49 @@ def _validate_arrays(arrays: Mapping[str, np.ndarray]) -> dict[str, Any]:
         "bpr_item_factors",
         "two_tower_user_vectors",
         "two_tower_item_vectors",
+        "two_tower_user_id_embeddings",
+        "two_tower_mlp_input_weight",
+        "two_tower_mlp_input_bias",
+        "two_tower_mlp_output_weight",
+        "two_tower_mlp_output_bias",
     }
     if any(not np.isfinite(values[name]).all() for name in float_names):
         raise ValueError("Serving bundle contains non-finite values")
     if values["popularity_scores"].ndim != 1:
         raise ValueError("Popularity scores must be one-dimensional")
-    for prefix in ("bpr", "two_tower"):
-        users = values[f"{prefix}_user_vectors" if prefix == "two_tower" else f"{prefix}_user_factors"]
-        items = values[f"{prefix}_item_vectors" if prefix == "two_tower" else f"{prefix}_item_factors"]
-        if users.ndim != 2 or items.ndim != 2 or users.shape[1] != items.shape[1]:
-            raise ValueError(f"{prefix} vectors need matching rank-2 dimensions")
+    for users_name, items_name, label in (
+        ("bpr_user_factors", "bpr_item_factors", "bpr"),
+        ("two_tower_user_vectors", "two_tower_item_vectors", "two_tower"),
+    ):
+        users = values[users_name]
+        items = values[items_name]
+        if (
+            users.ndim != 2
+            or items.ndim != 2
+            or users.shape[1] != items.shape[1]
+        ):
+            raise ValueError(
+                f"{label} vectors need matching rank-2 dimensions"
+            )
+    if (
+        values["two_tower_user_id_embeddings"].ndim != 2
+        or values["two_tower_mlp_input_weight"].ndim != 2
+        or values["two_tower_mlp_input_bias"].ndim != 1
+        or values["two_tower_mlp_output_weight"].ndim != 2
+        or values["two_tower_mlp_output_bias"].ndim != 1
+    ):
+        raise ValueError("Dynamic user-tower parameters must be rank 1/2")
+    item_dim = values["two_tower_item_vectors"].shape[1]
+    user_id_dim = values["two_tower_user_id_embeddings"].shape[1]
+    hidden_dim = len(values["two_tower_mlp_input_bias"])
+    if (
+        values["two_tower_mlp_input_weight"].shape
+        != (hidden_dim, user_id_dim + item_dim)
+        or values["two_tower_mlp_output_weight"].shape
+        != (item_dim, hidden_dim)
+        or values["two_tower_mlp_output_bias"].shape != (item_dim,)
+    ):
+        raise ValueError("Dynamic user-tower parameter shapes differ")
     catalog = values["catalog"]
     if not set(catalog).issubset(set(values["two_tower_item_ids"])):
         raise ValueError("Two-Tower serving vectors do not cover the catalog")
@@ -99,6 +138,8 @@ def _validate_arrays(arrays: Mapping[str, np.ndarray]) -> dict[str, Any]:
         "two_tower_user_count": int(len(values["two_tower_user_ids"])),
         "two_tower_item_count": int(len(values["two_tower_item_ids"])),
         "two_tower_dimension": int(values["two_tower_item_vectors"].shape[1]),
+        "two_tower_user_id_dimension": int(user_id_dim),
+        "two_tower_user_hidden_dimension": int(hidden_dim),
     }
 
 
@@ -122,11 +163,12 @@ def write_serving_bundle(
         },
     )
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "bundle_locator": "artifacts/serving/serving_bundle_v1.npz",
         "bundle_sha256": sha256_file(bundle_path),
         "fit_context": "canonical_big_train_plus_validation",
-        "user_vector_semantics": "snapshot_last_50_big_interactions",
+        "user_vector_semantics": "dynamic_weighted_history_user_tower",
+        "snapshot_user_vectors_included_for_parity": True,
         "source_identity": dict(source_identity),
         **summary,
     }
@@ -142,7 +184,7 @@ def load_serving_bundle(
     """Fail closed before returning any arrays to the recommendation engine."""
 
     metadata = json.loads(metadata_path.read_text())
-    if metadata.get("schema_version") != 1:
+    if metadata.get("schema_version") != 2:
         raise RuntimeError("Unsupported serving bundle metadata schema")
     actual_sha = sha256_file(bundle_path)
     if metadata.get("bundle_sha256") != actual_sha:

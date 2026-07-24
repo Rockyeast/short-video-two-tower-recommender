@@ -30,6 +30,7 @@ from .retrieval import ExactDotProductRetriever
 from .pipeline import (
     BPRRetriever,
     CandidateRetriever,
+    DynamicTwoTowerRetriever,
     PipelineConfig,
     PopularityRetriever,
     RecommendationEngine,
@@ -69,6 +70,7 @@ __all__ = [
     "ExactDotProductRetriever",
     "BPRRetriever",
     "CandidateRetriever",
+    "DynamicTwoTowerRetriever",
     "FROZEN_OUTPUT_K",
     "FROZEN_ROUTE_TOP_K",
     "FROZEN_SMALL_ALPHA",

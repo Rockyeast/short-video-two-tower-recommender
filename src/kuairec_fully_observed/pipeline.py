@@ -14,6 +14,7 @@ from typing import Protocol
 
 import numpy as np
 import yaml
+from scipy.special import ndtr
 
 from .hybrid import weighted_reciprocal_rank_fusion
 
@@ -225,6 +226,134 @@ class TwoTowerRetriever:
 
 
 @dataclass(frozen=True)
+class DynamicTwoTowerRetriever:
+    """Pure-NumPy user-tower inference over cached item embeddings."""
+
+    item_ids: np.ndarray
+    item_vectors: np.ndarray
+    user_ids: np.ndarray
+    user_id_embeddings: np.ndarray
+    mlp_input_weight: np.ndarray
+    mlp_input_bias: np.ndarray
+    mlp_output_weight: np.ndarray
+    mlp_output_bias: np.ndarray
+    name: str = "two_tower"
+    _item_positions: dict[int, int] = field(
+        init=False, repr=False, compare=False
+    )
+    _user_positions: dict[int, int] = field(
+        init=False, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        items = _validate_ids(self.item_ids, name="Two-Tower item_ids")
+        users = _validate_ids(self.user_ids, name="Two-Tower user_ids")
+        if (
+            self.item_vectors.ndim != 2
+            or self.user_id_embeddings.ndim != 2
+            or self.mlp_input_weight.ndim != 2
+            or self.mlp_input_bias.ndim != 1
+            or self.mlp_output_weight.ndim != 2
+            or self.mlp_output_bias.ndim != 1
+        ):
+            raise ValueError("Dynamic user-tower parameters must be rank 1/2")
+        item_dim = self.item_vectors.shape[1]
+        user_id_dim = self.user_id_embeddings.shape[1]
+        hidden_dim = len(self.mlp_input_bias)
+        if (
+            self.item_vectors.shape != (len(items), item_dim)
+            or self.user_id_embeddings.shape != (len(users), user_id_dim)
+            or self.mlp_input_weight.shape
+            != (hidden_dim, user_id_dim + item_dim)
+            or self.mlp_output_weight.shape != (item_dim, hidden_dim)
+            or self.mlp_output_bias.shape != (item_dim,)
+        ):
+            raise ValueError("Dynamic user-tower parameter shapes differ")
+        for values in (
+            self.item_vectors,
+            self.user_id_embeddings,
+            self.mlp_input_weight,
+            self.mlp_input_bias,
+            self.mlp_output_weight,
+            self.mlp_output_bias,
+        ):
+            if not np.isfinite(values).all():
+                raise ValueError("Dynamic user-tower parameters must be finite")
+        object.__setattr__(
+            self,
+            "_item_positions",
+            {int(value): index for index, value in enumerate(items)},
+        )
+        object.__setattr__(
+            self,
+            "_user_positions",
+            {int(value): index for index, value in enumerate(users)},
+        )
+
+    def supports_user(self, user_id: int) -> bool:
+        return int(user_id) in self._user_positions
+
+    def encode_user(
+        self,
+        user_id: int,
+        history: np.ndarray,
+        history_weights: np.ndarray,
+    ) -> np.ndarray:
+        user_position = self._user_positions.get(int(user_id))
+        if user_position is None:
+            raise ValueError("Dynamic Two-Tower received an unknown user")
+        valid_positions: list[int] = []
+        valid_weights: list[float] = []
+        for item, weight in zip(history, history_weights, strict=True):
+            position = self._item_positions.get(int(item))
+            if position is not None and float(weight) > 0.0:
+                valid_positions.append(position)
+                valid_weights.append(float(weight))
+        if valid_positions:
+            weights = np.asarray(valid_weights, dtype=np.float32)
+            history_mean = np.average(
+                self.item_vectors[valid_positions],
+                axis=0,
+                weights=weights,
+            )
+        else:
+            history_mean = np.zeros(
+                self.item_vectors.shape[1], dtype=np.float32
+            )
+        inputs = np.concatenate(
+            (self.user_id_embeddings[user_position], history_mean)
+        )
+        hidden_pre = self.mlp_input_weight @ inputs + self.mlp_input_bias
+        hidden = hidden_pre * ndtr(hidden_pre)
+        output = self.mlp_output_weight @ hidden + self.mlp_output_bias
+        norm = float(np.linalg.norm(output))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            raise RuntimeError("Dynamic user tower produced an invalid vector")
+        return (output / norm).astype(np.float32)
+
+    def retrieve(
+        self,
+        *,
+        user_id: int,
+        history: np.ndarray,
+        history_weights: np.ndarray,
+        candidates: np.ndarray,
+        k: int,
+    ) -> np.ndarray:
+        user_vector = self.encode_user(user_id, history, history_weights)
+        try:
+            rows = np.asarray(
+                [self._item_positions[int(item)] for item in candidates],
+                dtype=np.int64,
+            )
+        except KeyError as exc:
+            raise ValueError("Two-Tower has no vector for a candidate") from exc
+        return _stable_topk(
+            candidates, self.item_vectors[rows] @ user_vector, k=k
+        )
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     route_top_k: int = 500
     output_k: int = 100
@@ -289,8 +418,15 @@ class RecommendationEngine:
                 -self.config.max_history :
             ]
         )
-        if weights.shape != history.shape or not np.isfinite(weights).all():
-            raise ValueError("history_weights must be finite and align with history")
+        if (
+            weights.shape != history.shape
+            or not np.isfinite(weights).all()
+            or np.any(weights < 0.0)
+        ):
+            raise ValueError(
+                "history_weights must be non-negative, finite, and align "
+                "with history"
+            )
         seen = np.unique(history)
         candidates = self.catalog[~np.isin(self.catalog, seen)]
         requested_k = self.config.output_k if top_k is None else int(top_k)

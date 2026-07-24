@@ -22,6 +22,7 @@ from kuairec_fully_observed.caption_embeddings import (
 from kuairec_fully_observed.numeric_sidecar import (
     load_final_refit_numeric_sidecar,
 )
+from kuairec_fully_observed.pipeline import DynamicTwoTowerRetriever
 from kuairec_fully_observed.provenance import (
     membership_record,
     sha256_file,
@@ -85,6 +86,7 @@ def _source_identity(
     caption_cache: Path,
     numeric_sidecar: Path,
     two_tower_checkpoint: dict[str, Any],
+    dynamic_user_parity_max_abs: float,
 ) -> dict[str, Any]:
     return {
         "final_refit": refit_identity,
@@ -96,6 +98,7 @@ def _source_identity(
         "caption_cache_sha256": sha256_file(caption_cache),
         "numeric_sidecar_sha256": sha256_file(numeric_sidecar),
         "two_tower_identity_sha256": two_tower_checkpoint["identity_sha256"],
+        "dynamic_user_parity_max_abs": dynamic_user_parity_max_abs,
         "small_matrix_accessed": False,
         "temporal_final_accessed": False,
     }
@@ -256,14 +259,58 @@ def export(
     catalog = np.intersect1d(
         static.normal_item_ids, ordered_items, assume_unique=True
     ).astype(np.int64)
-    catalog_positions = np.asarray(
-        [store.positions[int(item)] for item in catalog], dtype=np.int64
+    serving_item_vectors = item_vectors.cpu().numpy()
+    state = checkpoint_payload["state_dict"]
+    ordered_users = np.asarray(
+        checkpoint_payload["ordered_user_ids"], dtype=np.int64
     )
-    serving_item_vectors = item_vectors[
-        torch.as_tensor(
-            catalog_positions, dtype=torch.long, device=target_device
+    ordered_user_positions = {
+        int(user): index + 1
+        for index, user in enumerate(ordered_users)
+    }
+    touched_user_positions = np.asarray(
+        [ordered_user_positions[int(user)] for user in touched_users],
+        dtype=np.int64,
+    )
+    user_id_embeddings = (
+        state["user_id_embedding.weight"][touched_user_positions]
+        .cpu()
+        .numpy()
+    )
+    mlp_input_weight = state["user_mlp.0.weight"].cpu().numpy()
+    mlp_input_bias = state["user_mlp.0.bias"].cpu().numpy()
+    mlp_output_weight = state["user_mlp.2.weight"].cpu().numpy()
+    mlp_output_bias = state["user_mlp.2.bias"].cpu().numpy()
+    dynamic_route = DynamicTwoTowerRetriever(
+        item_ids=ordered_items,
+        item_vectors=serving_item_vectors,
+        user_ids=touched_users,
+        user_id_embeddings=user_id_embeddings,
+        mlp_input_weight=mlp_input_weight,
+        mlp_input_bias=mlp_input_bias,
+        mlp_output_weight=mlp_output_weight,
+        mlp_output_bias=mlp_output_bias,
+    )
+    parity_count = min(64, len(touched_users))
+    parity_max_abs = max(
+        float(
+            np.max(
+                np.abs(
+                    dynamic_route.encode_user(
+                        int(touched_users[index]),
+                        histories[index],
+                        history_weights[index],
+                    )
+                    - user_vectors[index]
+                )
+            )
         )
-    ].cpu().numpy()
+        for index in range(parity_count)
+    )
+    if parity_max_abs > 1e-5:
+        raise RuntimeError(
+            "NumPy dynamic user tower differs from the frozen PyTorch tower"
+        )
 
     popularity = {
         int(item): float(score)
@@ -293,8 +340,23 @@ def export(
             "two_tower_user_vectors": user_vectors.astype(
                 np.float32, copy=False
             ),
-            "two_tower_item_ids": catalog,
+            "two_tower_user_id_embeddings": user_id_embeddings.astype(
+                np.float32, copy=False
+            ),
+            "two_tower_item_ids": ordered_items,
             "two_tower_item_vectors": serving_item_vectors.astype(
+                np.float32, copy=False
+            ),
+            "two_tower_mlp_input_weight": mlp_input_weight.astype(
+                np.float32, copy=False
+            ),
+            "two_tower_mlp_input_bias": mlp_input_bias.astype(
+                np.float32, copy=False
+            ),
+            "two_tower_mlp_output_weight": mlp_output_weight.astype(
+                np.float32, copy=False
+            ),
+            "two_tower_mlp_output_bias": mlp_output_bias.astype(
                 np.float32, copy=False
             ),
         }
@@ -309,6 +371,7 @@ def export(
             caption_cache=caption_cache_path,
             numeric_sidecar=numeric_sidecar_path,
             two_tower_checkpoint=checkpoint_payload,
+            dynamic_user_parity_max_abs=parity_max_abs,
         ),
     )
     return metadata

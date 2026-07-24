@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -8,9 +9,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 from kuairec_fully_observed.pipeline import (
     BPRRetriever,
+    DynamicTwoTowerRetriever,
     PipelineConfig,
     PopularityRetriever,
     RecommendationEngine,
@@ -20,6 +23,7 @@ from kuairec_fully_observed.serving_bundle import (
     load_serving_bundle,
     write_serving_bundle,
 )
+from kuairec_fully_observed.torch_models import TwoTowerV1
 from scripts.recommend import load_engine
 from scripts import export_serving_bundle
 
@@ -101,6 +105,13 @@ def test_request_cannot_expand_the_frozen_output_limit():
         _engine().recommend(10, [], top_k=4)
 
 
+def test_history_weights_must_align_and_be_non_negative():
+    with pytest.raises(ValueError, match="non-negative"):
+        _engine().recommend(10, [1, 2], history_weights=[1.0])
+    with pytest.raises(ValueError, match="non-negative"):
+        _engine().recommend(10, [1], history_weights=[-1.0])
+
+
 def test_two_tower_rejects_candidate_without_content_vector():
     two, _, _ = _routes()
     with pytest.raises(ValueError, match="no content vector"):
@@ -111,6 +122,97 @@ def test_two_tower_rejects_candidate_without_content_vector():
             candidates=np.asarray([99], dtype=np.int64),
             k=1,
         )
+
+
+def _dynamic_two_tower() -> DynamicTwoTowerRetriever:
+    return DynamicTwoTowerRetriever(
+        item_ids=np.arange(1, 7, dtype=np.int64),
+        item_vectors=np.asarray(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.9, 0.1],
+                [0.1, 0.9],
+                [-1.0, 0.0],
+                [0.0, -1.0],
+            ],
+            dtype=np.float32,
+        ),
+        user_ids=np.asarray([10], dtype=np.int64),
+        user_id_embeddings=np.zeros((1, 2), dtype=np.float32),
+        mlp_input_weight=np.asarray(
+            [[0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+            dtype=np.float32,
+        ),
+        mlp_input_bias=np.zeros(2, dtype=np.float32),
+        mlp_output_weight=np.eye(2, dtype=np.float32),
+        mlp_output_bias=np.zeros(2, dtype=np.float32),
+    )
+
+
+def test_dynamic_user_tower_changes_ranking_when_history_changes():
+    route = _dynamic_two_tower()
+    candidates = np.asarray([3, 4, 5, 6], dtype=np.int64)
+
+    first = route.retrieve(
+        user_id=10,
+        history=np.asarray([1], dtype=np.int64),
+        history_weights=np.ones(1, dtype=np.float32),
+        candidates=candidates,
+        k=4,
+    )
+    second = route.retrieve(
+        user_id=10,
+        history=np.asarray([2], dtype=np.int64),
+        history_weights=np.ones(1, dtype=np.float32),
+        candidates=candidates,
+        k=4,
+    )
+
+    assert first.tolist() == [3, 4, 6, 5]
+    assert second.tolist() == [4, 3, 5, 6]
+    assert not np.array_equal(first, second)
+
+
+def test_dynamic_numpy_user_tower_matches_pytorch_user_tower():
+    torch.manual_seed(17)
+    model = TwoTowerV1(
+        num_items=3,
+        num_users=1,
+        num_category_tokens=1,
+        num_upload_types=1,
+    ).eval()
+    history_vectors = torch.nn.functional.normalize(
+        torch.randn(1, 3, 128), p=2, dim=2
+    )
+    history_weights = torch.tensor([[1.0, 0.25, 2.0]])
+    with torch.inference_mode():
+        expected = model.encode_users(
+            user_indices=torch.tensor([1]),
+            history_vectors=history_vectors,
+            history_weights=history_weights,
+            padding_mask=torch.ones((1, 3), dtype=torch.bool),
+            use_id_embedding=torch.tensor([True]),
+        )[0].numpy()
+    state = model.state_dict()
+    route = DynamicTwoTowerRetriever(
+        item_ids=np.asarray([11, 12, 13], dtype=np.int64),
+        item_vectors=history_vectors[0].numpy(),
+        user_ids=np.asarray([7], dtype=np.int64),
+        user_id_embeddings=state["user_id_embedding.weight"][1:2].numpy(),
+        mlp_input_weight=state["user_mlp.0.weight"].numpy(),
+        mlp_input_bias=state["user_mlp.0.bias"].numpy(),
+        mlp_output_weight=state["user_mlp.2.weight"].numpy(),
+        mlp_output_bias=state["user_mlp.2.bias"].numpy(),
+    )
+
+    actual = route.encode_user(
+        7,
+        np.asarray([11, 12, 13], dtype=np.int64),
+        history_weights[0].numpy(),
+    )
+
+    assert np.allclose(actual, expected, rtol=1e-5, atol=1e-6)
 
 
 def test_config_rejects_unexpected_sections(tmp_path):
@@ -138,8 +240,17 @@ def _write_bundle(path: Path) -> Path:
         "two_tower_user_vectors": np.asarray(
             [[1, 0]], dtype=np.float32
         ),
+        "two_tower_user_id_embeddings": np.asarray(
+            [[1, 0]], dtype=np.float32
+        ),
         "two_tower_item_ids": two.item_ids,
         "two_tower_item_vectors": two.item_vectors,
+        "two_tower_mlp_input_weight": np.asarray(
+            [[1, 0, 1, 0], [0, 1, 0, 1]], dtype=np.float32
+        ),
+        "two_tower_mlp_input_bias": np.zeros(2, dtype=np.float32),
+        "two_tower_mlp_output_weight": np.eye(2, dtype=np.float32),
+        "two_tower_mlp_output_bias": np.zeros(2, dtype=np.float32),
     }
     metadata = path.with_suffix(".json")
     write_serving_bundle(
@@ -188,6 +299,7 @@ def test_serving_bundle_loader_and_cli(tmp_path):
         check=True,
         capture_output=True,
         text=True,
+        env={**os.environ, "PYTHONPATH": ".:src"},
     )
     output = json.loads(completed.stdout)
     assert output["item_ids"] == [2, 4, 3]
