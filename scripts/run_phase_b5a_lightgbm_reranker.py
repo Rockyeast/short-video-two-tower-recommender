@@ -199,6 +199,64 @@ def _render_markdown(report: dict[str, Any]) -> str:
     return text
 
 
+def build_feature_builder(
+    routes: Any,
+    *,
+    restricted_candidates: np.ndarray | None = None,
+) -> RerankFeatureBuilder:
+    """Align static/train-only features with the frozen validation catalog."""
+
+    static_by_item = routes.static.frame.set_index("video_id")
+    catalog_static = static_by_item.reindex(routes.queries.catalog)
+    if (
+        catalog_static.index.has_duplicates
+        or catalog_static["category_ids"].isna().any()
+    ):
+        raise RuntimeError("Static catalog features do not align")
+    catalog_categories = np.asarray(
+        catalog_static["category_ids"].tolist(), dtype=np.int64
+    )
+    category_lookup = {
+        int(item): tuple(int(value) for value in categories)
+        for item, categories in zip(
+            routes.static.frame["video_id"],
+            routes.static.frame["category_ids"],
+            strict=True,
+        )
+    }
+    popularity_scores = np.asarray(
+        [
+            routes.popularity.scores.get(int(item), 0.0)
+            for item in routes.queries.catalog
+        ],
+        dtype=np.float32,
+    )
+    video_duration = (
+        catalog_static["video_duration"]
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32)
+    )
+    return RerankFeatureBuilder(
+        queries=routes.queries,
+        two_tower_topk=routes.two_tower_top500,
+        bpr_topk=routes.bpr_top500,
+        two_tower_user_vectors=routes.two_tower_user_vectors,
+        two_tower_catalog_vectors=routes.two_tower_catalog_vectors,
+        bpr_user_vectors=routes.bpr_user_vectors,
+        bpr_catalog_vectors=routes.bpr_catalog_vectors,
+        popularity_scores=popularity_scores,
+        catalog_categories=catalog_categories,
+        category_lookup=category_lookup,
+        data_cold_mask=np.isin(
+            routes.queries.catalog, routes.data_cold_items
+        ),
+        video_duration=video_duration,
+        restricted_candidates=restricted_candidates,
+        alpha=0.75,
+        rank_constant=RRF_RANK_CONSTANT,
+    )
+
+
 def run(
     *,
     repo_root: Path,
@@ -242,51 +300,7 @@ def run(
     ):
         raise RuntimeError("Reranker fit/evaluation users overlap")
 
-    static_by_item = routes.static.frame.set_index("video_id")
-    catalog_static = static_by_item.reindex(routes.queries.catalog)
-    if catalog_static.index.has_duplicates or catalog_static["category_ids"].isna().any():
-        raise RuntimeError("Static catalog features do not align")
-    catalog_categories = np.asarray(
-        catalog_static["category_ids"].tolist(), dtype=np.int64
-    )
-    category_lookup = {
-        int(item): tuple(int(value) for value in categories)
-        for item, categories in zip(
-            routes.static.frame["video_id"],
-            routes.static.frame["category_ids"],
-            strict=True,
-        )
-    }
-    popularity_scores = np.asarray(
-        [
-            routes.popularity.scores.get(int(item), 0.0)
-            for item in routes.queries.catalog
-        ],
-        dtype=np.float32,
-    )
-    video_duration = (
-        catalog_static["video_duration"]
-        .fillna(0.0)
-        .to_numpy(dtype=np.float32)
-    )
-    builder = RerankFeatureBuilder(
-        queries=routes.queries,
-        two_tower_topk=routes.two_tower_top500,
-        bpr_topk=routes.bpr_top500,
-        two_tower_user_vectors=routes.two_tower_user_vectors,
-        two_tower_catalog_vectors=routes.two_tower_catalog_vectors,
-        bpr_user_vectors=routes.bpr_user_vectors,
-        bpr_catalog_vectors=routes.bpr_catalog_vectors,
-        popularity_scores=popularity_scores,
-        catalog_categories=catalog_categories,
-        category_lookup=category_lookup,
-        data_cold_mask=np.isin(
-            routes.queries.catalog, routes.data_cold_items
-        ),
-        video_duration=video_duration,
-        alpha=0.75,
-        rank_constant=RRF_RANK_CONSTANT,
-    )
+    builder = build_feature_builder(routes)
     train_dataset = builder.build(
         fit_indices,
         training_negative_cap=config["candidates"][

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -16,6 +17,10 @@ from kuairec_fully_observed.reranking import (
 from scripts.run_phase_b5a_lightgbm_reranker import (
     EXPECTED_CONFIG,
     validate_config,
+)
+from scripts.run_phase_b5b_recall_preserving_reranker import (
+    recall_preserving_gate,
+    topk_sets_match,
 )
 
 
@@ -162,3 +167,39 @@ def test_gate_requires_ndcg_and_retained_recall_coverage() -> None:
         coverage_retention=0.90,
     )
     assert failed["passed"] is False
+
+
+def test_restricted_candidates_limit_feature_rows_to_fixed_topk() -> None:
+    builder, indices = _fixture()
+    builder = replace(
+        builder,
+        restricted_candidates=np.asarray(
+            [[4, 3], [5, 4]], dtype=np.int64
+        ),
+    )
+    dataset = builder.build(
+        indices, training_negative_cap=None, require_retrieved_positive=True
+    )
+    assert dataset.group_sizes.tolist() == [2, 2]
+    assert dataset.item_ids.tolist() == [4, 3, 5, 4]
+    assert dataset.labels.tolist() == [1, 0, 1, 0]
+
+
+def test_local_reranking_preserves_topk_set_and_gate() -> None:
+    hybrid = np.asarray([[3, 4, 5], [5, 4, 3]], dtype=np.int64)
+    reranked = np.asarray([[4, 3, 5], [4, 5, 3]], dtype=np.int64)
+    assert topk_sets_match(hybrid, reranked)
+    assert not topk_sets_match(hybrid, np.asarray([[4, 3, 9], [4, 5, 3]]))
+    gate = recall_preserving_gate(
+        {
+            "NDCG@20": 0.12,
+            "Recall@100": 0.20,
+            "Coverage@100": 0.30,
+        },
+        {
+            "NDCG@20": 0.10,
+            "Recall@100": 0.20,
+            "Coverage@100": 0.30,
+        },
+    )
+    assert gate["passed"] is True

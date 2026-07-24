@@ -125,6 +125,7 @@ class RerankFeatureBuilder:
     category_lookup: dict[int, tuple[int, ...]]
     data_cold_mask: np.ndarray
     video_duration: np.ndarray
+    restricted_candidates: np.ndarray | None = None
     alpha: float = 0.75
     rank_constant: int = 60
     _catalog_positions: dict[int, int] = field(
@@ -145,6 +146,13 @@ class RerankFeatureBuilder:
             or self.catalog_categories.shape != (catalog_count, 3)
             or self.data_cold_mask.shape != (catalog_count,)
             or self.video_duration.shape != (catalog_count,)
+            or (
+                self.restricted_candidates is not None
+                and (
+                    self.restricted_candidates.ndim != 2
+                    or self.restricted_candidates.shape[0] != query_count
+                )
+            )
         ):
             raise ValueError("Rerank feature inputs do not align")
         if not 0.0 <= self.alpha <= 1.0 or self.rank_constant <= 0:
@@ -171,6 +179,15 @@ class RerankFeatureBuilder:
         ).issubset(candidate_membership):
             raise ValueError("Retrieved item is outside query candidates")
         items = np.union1d(two, bpr).astype(np.int64)
+        if self.restricted_candidates is not None:
+            restricted = _valid_ranked(
+                self.restricted_candidates[query_index]
+            )
+            if not set(restricted).issubset(set(items)):
+                raise ValueError(
+                    "Restricted rerank candidate is outside route union"
+                )
+            items = restricted
         catalog_rows = np.asarray(
             [self._catalog_positions[int(item)] for item in items],
             dtype=np.int64,
