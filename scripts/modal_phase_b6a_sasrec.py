@@ -165,7 +165,7 @@ def run_l4(
     remote_inputs = verify_remote_inputs(bundle_root, input_manifest)
 
     output_root = Path("/tmp/phase_b6a")
-    checkpoints = output_root / "checkpoints"
+    checkpoints = REMOTE_REPOSITORY / "artifacts/phase_b6a/full"
     report_json = output_root / "sasrec_full.json"
     report_markdown = output_root / "sasrec_full.md"
     torch.cuda.empty_cache()
