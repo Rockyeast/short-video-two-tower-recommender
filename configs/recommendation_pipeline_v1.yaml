@@ -1,0 +1,6 @@
+pipeline:
+  route_top_k: 500
+  output_k: 100
+  alpha: 0.75
+  rank_constant: 60
+  max_history: 50
