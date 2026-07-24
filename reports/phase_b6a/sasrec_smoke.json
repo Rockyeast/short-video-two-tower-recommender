@@ -1,0 +1,234 @@
+{
+  "claims": {
+    "adaptive_validation_development": true,
+    "effectiveness_claim": false,
+    "one_configuration": true,
+    "one_seed": true,
+    "sealed_test_claim": false,
+    "small_matrix_accessed": false,
+    "temporal_final_accessed": false
+  },
+  "configuration": {
+    "claims": {
+      "adaptive_validation_development": true,
+      "effectiveness_claim_scope": "big_validation_development_only",
+      "one_configuration": true,
+      "one_seed": true,
+      "sealed_test_claim": false
+    },
+    "evaluation": {
+      "fixed_catalog_count": 9365,
+      "output_k": 100,
+      "query_count": 6818,
+      "target_count": 118565,
+      "tie_break": "ascending_item_id",
+      "warm_query_count": 6816,
+      "warm_target_count": 118539
+    },
+    "implementation": {
+      "library": "recbole",
+      "model": "SASRec",
+      "version": "1.2.1"
+    },
+    "model": {
+      "attn_dropout_prob": 0.5,
+      "hidden_act": "gelu",
+      "hidden_dropout_prob": 0.5,
+      "hidden_size": 64,
+      "initializer_range": 0.02,
+      "inner_size": 256,
+      "layer_norm_eps": 1e-12,
+      "loss_type": "CE",
+      "n_heads": 2,
+      "n_layers": 2
+    },
+    "phase": "phase-b6a-recbole-sasrec",
+    "scope": {
+      "evaluate": "reused_big_validation_development",
+      "fit": "canonical_big_train",
+      "forbidden": [
+        "small_matrix",
+        "temporal_final",
+        "final_refit"
+      ]
+    },
+    "selection": {
+      "final_tie_break": "earliest_epoch",
+      "primary": "Recall@100",
+      "tie_break": "NDCG@20"
+    },
+    "training": {
+      "batch_size": 256,
+      "epochs": 5,
+      "gradient_clip_norm": 5.0,
+      "learning_rate": 0.001,
+      "max_history": 50,
+      "seed": 20260724,
+      "weight_decay": 0.0
+    }
+  },
+  "epochs": [
+    {
+      "checkpoint": {
+        "locator": "artifacts/phase_b6a/smoke/epoch_001.pt",
+        "sha256": "2d58aacb40ec20a4c69ab900b50e32361491b7db91dada5341a43c3f16927d6f"
+      },
+      "epoch": 1,
+      "epoch_wall_time_s": 8.941565381013788,
+      "training": {
+        "completed_examples": 5120,
+        "mean_loss": 9.160415935516358,
+        "optimizer_steps": 20
+      },
+      "validation": {
+        "cold_user_denominators": {
+          "query_count": 0,
+          "target_count": 0
+        },
+        "cold_user_metrics": null,
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 128,
+          "all_target_count": 2575,
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 126,
+          "data_cold_target_count": 749,
+          "query_count": 128,
+          "target_count": 2575,
+          "user_count": 128
+        },
+        "metrics": {
+          "Coverage@100": 0.05798184730379071,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.005373566185280874,
+          "Recall@100": 0.024593660528782924,
+          "Recall@20": 0.0028420765814750814,
+          "Recall@50": 0.014411115715124998
+        }
+      }
+    },
+    {
+      "checkpoint": {
+        "locator": "artifacts/phase_b6a/smoke/epoch_002.pt",
+        "sha256": "9586c216b2a6b5b2601ee6b3e8aed968dbfb26b85ac580868981b6f667703b30"
+      },
+      "epoch": 2,
+      "epoch_wall_time_s": 8.722800098941661,
+      "training": {
+        "completed_examples": 5120,
+        "mean_loss": 8.440891885757447,
+        "optimizer_steps": 20
+      },
+      "validation": {
+        "cold_user_denominators": {
+          "query_count": 0,
+          "target_count": 0
+        },
+        "cold_user_metrics": null,
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 128,
+          "all_target_count": 2575,
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 126,
+          "data_cold_target_count": 749,
+          "query_count": 128,
+          "target_count": 2575,
+          "user_count": 128
+        },
+        "metrics": {
+          "Coverage@100": 0.046556326748531766,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.009224390355426599,
+          "Recall@100": 0.030393162940241056,
+          "Recall@20": 0.006612563169253143,
+          "Recall@50": 0.01698826646507404
+        }
+      }
+    }
+  ],
+  "evaluated_query_count": 128,
+  "fallback_query_count": 0,
+  "inputs": {
+    "processed_manifest_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+    "raw_sources": {
+      "big_matrix.csv": {
+        "actual_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "expected_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/big_matrix.csv"
+      },
+      "item_daily_features.csv": {
+        "actual_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "expected_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/item_daily_features.csv"
+      },
+      "kuairec_caption_category.csv": {
+        "actual_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "expected_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "sha256_match": true,
+        "source_locator": "KUAIREC_DATA_DIR/kuairec_caption_category.csv"
+      }
+    }
+  },
+  "mode": "smoke",
+  "model_history_query_count": 128,
+  "phase": "phase-b6a-recbole-sasrec",
+  "references": {
+    "frozen_bpr_epoch_20": {
+      "Coverage@100": 0.33304858515750135,
+      "Data-Cold Recall@100": 0.0,
+      "NDCG@20": 0.012773561140700995,
+      "Recall@100": 0.04843855379304513
+    },
+    "two_tower_epoch_1": {
+      "Coverage@100": 0.5694607581420181,
+      "Data-Cold Recall@100": 0.06515057123608131,
+      "NDCG@20": 0.012112516931264626,
+      "Recall@100": 0.0720568501336648
+    }
+  },
+  "runtime": {
+    "device": "cpu",
+    "peak_rss_mb": 1781.234375,
+    "wall_time_s": 60.912493634968996
+  },
+  "selected_epoch": 2,
+  "selected_metrics": {
+    "cold_user_denominators": {
+      "query_count": 0,
+      "target_count": 0
+    },
+    "cold_user_metrics": null,
+    "data_cold_is_descriptive": true,
+    "denominators": {
+      "all_query_count": 128,
+      "all_target_count": 2575,
+      "candidate_union_count": 9365,
+      "data_cold_query_count": 126,
+      "data_cold_target_count": 749,
+      "query_count": 128,
+      "target_count": 2575,
+      "user_count": 128
+    },
+    "metrics": {
+      "Coverage@100": 0.046556326748531766,
+      "Data-Cold Recall@100": 0.0,
+      "NDCG@20": 0.009224390355426599,
+      "Recall@100": 0.030393162940241056,
+      "Recall@20": 0.006612563169253143,
+      "Recall@50": 0.01698826646507404
+    }
+  },
+  "training_examples": 10000,
+  "validation_counts": {
+    "data_cold_item_count": 1492,
+    "fixed_catalog_count": 9365,
+    "query_contract_sha256": "f25df9d235f32b114357a190f69a60e49d8993d2c4e09f975a0b361c7439f877",
+    "query_count": 6818,
+    "target_count": 118565,
+    "warm_query_count": 6816,
+    "warm_target_count": 118539
+  }
+}
