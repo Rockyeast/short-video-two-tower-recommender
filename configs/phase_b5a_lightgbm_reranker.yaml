@@ -1,0 +1,59 @@
+phase: phase-b5a-lightgbm-reranker
+
+scope:
+  base_models_fit: canonical_big_train
+  reranker_fit: stable_70_percent_of_warm_big_validation_users
+  reranker_evaluate: held_out_30_percent_of_warm_big_validation_users
+  forbidden: [small_matrix, temporal_final, final_refit_artifacts]
+
+split:
+  salt: phase-b5a-reranker-split-v1
+  fit_percent: 70
+
+candidates:
+  two_tower_top_k: 500
+  bpr_top_k: 500
+  union: stable_unique_union
+  training_negative_cap_per_query: 256
+  training_negative_order: frozen_hybrid_score_then_item_id
+  retain_all_retrieved_positives: true
+
+features:
+  - two_tower_score
+  - bpr_score
+  - two_tower_reciprocal_rank
+  - bpr_reciprocal_rank
+  - frozen_hybrid_rrf_score
+  - log1p_train_popularity
+  - history_category_affinity
+  - data_cold_item
+  - log1p_history_length
+  - log1p_video_duration
+
+model:
+  implementation: lightgbm.LGBMRanker
+  objective: lambdarank
+  n_estimators: 150
+  learning_rate: 0.05
+  num_leaves: 31
+  min_child_samples: 100
+  reg_lambda: 1.0
+  random_state: 20260724
+  n_jobs: 8
+  deterministic: true
+  force_col_wise: true
+
+evaluation:
+  output_k: 100
+  tie_break: ascending_item_id
+  baseline: frozen_hybrid_alpha_0.75
+  gate:
+    ndcg20_strictly_higher: true
+    recall100_retention: 0.98
+    coverage100_retention: 0.90
+
+claims:
+  single_configuration: true
+  single_split: true
+  no_hyperparameter_search: true
+  effectiveness_claim_scope: held_out_big_validation_users_only
