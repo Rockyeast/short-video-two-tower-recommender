@@ -45,8 +45,20 @@ image = (
         "PyYAML==6.0.3",
         "scipy==1.16.3",
         "torch==2.11.0",
-        "recbole==1.2.1",
+        "colorlog==4.7.2",
+        "colorama==0.4.4",
+        "scikit-learn==1.9.0",
+        "tensorboard==2.21.0",
+        "thop==0.1.1.post2209072238",
+        "tabulate==0.10.0",
+        "texttable==1.7.0",
+        "tqdm==4.69.1",
+        "plotly==6.9.0",
+        "psutil==7.2.2",
     )
+    # RecBole's SASRec path does not use Ray. RecBole 1.2.1 nevertheless
+    # declares an old Ray upper bound that has no Python 3.12 wheel.
+    .run_commands("python -m pip install --no-deps recbole==1.2.1")
     .add_local_dir(
         REPOSITORY_ROOT / "src",
         str(REMOTE_REPOSITORY / "src"),
