@@ -1,0 +1,26 @@
+phase: phase-b6b-three-route-hybrid
+scope:
+  evaluate: reused_big_validation_development
+  forbidden: [small_matrix, temporal_final, final_refit, model_training]
+routes:
+  - two_tower_epoch_1
+  - sasrec_epoch_5
+  - bpr_epoch_20
+route_top_k: 500
+output_k: 100
+rank_constant: 60
+weights:
+  - {two_tower: 0.60, sasrec: 0.25, bpr: 0.15}
+  - {two_tower: 0.50, sasrec: 0.35, bpr: 0.15}
+  - {two_tower: 0.40, sasrec: 0.45, bpr: 0.15}
+selection:
+  reference: frozen_two_route_hybrid_alpha_0.75
+  minimum_recall_fraction: 0.98
+  minimum_coverage_fraction: 0.90
+  minimum_data_cold_recall_fraction: 0.90
+  objective: highest_ndcg_at_20
+claims:
+  adaptive_validation_development: true
+  sealed_test_claim: false
+  significance_claim: false
+  one_seed_per_route: true
