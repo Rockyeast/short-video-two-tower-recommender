@@ -190,7 +190,7 @@ def run_l4(
         os.chdir(previous_cwd)
     if (
         report["evaluated_query_count"] != 6818
-        or report["training_examples"] != 574091
+        or report["training_examples"] != 573104
         or report["claims"]["small_matrix_accessed"]
         or report["claims"]["temporal_final_accessed"]
     ):

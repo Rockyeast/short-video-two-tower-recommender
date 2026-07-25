@@ -10,5 +10,6 @@ def test_modal_sasrec_wrapper_has_bounded_single_l4_contract() -> None:
     assert "single_use_containers=True" in source
     assert "smoke=False" in source
     assert 'device_name="cuda:0"' in source
+    assert 'report["training_examples"] != 573104' in source
     assert "small_matrix.csv" not in source
     assert "temporal_final" in source
