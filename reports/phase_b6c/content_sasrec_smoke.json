@@ -1,0 +1,149 @@
+{
+  "checks": {
+    "all_metrics_finite": true,
+    "cold_items_use_content_path": true,
+    "loss_decreased": true
+  },
+  "claims": {
+    "effectiveness_claim": false,
+    "formal_selection_gate": false,
+    "full_training": false,
+    "small_matrix_accessed": false,
+    "temporal_final_accessed": false
+  },
+  "configuration": {
+    "claims": {
+      "effectiveness_claim": false,
+      "formal_selection_gate": false,
+      "full_training": false,
+      "small_matrix_accessed": false,
+      "temporal_final_accessed": false
+    },
+    "content": {
+      "cold_item_id_residual": "disabled",
+      "fusion": "warm_id_residual_plus_trainable_content_projection",
+      "source": "frozen_minilm_caption_embeddings"
+    },
+    "evaluation": {
+      "max_validation_queries": 128,
+      "output_k": 100
+    },
+    "implementation": {
+      "base_library": "recbole",
+      "base_model": "SASRec",
+      "version": "1.2.1"
+    },
+    "model": {
+      "attn_dropout_prob": 0.5,
+      "hidden_act": "gelu",
+      "hidden_dropout_prob": 0.5,
+      "hidden_size": 64,
+      "initializer_range": 0.02,
+      "inner_size": 256,
+      "layer_norm_eps": 1e-12,
+      "loss_type": "CE",
+      "n_heads": 2,
+      "n_layers": 2
+    },
+    "phase": "phase-b6c-content-sasrec-smoke",
+    "scope": {
+      "evaluate": "bounded_reused_big_validation_development",
+      "fit": "bounded_canonical_big_train",
+      "forbidden": [
+        "small_matrix",
+        "temporal_final",
+        "final_refit",
+        "full_training"
+      ]
+    },
+    "training": {
+      "batch_size": 256,
+      "epochs": 2,
+      "learning_rate": 0.001,
+      "max_examples": 10000,
+      "max_history": 50,
+      "max_optimizer_steps_per_epoch": 20,
+      "seed": 20260725,
+      "weight_decay": 0.0
+    }
+  },
+  "content": {
+    "caption_cache_items": 9388,
+    "caption_cache_sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+    "content_present_items": 9388,
+    "id_enabled_items": 7896,
+    "matched_event_items": 9388
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "mean_loss": 9.089587116241455,
+      "optimizer_steps": 20,
+      "validation": {
+        "cold_user_denominators": {
+          "query_count": 0,
+          "target_count": 0
+        },
+        "cold_user_metrics": null,
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 128,
+          "all_target_count": 2575,
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 126,
+          "data_cold_target_count": 749,
+          "query_count": 128,
+          "target_count": 2575,
+          "user_count": 128
+        },
+        "metrics": {
+          "Coverage@100": 0.03000533902829685,
+          "Data-Cold Recall@100": 0.036718891778415585,
+          "NDCG@20": 0.005467937408228724,
+          "Recall@100": 0.024337183613706452,
+          "Recall@20": 0.005263540566055159,
+          "Recall@50": 0.012896933917528186
+        }
+      }
+    },
+    {
+      "epoch": 2,
+      "mean_loss": 8.601321697235107,
+      "optimizer_steps": 20,
+      "validation": {
+        "cold_user_denominators": {
+          "query_count": 0,
+          "target_count": 0
+        },
+        "cold_user_metrics": null,
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 128,
+          "all_target_count": 2575,
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 126,
+          "data_cold_target_count": 749,
+          "query_count": 128,
+          "target_count": 2575,
+          "user_count": 128
+        },
+        "metrics": {
+          "Coverage@100": 0.037479978643886816,
+          "Data-Cold Recall@100": 0.022973928628690535,
+          "NDCG@20": 0.009972127229292069,
+          "Recall@100": 0.02718675762534095,
+          "Recall@20": 0.007044757981110546,
+          "Recall@50": 0.012382312040665425
+        }
+      }
+    }
+  ],
+  "evaluated_queries": 128,
+  "phase": "phase-b6c-content-sasrec-smoke",
+  "runtime": {
+    "device": "cpu",
+    "peak_rss_mb": 1826.13671875,
+    "wall_time_s": 64.10975393500121
+  },
+  "training_examples": 10000
+}
