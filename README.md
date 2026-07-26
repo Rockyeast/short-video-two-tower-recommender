@@ -110,6 +110,11 @@ fixed before execution. All candidates raised overall Recall/NDCG, but all
 failed the preregistered Data-Cold retention gate. SASRec is therefore retained
 as an offline comparison rather than added to the serving route.
 
+A single follow-up Content-SASRec run added frozen MiniLM caption vectors as a
+projected item residual while disabling ID residuals for training-unseen items.
+It slightly increased coverage but did not produce Data-Cold hits after full
+training and slightly reduced Recall/NDCG, so it was also rejected.
+
 ## Dataset and Leakage-Safe Protocol
 
 KuaiRec provides:
@@ -177,6 +182,7 @@ All primary rows below share the same 6,816 warm-user queries, 118,539 targets,
 | Two-Tower epoch 1 | 0.014870 | 0.036038 | 0.072057 | 0.012113 | 0.569461 | 0.065151 |
 | Hybrid `alpha=0.75` | 0.015643 | 0.037002 | **0.072213** | **0.015341** | **0.571169** | 0.060356 |
 | SASRec epoch 5 | 0.030657 | 0.052639 | 0.077560 | 0.037462 | 0.252856 | 0.000000 |
+| Content-SASRec epoch 5 | 0.029176 | 0.051527 | 0.076347 | 0.036381 | 0.266311 | 0.000000 |
 | 3-route `0.60/0.25/0.15` | 0.017737 | 0.041720 | 0.082561 | 0.020006 | 0.557395 | 0.049244 |
 | 3-route `0.50/0.35/0.15` | 0.022135 | 0.049237 | **0.085315** | 0.025961 | 0.524933 | 0.032707 |
 | 3-route `0.40/0.45/0.15` | **0.031806** | **0.053105** | 0.084606 | **0.037131** | 0.467806 | 0.017436 |
@@ -194,6 +200,9 @@ Observed findings:
   preserving Recall@100 and coverage.
 - SASRec raises Recall@100 by 7.64% and NDCG@20 by 209.28% relative to
   Two-Tower, but Coverage@100 falls by 55.60% and Data-Cold Recall@100 is zero.
+- adding frozen MiniLM captions to SASRec raises Coverage@100 by 5.32% relative
+  to ID-only SASRec, but lowers Recall@100 by 1.56%, lowers NDCG@20 by 2.89%,
+  and still produces zero Data-Cold Recall.
 - no three-route candidate preserved at least 98% of the frozen Hybrid's
   Recall, 90% of Coverage and 90% of Data-Cold Recall simultaneously, so none
   was selected for the Pipeline.
@@ -208,6 +217,7 @@ Detailed results:
 - [Hybrid validation](reports/phase_b3a/hybrid_validation.md)
 - [RecBole SASRec comparison](reports/phase_b6a/sasrec_full_modal_l4.md)
 - [Bounded three-route fusion](reports/phase_b6b/three_route_hybrid.md)
+- [Content-SASRec negative result](reports/phase_b6d/content_sasrec_full_modal_l4.md)
 
 ## Sealed Small Audit Results
 
@@ -273,6 +283,10 @@ See the complete [FAISS scalability report](reports/phase_b4a/faiss_scalability.
   Big-validation development set; neither was evaluated on sealed Small.
 - SASRec's learned item-ID table improves warm sequential ranking but provides
   no content fallback for training-unseen videos.
+- The minimal caption residual did not solve this: full-vocabulary CE training
+  never observes Data-Cold items as positives and can suppress them through
+  the softmax denominator. A different training objective would be required,
+  not another RRF weight.
 - The 88-target Data-Cold slice is too small for statistical claims.
 - Synthetic 100K/1M distractors test retrieval systems, not recommendation
   quality or real catalog drift.
@@ -340,6 +354,7 @@ final remains guarded and is outside this project's reported results.
 | Hybrid | [Validation](reports/phase_b3a/hybrid_validation.md) |
 | RecBole SASRec | [Big-validation comparison](reports/phase_b6a/sasrec_full_modal_l4.md) |
 | Three-route RRF | [Bounded negative result](reports/phase_b6b/three_route_hybrid.md) |
+| Content-SASRec | [Single-config negative result](reports/phase_b6d/content_sasrec_full_modal_l4.md) |
 | Final refit | [Report](reports/phase_b3b0/final_refit.md) |
 | Sealed Small | [Attempt 5](reports/phase_b3b/sealed_small_modal_l4.md) |
 | Retrieval scale | [Exact/FAISS benchmark](reports/phase_b4a/faiss_scalability.md) |

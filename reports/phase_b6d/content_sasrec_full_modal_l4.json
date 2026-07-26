@@ -1,0 +1,568 @@
+{
+  "input_manifest": {
+    "bundle_sha256": "7a7b8b370335f61d28063c7821600063c28929e2a837473890611cc1315f56a6",
+    "files": [
+      {
+        "logical_path": "raw/big_matrix.csv",
+        "sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+        "size_bytes": 1083521226
+      },
+      {
+        "logical_path": "raw/item_daily_features.csv",
+        "sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+        "size_bytes": 85855213
+      },
+      {
+        "logical_path": "raw/kuairec_caption_category.csv",
+        "sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+        "size_bytes": 1964578
+      },
+      {
+        "logical_path": "processed/manifest.json",
+        "sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+        "size_bytes": 4101
+      },
+      {
+        "logical_path": "processed/events_train_validation.npz",
+        "sha256": "476ebcae49140d3c307ca6cb1461847f42e849d8f5c91dd7a2661396fc2b9a02",
+        "size_bytes": 72458592
+      },
+      {
+        "logical_path": "processed/catalog.npz",
+        "sha256": "877c5174b54aad39a281fdf1d92309ef74f9b2a836595aded1871df6a2c909d5",
+        "size_bytes": 38787
+      },
+      {
+        "logical_path": "caption/caption_embeddings.npz",
+        "sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+        "size_bytes": 12428656
+      },
+      {
+        "logical_path": "caption/caption_cache_metadata.json",
+        "sha256": "a06ccabc7cf36451148b09e4c7d84bf99b25d80f2c8092996cd2edda884a91bc",
+        "size_bytes": 1214
+      }
+    ],
+    "schema_version": 1,
+    "total_size_bytes": 1256272367
+  },
+  "phase": "phase-b6d-content-sasrec-modal-l4",
+  "remote": {
+    "checkpoint_artifacts": [
+      {
+        "locator": "MODAL_VOLUME/phase-b6d-content-sasrec-v1/epoch_001.pt",
+        "sha256": "0a2e387f1632392f8614e1c1488a8d7b2e820f33202a05dfc263d397aabacaeb",
+        "size_bytes": 26313995
+      },
+      {
+        "locator": "MODAL_VOLUME/phase-b6d-content-sasrec-v1/epoch_002.pt",
+        "sha256": "45bd080f5958747fc3ecf3b83f385d4a941ec1d76953ed56a3477d6c490227af",
+        "size_bytes": 26313995
+      },
+      {
+        "locator": "MODAL_VOLUME/phase-b6d-content-sasrec-v1/epoch_003.pt",
+        "sha256": "88dc6be5b2f10fa9a03bea4bd5d6fd1e4d95ac3c674d7ae19ec0d366156404c1",
+        "size_bytes": 26313995
+      },
+      {
+        "locator": "MODAL_VOLUME/phase-b6d-content-sasrec-v1/epoch_004.pt",
+        "sha256": "f9bdd2f97ef3e447d94985e2586eff20f886dc250c787bd28f5f0fd7771b8eeb",
+        "size_bytes": 26313995
+      },
+      {
+        "locator": "MODAL_VOLUME/phase-b6d-content-sasrec-v1/epoch_005.pt",
+        "sha256": "c555d843987d7a29bfb790bd8ba061dab1e9ab18df351b8d4e44b6f35b56fddc",
+        "size_bytes": 26313995
+      }
+    ],
+    "gpu": {
+      "name": "NVIDIA L4",
+      "peak_cuda_allocated_mb": 294.35791015625,
+      "peak_cuda_reserved_mb": 386.0
+    },
+    "input_verification": {
+      "bundle_sha256": "7a7b8b370335f61d28063c7821600063c28929e2a837473890611cc1315f56a6",
+      "files": [
+        {
+          "logical_path": "raw/big_matrix.csv",
+          "match": true,
+          "remote_sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+          "remote_size_bytes": 1083521226,
+          "sha256": "4ee1a72ff9ce4e86ef50525da9dfd7aefcefa717b37c9d570010f689c42f4ef9",
+          "size_bytes": 1083521226
+        },
+        {
+          "logical_path": "raw/item_daily_features.csv",
+          "match": true,
+          "remote_sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+          "remote_size_bytes": 85855213,
+          "sha256": "45943d63c44652b6403f3a4f78c7225e1afe7916bab17d9a674d7979245e085b",
+          "size_bytes": 85855213
+        },
+        {
+          "logical_path": "raw/kuairec_caption_category.csv",
+          "match": true,
+          "remote_sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+          "remote_size_bytes": 1964578,
+          "sha256": "08f6ec40059c5a7ecdcebf615d080d9cf8f59f9497f6d66e8d5ccabdc7cab2d9",
+          "size_bytes": 1964578
+        },
+        {
+          "logical_path": "processed/manifest.json",
+          "match": true,
+          "remote_sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+          "remote_size_bytes": 4101,
+          "sha256": "1461cc1838877efcebafeb9c6cb93847d94173d435c0221a24aab9b4e11724a5",
+          "size_bytes": 4101
+        },
+        {
+          "logical_path": "processed/events_train_validation.npz",
+          "match": true,
+          "remote_sha256": "476ebcae49140d3c307ca6cb1461847f42e849d8f5c91dd7a2661396fc2b9a02",
+          "remote_size_bytes": 72458592,
+          "sha256": "476ebcae49140d3c307ca6cb1461847f42e849d8f5c91dd7a2661396fc2b9a02",
+          "size_bytes": 72458592
+        },
+        {
+          "logical_path": "processed/catalog.npz",
+          "match": true,
+          "remote_sha256": "877c5174b54aad39a281fdf1d92309ef74f9b2a836595aded1871df6a2c909d5",
+          "remote_size_bytes": 38787,
+          "sha256": "877c5174b54aad39a281fdf1d92309ef74f9b2a836595aded1871df6a2c909d5",
+          "size_bytes": 38787
+        },
+        {
+          "logical_path": "caption/caption_embeddings.npz",
+          "match": true,
+          "remote_sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+          "remote_size_bytes": 12428656,
+          "sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+          "size_bytes": 12428656
+        },
+        {
+          "logical_path": "caption/caption_cache_metadata.json",
+          "match": true,
+          "remote_sha256": "a06ccabc7cf36451148b09e4c7d84bf99b25d80f2c8092996cd2edda884a91bc",
+          "remote_size_bytes": 1214,
+          "sha256": "a06ccabc7cf36451148b09e4c7d84bf99b25d80f2c8092996cd2edda884a91bc",
+          "size_bytes": 1214
+        }
+      ],
+      "total_size_bytes": 1256272367
+    },
+    "runner_commit": "4a74a44e4c6ef440c06a4856703213e60cf02025",
+    "runner_markdown": "# Phase B6D Content-Enhanced SASRec\n\nOne fixed, single-seed development run on reused Big validation.\nFrozen MiniLM caption vectors are projected into SASRec; training-unseen items have their ID residual disabled.\n\n| Epoch | Loss | Recall@20 | Recall@50 | Recall@100 | NDCG@20 | Coverage@100 | Data-Cold Recall@100 |\n|---:|---:|---:|---:|---:|---:|---:|---:|\n| 1 | 7.269463 | 0.024269 | 0.040917 | 0.061728 | 0.029617 | 0.206834 | 0.000000 |\n| 2 | 6.703339 | 0.026492 | 0.044724 | 0.067818 | 0.033792 | 0.233422 | 0.000000 |\n| 3 | 6.571044 | 0.026916 | 0.047806 | 0.071089 | 0.033346 | 0.246129 | 0.000000 |\n| 4 | 6.507541 | 0.030255 | 0.051792 | 0.074631 | 0.037274 | 0.262787 | 0.000000 |\n| 5 | 6.464043 | 0.029176 | 0.051527 | 0.076347 | 0.036381 | 0.266311 | 0.000000 |\n\nSelected epoch: `5`.\n\nSmall Matrix and temporal final were not accessed. These are adaptive Big-validation point estimates, not sealed-test or significance evidence.\n",
+    "runner_report": {
+      "claims": {
+        "adaptive_validation_development": true,
+        "one_configuration": true,
+        "one_seed": true,
+        "sealed_test_claim": false,
+        "significance_claim": false,
+        "small_matrix_accessed": false,
+        "temporal_final_accessed": false
+      },
+      "configuration": {
+        "claims": {
+          "adaptive_validation_development": true,
+          "one_configuration": true,
+          "one_seed": true,
+          "sealed_test_claim": false,
+          "significance_claim": false,
+          "small_matrix_accessed": false,
+          "temporal_final_accessed": false
+        },
+        "content": {
+          "cold_item_id_residual": "disabled",
+          "fusion": "warm_id_residual_plus_trainable_content_projection",
+          "source": "frozen_minilm_caption_embeddings"
+        },
+        "evaluation": {
+          "fixed_catalog_count": 9365,
+          "output_k": 100,
+          "query_count": 6818,
+          "tie_break": "ascending_item_id"
+        },
+        "implementation": {
+          "base_library": "recbole",
+          "base_model": "SASRec",
+          "version": "1.2.1"
+        },
+        "model": {
+          "attn_dropout_prob": 0.5,
+          "hidden_act": "gelu",
+          "hidden_dropout_prob": 0.5,
+          "hidden_size": 64,
+          "initializer_range": 0.02,
+          "inner_size": 256,
+          "layer_norm_eps": 1e-12,
+          "loss_type": "CE",
+          "n_heads": 2,
+          "n_layers": 2
+        },
+        "phase": "phase-b6d-content-sasrec-full",
+        "scope": {
+          "evaluate": "reused_big_validation_development",
+          "fit": "canonical_big_train",
+          "forbidden": [
+            "small_matrix",
+            "temporal_final",
+            "final_refit"
+          ]
+        },
+        "selection": {
+          "final_tie_break": "earliest_epoch",
+          "primary": "Recall@100",
+          "tie_break": "NDCG@20"
+        },
+        "training": {
+          "batch_size": 256,
+          "epochs": 5,
+          "learning_rate": 0.001,
+          "max_history": 50,
+          "seed": 20260725,
+          "weight_decay": 0.0
+        }
+      },
+      "content": {
+        "caption_cache_items": 9388,
+        "caption_cache_sha256": "b4093393c59ec00e9ab1e9cb90467404aea56164564bb379e07f4312f4e9e6fa",
+        "content_present_items": 9388,
+        "id_enabled_items": 7896,
+        "matched_event_items": 9388
+      },
+      "epochs": [
+        {
+          "checkpoint": {
+            "name": "epoch_001.pt",
+            "sha256": "0a2e387f1632392f8614e1c1488a8d7b2e820f33202a05dfc263d397aabacaeb"
+          },
+          "epoch": 1,
+          "training": {
+            "completed_examples": 573104,
+            "mean_loss": 7.269463404641585,
+            "optimizer_steps": 2239
+          },
+          "validation": {
+            "cold_user_denominators": {
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 2,
+              "data_cold_target_count": 9,
+              "query_count": 2,
+              "target_count": 26,
+              "user_count": 2
+            },
+            "cold_user_metrics": {
+              "Coverage@100": 0.010678056593699947,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.028066324913547245,
+              "Recall@100": 0.029411764705882353,
+              "Recall@20": 0.029411764705882353,
+              "Recall@50": 0.029411764705882353
+            },
+            "data_cold_is_descriptive": true,
+            "denominators": {
+              "all_query_count": 6818,
+              "all_target_count": 118565,
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 6446,
+              "data_cold_target_count": 35883,
+              "query_count": 6816,
+              "target_count": 118539,
+              "user_count": 6816
+            },
+            "metrics": {
+              "Coverage@100": 0.20683395621996797,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.02961652204919155,
+              "Recall@100": 0.06172790256079981,
+              "Recall@20": 0.024268977073348824,
+              "Recall@50": 0.04091688866540534
+            }
+          },
+          "wall_time_s": 217.39953303100003
+        },
+        {
+          "checkpoint": {
+            "name": "epoch_002.pt",
+            "sha256": "45bd080f5958747fc3ecf3b83f385d4a941ec1d76953ed56a3477d6c490227af"
+          },
+          "epoch": 2,
+          "training": {
+            "completed_examples": 573104,
+            "mean_loss": 6.703339228761459,
+            "optimizer_steps": 2239
+          },
+          "validation": {
+            "cold_user_denominators": {
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 2,
+              "data_cold_target_count": 9,
+              "query_count": 2,
+              "target_count": 26,
+              "user_count": 2
+            },
+            "cold_user_metrics": {
+              "Coverage@100": 0.010678056593699947,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.028066324913547245,
+              "Recall@100": 0.029411764705882353,
+              "Recall@20": 0.029411764705882353,
+              "Recall@50": 0.029411764705882353
+            },
+            "data_cold_is_descriptive": true,
+            "denominators": {
+              "all_query_count": 6818,
+              "all_target_count": 118565,
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 6446,
+              "data_cold_target_count": 35883,
+              "query_count": 6816,
+              "target_count": 118539,
+              "user_count": 6816
+            },
+            "metrics": {
+              "Coverage@100": 0.23342231713828082,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.03379204410334074,
+              "Recall@100": 0.06781767785689222,
+              "Recall@20": 0.026491508320112146,
+              "Recall@50": 0.04472374921683392
+            }
+          },
+          "wall_time_s": 211.95008981799998
+        },
+        {
+          "checkpoint": {
+            "name": "epoch_003.pt",
+            "sha256": "88dc6be5b2f10fa9a03bea4bd5d6fd1e4d95ac3c674d7ae19ec0d366156404c1"
+          },
+          "epoch": 3,
+          "training": {
+            "completed_examples": 573104,
+            "mean_loss": 6.571044106929292,
+            "optimizer_steps": 2239
+          },
+          "validation": {
+            "cold_user_denominators": {
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 2,
+              "data_cold_target_count": 9,
+              "query_count": 2,
+              "target_count": 26,
+              "user_count": 2
+            },
+            "cold_user_metrics": {
+              "Coverage@100": 0.010678056593699947,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.028066324913547245,
+              "Recall@100": 0.029411764705882353,
+              "Recall@20": 0.029411764705882353,
+              "Recall@50": 0.029411764705882353
+            },
+            "data_cold_is_descriptive": true,
+            "denominators": {
+              "all_query_count": 6818,
+              "all_target_count": 118565,
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 6446,
+              "data_cold_target_count": 35883,
+              "query_count": 6816,
+              "target_count": 118539,
+              "user_count": 6816
+            },
+            "metrics": {
+              "Coverage@100": 0.24612920448478376,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.03334592074143368,
+              "Recall@100": 0.0710885984108968,
+              "Recall@20": 0.02691631483300207,
+              "Recall@50": 0.047805925258854486
+            }
+          },
+          "wall_time_s": 215.03158123799994
+        },
+        {
+          "checkpoint": {
+            "name": "epoch_004.pt",
+            "sha256": "f9bdd2f97ef3e447d94985e2586eff20f886dc250c787bd28f5f0fd7771b8eeb"
+          },
+          "epoch": 4,
+          "training": {
+            "completed_examples": 573104,
+            "mean_loss": 6.507540750278561,
+            "optimizer_steps": 2239
+          },
+          "validation": {
+            "cold_user_denominators": {
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 2,
+              "data_cold_target_count": 9,
+              "query_count": 2,
+              "target_count": 26,
+              "user_count": 2
+            },
+            "cold_user_metrics": {
+              "Coverage@100": 0.010678056593699947,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.028066324913547245,
+              "Recall@100": 0.029411764705882353,
+              "Recall@20": 0.029411764705882353,
+              "Recall@50": 0.029411764705882353
+            },
+            "data_cold_is_descriptive": true,
+            "denominators": {
+              "all_query_count": 6818,
+              "all_target_count": 118565,
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 6446,
+              "data_cold_target_count": 35883,
+              "query_count": 6816,
+              "target_count": 118539,
+              "user_count": 6816
+            },
+            "metrics": {
+              "Coverage@100": 0.2627869727709557,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.03727375016358988,
+              "Recall@100": 0.07463078047931092,
+              "Recall@20": 0.03025466707333664,
+              "Recall@50": 0.051792434459540085
+            }
+          },
+          "wall_time_s": 217.58581625099998
+        },
+        {
+          "checkpoint": {
+            "name": "epoch_005.pt",
+            "sha256": "c555d843987d7a29bfb790bd8ba061dab1e9ab18df351b8d4e44b6f35b56fddc"
+          },
+          "epoch": 5,
+          "training": {
+            "completed_examples": 573104,
+            "mean_loss": 6.4640425803317285,
+            "optimizer_steps": 2239
+          },
+          "validation": {
+            "cold_user_denominators": {
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 2,
+              "data_cold_target_count": 9,
+              "query_count": 2,
+              "target_count": 26,
+              "user_count": 2
+            },
+            "cold_user_metrics": {
+              "Coverage@100": 0.010678056593699947,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.028066324913547245,
+              "Recall@100": 0.029411764705882353,
+              "Recall@20": 0.029411764705882353,
+              "Recall@50": 0.029411764705882353
+            },
+            "data_cold_is_descriptive": true,
+            "denominators": {
+              "all_query_count": 6818,
+              "all_target_count": 118565,
+              "candidate_union_count": 9365,
+              "data_cold_query_count": 6446,
+              "data_cold_target_count": 35883,
+              "query_count": 6816,
+              "target_count": 118539,
+              "user_count": 6816
+            },
+            "metrics": {
+              "Coverage@100": 0.26631073144687667,
+              "Data-Cold Recall@100": 0.0,
+              "NDCG@20": 0.03638091861805732,
+              "Recall@100": 0.07634655414759901,
+              "Recall@20": 0.02917618962221781,
+              "Recall@50": 0.05152748495721657
+            }
+          },
+          "wall_time_s": 210.86908996600005
+        }
+      ],
+      "phase": "phase-b6d-content-sasrec-full",
+      "references": {
+        "BPR": {
+          "Coverage@100": 0.33304858515750135,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.012773561140700995,
+          "Recall@100": 0.04843855379304513
+        },
+        "SASRec": {
+          "Coverage@100": 0.25285638013881473,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.0374616950131969,
+          "Recall@100": 0.07756014970881014
+        },
+        "Two-Tower": {
+          "Coverage@100": 0.5694607581420181,
+          "Data-Cold Recall@100": 0.06515057123608131,
+          "NDCG@20": 0.012112516931264626,
+          "Recall@100": 0.0720568501336648
+        }
+      },
+      "runtime": {
+        "device": "cuda:0",
+        "peak_rss_mb": 5005.34375,
+        "wall_time_s": 1164.8133378320001
+      },
+      "selected_epoch": 5,
+      "selected_metrics": {
+        "cold_user_denominators": {
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 2,
+          "data_cold_target_count": 9,
+          "query_count": 2,
+          "target_count": 26,
+          "user_count": 2
+        },
+        "cold_user_metrics": {
+          "Coverage@100": 0.010678056593699947,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.028066324913547245,
+          "Recall@100": 0.029411764705882353,
+          "Recall@20": 0.029411764705882353,
+          "Recall@50": 0.029411764705882353
+        },
+        "data_cold_is_descriptive": true,
+        "denominators": {
+          "all_query_count": 6818,
+          "all_target_count": 118565,
+          "candidate_union_count": 9365,
+          "data_cold_query_count": 6446,
+          "data_cold_target_count": 35883,
+          "query_count": 6816,
+          "target_count": 118539,
+          "user_count": 6816
+        },
+        "metrics": {
+          "Coverage@100": 0.26631073144687667,
+          "Data-Cold Recall@100": 0.0,
+          "NDCG@20": 0.03638091861805732,
+          "Recall@100": 0.07634655414759901,
+          "Recall@20": 0.02917618962221781,
+          "Recall@50": 0.05152748495721657
+        }
+      },
+      "training_examples": 573104,
+      "validation_counts": {
+        "data_cold_item_count": 1492,
+        "fixed_catalog_count": 9365,
+        "query_contract_sha256": "f25df9d235f32b114357a190f69a60e49d8993d2c4e09f975a0b361c7439f877",
+        "query_count": 6818,
+        "target_count": 118565,
+        "warm_query_count": 6816,
+        "warm_target_count": 118539
+      }
+    },
+    "runtime": {
+      "peak_rss_mb": 5005.34375,
+      "remote_total_wall_time_s": 1168.1893827869999
+    }
+  },
+  "runner_commit": "4a74a44e4c6ef440c06a4856703213e60cf02025",
+  "wrapper_commit": "0bb42b4387b33c20998fd193686cd631eebca48f"
+}
