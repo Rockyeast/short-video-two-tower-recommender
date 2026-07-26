@@ -8,6 +8,7 @@ on [KuaiRec](https://github.com/chongminggao/KuaiRec). It compares:
 - Global Popularity;
 - BPR matrix factorization;
 - a content-aware PyTorch Two-Tower;
+- RecBole SASRec for sequential-interest modeling;
 - a frozen Two-Tower + BPR weighted reciprocal-rank fusion (RRF).
 
 The project uses sparse Big Matrix interactions for fitting and model selection,
@@ -21,6 +22,9 @@ The main result is deliberately mixed:
   retrieves items unseen during training through its content path;
 - the frozen Hybrid improves Two-Tower NDCG@20 while retaining its Recall and
   coverage;
+- SASRec improves warm-item Recall and NDCG on reused Big validation, but has
+  no content cold-start path; a bounded three-route fusion is therefore
+  rejected by the frozen Data-Cold retention gate;
 - on sealed Small, **BPR is strongest overall**;
 - Two-Tower is strongest only on a descriptive slice of **88 Data-Cold
   targets**, which is too small for a significance claim;
@@ -38,10 +42,15 @@ flowchart LR
     A[Big train / validation] --> B[Popularity]
     A --> C[BPR]
     A --> D[Two-Tower]
+    A --> S[SASRec development route]
     B --> E[Exact retrieval]
     C --> E
     D --> E
     E --> F[Weighted RRF Hybrid]
+    C --> X[Bounded 3-route RRF gate]
+    D --> X
+    S --> X
+    X --> Y[Rejected: cold-start retention]
     F --> G[Frozen selection]
     G --> H[Big train + validation refit]
     H --> I[Sealed Small audit]
@@ -69,6 +78,14 @@ flowchart LR
 - temperature-scaled masked in-batch softmax;
 - content-only fallback when an item's ID embedding was never trained.
 
+**SASRec development route**
+
+- uses the native RecBole 1.2.1 SASRec implementation;
+- encodes the last 50 causal interactions with a two-layer Transformer;
+- improves warm-item ranking by modeling behavior order and recent interest;
+- uses learned item IDs only, so training-unseen videos have no content
+  representation and receive zero Data-Cold recall in this experiment.
+
 **Hybrid**
 
 - takes Two-Tower and BPR Top-500 results;
@@ -87,6 +104,11 @@ An optional, default-off LightGBM stage may reorder only the frozen Hybrid
 Top-100. On reused Big-validation development users it improved NDCG@20 while
 preserving the Top-100 set; this is not a new sealed or online-effectiveness
 claim.
+
+A later bounded development experiment added SASRec to RRF with three weights
+fixed before execution. All candidates raised overall Recall/NDCG, but all
+failed the preregistered Data-Cold retention gate. SASRec is therefore retained
+as an offline comparison rather than added to the serving route.
 
 ## Dataset and Leakage-Safe Protocol
 
@@ -154,6 +176,10 @@ All primary rows below share the same 6,816 warm-user queries, 118,539 targets,
 | BPR epoch 20 | 0.013891 | 0.030344 | 0.048439 | 0.012774 | 0.333049 | 0.000000 |
 | Two-Tower epoch 1 | 0.014870 | 0.036038 | 0.072057 | 0.012113 | 0.569461 | 0.065151 |
 | Hybrid `alpha=0.75` | 0.015643 | 0.037002 | **0.072213** | **0.015341** | **0.571169** | 0.060356 |
+| SASRec epoch 5 | 0.030657 | 0.052639 | 0.077560 | 0.037462 | 0.252856 | 0.000000 |
+| 3-route `0.60/0.25/0.15` | 0.017737 | 0.041720 | 0.082561 | 0.020006 | 0.557395 | 0.049244 |
+| 3-route `0.50/0.35/0.15` | 0.022135 | 0.049237 | **0.085315** | 0.025961 | 0.524933 | 0.032707 |
+| 3-route `0.40/0.45/0.15` | **0.031806** | **0.053105** | 0.084606 | **0.037131** | 0.467806 | 0.017436 |
 
 Observed findings:
 
@@ -166,6 +192,11 @@ Observed findings:
 - Two-Tower's first-epoch NDCG@20 is slightly below BPR.
 - the frozen Hybrid raises NDCG@20 by 26.65% relative to Two-Tower while
   preserving Recall@100 and coverage.
+- SASRec raises Recall@100 by 7.64% and NDCG@20 by 209.28% relative to
+  Two-Tower, but Coverage@100 falls by 55.60% and Data-Cold Recall@100 is zero.
+- no three-route candidate preserved at least 98% of the frozen Hybrid's
+  Recall, 90% of Coverage and 90% of Data-Cold Recall simultaneously, so none
+  was selected for the Pipeline.
 
 These are one-seed validation point estimates, not confidence intervals or
 cross-dataset guarantees.
@@ -175,6 +206,8 @@ Detailed results:
 - [BPR pilot](reports/phase_b1a/full_bpr_pilot.md)
 - [Two-Tower training](reports/phase_b2b/full_two_tower_modal_l4.md)
 - [Hybrid validation](reports/phase_b3a/hybrid_validation.md)
+- [RecBole SASRec comparison](reports/phase_b6a/sasrec_full_modal_l4.md)
+- [Bounded three-route fusion](reports/phase_b6b/three_route_hybrid.md)
 
 ## Sealed Small Audit Results
 
@@ -236,6 +269,10 @@ See the complete [FAISS scalability report](reports/phase_b4a/faiss_scalability.
 - Temporal final has not been run.
 - Big and Small metrics are single-seed point estimates without confidence
   intervals.
+- SASRec and the three-route fusion were evaluated only on the already reused
+  Big-validation development set; neither was evaluated on sealed Small.
+- SASRec's learned item-ID table improves warm sequential ranking but provides
+  no content fallback for training-unseen videos.
 - The 88-target Data-Cold slice is too small for statistical claims.
 - Synthetic 100K/1M distractors test retrieval systems, not recommendation
   quality or real catalog drift.
@@ -301,6 +338,8 @@ final remains guarded and is outside this project's reported results.
 | BPR | [Full pilot](reports/phase_b1a/full_bpr_pilot.md) |
 | Two-Tower | [Full L4 training](reports/phase_b2b/full_two_tower_modal_l4.md) |
 | Hybrid | [Validation](reports/phase_b3a/hybrid_validation.md) |
+| RecBole SASRec | [Big-validation comparison](reports/phase_b6a/sasrec_full_modal_l4.md) |
+| Three-route RRF | [Bounded negative result](reports/phase_b6b/three_route_hybrid.md) |
 | Final refit | [Report](reports/phase_b3b0/final_refit.md) |
 | Sealed Small | [Attempt 5](reports/phase_b3b/sealed_small_modal_l4.md) |
 | Retrieval scale | [Exact/FAISS benchmark](reports/phase_b4a/faiss_scalability.md) |
