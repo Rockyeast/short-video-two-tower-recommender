@@ -27,6 +27,16 @@ from .models import (
     train_bpr_sgd,
 )
 from .retrieval import ExactDotProductRetriever
+from .pipeline import (
+    BPRRetriever,
+    CandidateRetriever,
+    DynamicTwoTowerRetriever,
+    PipelineConfig,
+    PopularityRetriever,
+    RecommendationEngine,
+    RecommendationResult,
+    TwoTowerRetriever,
+)
 from .sealed_small import (
     FROZEN_OUTPUT_K,
     FROZEN_ROUTE_TOP_K,
@@ -42,6 +52,7 @@ from .sealed_identity import (
     verify_final_refit_artifacts,
     verify_frozen_small_source,
 )
+from .serving_bundle import load_serving_bundle, write_serving_bundle
 from .training import (
     BPRTrainingDataset,
     TwoTowerTrainingDataset,
@@ -57,6 +68,9 @@ __all__ = [
     "BPRTrainingDataset",
     "BPRTrainingResult",
     "ExactDotProductRetriever",
+    "BPRRetriever",
+    "CandidateRetriever",
+    "DynamicTwoTowerRetriever",
     "FROZEN_OUTPUT_K",
     "FROZEN_ROUTE_TOP_K",
     "FROZEN_SMALL_ALPHA",
@@ -66,10 +80,15 @@ __all__ = [
     "NumpyTwoTowerReference",
     "MODEL_ITEM_FEATURE_COLUMNS",
     "PopularityBaseline",
+    "PopularityRetriever",
+    "PipelineConfig",
+    "RecommendationEngine",
+    "RecommendationResult",
     "RetrievalQueries",
     "StaticItemFeatures",
     "TwoTowerTrainingDataset",
     "TwoTowerTrainingExamples",
+    "TwoTowerRetriever",
     "build_big_validation_queries",
     "build_bpr_training_dataset",
     "build_fixed_validation_catalog",
@@ -88,8 +107,10 @@ __all__ = [
     "is_quick_skip",
     "is_strong_positive",
     "load_static_item_features",
+    "load_serving_bundle",
     "resolve_kuairec_data_dir",
     "stable_random_rank",
     "train_bpr_sgd",
     "validate_model_item_feature_columns",
+    "write_serving_bundle",
 ]

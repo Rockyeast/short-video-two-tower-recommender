@@ -8,6 +8,7 @@ import json
 import resource
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +79,256 @@ BPR_REFERENCE = {
 }
 TOPK_PER_ROUTE = 500
 OUTPUT_K = 100
+
+
+@dataclass(frozen=True)
+class FrozenValidationRoutes:
+    """Frozen train-only retrieval routes and aligned scoring inputs."""
+
+    queries: Any
+    data_cold_items: np.ndarray
+    validation_counts: dict[str, Any]
+    popularity: Any
+    static: Any
+    two_tower_top500: np.ndarray
+    bpr_top500: np.ndarray
+    two_tower_user_vectors: np.ndarray
+    two_tower_catalog_vectors: np.ndarray
+    bpr_user_vectors: np.ndarray
+    bpr_catalog_vectors: np.ndarray
+    raw_sources: dict[str, Any]
+    normal_membership: dict[str, Any]
+
+
+def load_frozen_validation_routes(
+    *,
+    data_dir: Path,
+    artifact_dir: Path,
+    caption_cache_path: Path,
+    caption_metadata_path: Path,
+    two_tower_checkpoint: Path,
+    bpr_checkpoint: Path,
+) -> FrozenValidationRoutes:
+    """Build the exact frozen B3A retrieval inputs without writing a report."""
+
+    if sha256_file(two_tower_checkpoint) != TWO_TOWER_CHECKPOINT_SHA256:
+        raise RuntimeError("Frozen Two-Tower epoch 1 checkpoint SHA changed")
+    manifest, raw_sources = verify_phase_b2a_inputs(
+        data_dir=data_dir,
+        artifact_dir=artifact_dir,
+        required_raw_files=(
+            "big_matrix.csv",
+            "item_daily_features.csv",
+            "kuairec_caption_category.csv",
+        ),
+    )
+    if sha256_file(artifact_dir / "manifest.json") != (
+        PHASE1_PROCESSED_MANIFEST_SHA256
+    ):
+        raise RuntimeError("Processed manifest identity changed")
+    for name in ("events_train_validation.npz", "catalog.npz"):
+        if sha256_file(artifact_dir / name) != manifest["files"][name]:
+            raise RuntimeError(f"Processed artifact SHA mismatch: {name}")
+
+    static = load_static_item_features(data_dir)
+    normal_membership = normal_membership_record(
+        np.unique(static.normal_item_ids)
+    )
+    with np.load(artifact_dir / "events_train_validation.npz") as events, np.load(
+        artifact_dir / "catalog.npz"
+    ) as catalog:
+        event_users = events["user"].astype(np.int64, copy=True)
+        event_items = events["item"].astype(np.int64, copy=True)
+        event_times = events["timestamp"].astype(np.float64, copy=True)
+        event_strong = events["strong"].astype(bool, copy=True)
+        user_indptr = events["user_indptr"].astype(np.int64, copy=True)
+        actual_user_ids = events["user_ids"].astype(np.int64, copy=True)
+        video_ids = catalog["video_ids"].astype(np.int64, copy=True)
+        train_end = float(catalog["train_end"][0])
+    normal_position = np.isin(video_ids, static.normal_item_ids)
+    contract_queries, data_cold_items, validation_counts = (
+        build_validation_contract(
+            event_users=event_users,
+            event_items=event_items,
+            event_times=event_times,
+            event_strong=event_strong,
+            user_indptr=user_indptr,
+            actual_user_ids=actual_user_ids,
+            video_ids=video_ids,
+            normal_item_mask=normal_position,
+            train_end=train_end,
+            train_events=None,
+        )
+    )
+    verify_validation_contract(
+        queries=contract_queries,
+        counts=validation_counts,
+        expected=EXPECTED_VALIDATION["expected"],
+    )
+    canonical_train = load_canonical_train_events(
+        data_dir, train_end=train_end
+    )
+    queries = attach_train_histories(
+        contract_queries, canonical_train, max_history=50
+    )
+    popularity = _processed_popularity(
+        event_items=event_items,
+        event_times=event_times,
+        event_strong=event_strong,
+        video_ids=video_ids,
+        normal_item_mask=normal_position,
+        train_end=train_end,
+    )
+
+    checkpoint_payload = torch.load(
+        two_tower_checkpoint, map_location="cpu", weights_only=False
+    )
+    if (
+        checkpoint_payload.get("checkpoint_kind")
+        != "phase-b2b-full-epoch-v1"
+        or checkpoint_payload.get("completed_epoch") != 1
+    ):
+        raise RuntimeError("Two-Tower checkpoint is not complete epoch 1")
+    ordered_items = np.asarray(
+        checkpoint_payload["ordered_item_ids"], dtype=np.int64
+    )
+    ordered_users = np.asarray(
+        checkpoint_payload["ordered_user_ids"], dtype=np.int64
+    )
+    touched_items = np.asarray(
+        checkpoint_payload["touched_item_ids"], dtype=np.int64
+    )
+    touched_users = np.asarray(
+        checkpoint_payload["touched_user_ids"], dtype=np.int64
+    )
+    train_history_items = np.unique(
+        video_ids[event_items[event_times < train_end]]
+    )
+    expected_universe = np.union1d(
+        train_history_items, queries.catalog
+    ).astype(np.int64)
+    if not np.array_equal(ordered_items, expected_universe):
+        raise RuntimeError("Checkpoint item universe differs from validation")
+    static_for_universe = static.frame.set_index("video_id").reindex(
+        ordered_items
+    )
+    caption = load_caption_cache(
+        cache_path=caption_cache_path,
+        metadata_path=caption_metadata_path,
+        expected_item_ids=ordered_items,
+        expected_model_id=EXPECTED_CAPTION["model_id"],
+        expected_revision=EXPECTED_CAPTION["resolved_revision"],
+        expected_source_sha256=raw_sources[
+            "kuairec_caption_category.csv"
+        ]["expected_sha256"],
+        expected_cleaned_text_sha256=cleaned_text_sha256(
+            ordered_items,
+            static_for_universe["caption_text"].astype(str).tolist(),
+        ),
+    )
+    train_observed_normal = np.intersect1d(
+        train_history_items, static.normal_item_ids, assume_unique=True
+    )
+    store = prepare_item_feature_store(
+        static_frame=static.frame,
+        caption_cache=caption,
+        item_universe=ordered_items,
+        train_observed_item_ids=train_history_items,
+        train_observed_normal_item_ids=train_observed_normal,
+    )
+    if not np.array_equal(store.item_ids, ordered_items):
+        raise RuntimeError("Prepared item store differs from checkpoint mapping")
+    two_tower, loaded_payload = load_checkpoint(
+        two_tower_checkpoint,
+        device="cpu",
+        expected_identity=checkpoint_payload["identity"],
+    )
+    if not np.array_equal(
+        loaded_payload["ordered_user_ids"], ordered_users
+    ):
+        raise RuntimeError("Two-Tower ordered user mapping changed")
+    two_tower.eval()
+    item_vectors = preencode_item_universe(
+        model=two_tower,
+        store=store,
+        touched_item_ids=set(int(value) for value in touched_items),
+        device="cpu",
+        batch_size=1024,
+    )
+    catalog_positions = np.asarray(
+        [store.positions[int(item)] for item in queries.catalog],
+        dtype=np.int64,
+    )
+    catalog_vectors = item_vectors[catalog_positions].numpy()
+    user_positions = {
+        int(user): position + 1
+        for position, user in enumerate(ordered_users)
+    }
+    user_vectors = encode_query_users_from_precomputed(
+        model=two_tower,
+        store=store,
+        precomputed_item_vectors=item_vectors,
+        user_ids=queries.user_ids,
+        histories=queries.histories,
+        history_weights=queries.history_weights,
+        user_positions=user_positions,
+        touched_user_ids=set(int(value) for value in touched_users),
+        device="cpu",
+        batch_size=128,
+    ).numpy()
+    fallback = popularity.rank(queries, k=TOPK_PER_ROUTE)
+    two_tower_top500 = ExactDotProductRetriever().search(
+        user_vectors,
+        catalog_vectors,
+        item_ids=queries.catalog,
+        candidates=queries.candidates,
+        k=TOPK_PER_ROUTE,
+        warm_user_mask=queries.warm_user_mask,
+        fallback_topk=fallback,
+        score_block_size=128,
+    )
+    bpr = _load_bpr(bpr_checkpoint)
+    bpr_top500 = bpr.rank(
+        queries,
+        k=TOPK_PER_ROUTE,
+        cold_user_fallback=popularity,
+        score_block_size=128,
+    )
+    bpr_user_positions = {
+        int(user): position for position, user in enumerate(bpr.user_ids)
+    }
+    bpr_item_positions = {
+        int(item): position for position, item in enumerate(bpr.item_ids)
+    }
+    bpr_user_vectors = np.zeros(
+        (len(queries.user_ids), bpr.user_factors.shape[1]), dtype=np.float32
+    )
+    for row, user in enumerate(queries.user_ids):
+        position = bpr_user_positions.get(int(user))
+        if position is not None:
+            bpr_user_vectors[row] = bpr.user_factors[position]
+    bpr_catalog_vectors = np.zeros(
+        (len(queries.catalog), bpr.item_factors.shape[1]), dtype=np.float32
+    )
+    for row, item in enumerate(queries.catalog):
+        position = bpr_item_positions.get(int(item))
+        if position is not None:
+            bpr_catalog_vectors[row] = bpr.item_factors[position]
+    return FrozenValidationRoutes(
+        queries=queries,
+        data_cold_items=data_cold_items,
+        validation_counts=validation_counts,
+        popularity=popularity,
+        static=static,
+        two_tower_top500=two_tower_top500,
+        bpr_top500=bpr_top500,
+        two_tower_user_vectors=user_vectors,
+        two_tower_catalog_vectors=catalog_vectors,
+        bpr_user_vectors=bpr_user_vectors,
+        bpr_catalog_vectors=bpr_catalog_vectors,
+        raw_sources=raw_sources,
+        normal_membership=normal_membership,
+    )
 
 
 def _assert_clean_tree(repo_root: Path) -> str:

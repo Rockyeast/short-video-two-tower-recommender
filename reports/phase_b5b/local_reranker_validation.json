@@ -1,0 +1,219 @@
+{
+  "artifacts": {
+    "bpr_checkpoint_sha256": "2c7bad508a019fc7f9d14e83aceb96170fc4a3b04da6a7412da09c650b4fd737",
+    "code_commit_at_run": "b45fc5b00644409ef29c0a3bb2d13c46038b2069",
+    "input_tree_clean_at_start": true,
+    "model_locator": "ARTIFACT_DIR/phase_b5b/local_lightgbm_reranker.txt",
+    "two_tower_checkpoint_sha256": "76c72a3bef0321e719f1db16fa11c48b81d4c50a5cbf21d0fa54e1748b3cf42d"
+  },
+  "claim_boundary": {
+    "adaptive_validation_development": true,
+    "configuration_count": 1,
+    "final_refit_artifacts_used": false,
+    "hyperparameter_search_performed": false,
+    "sealed_test_claim": false,
+    "small_matrix_accessed": false,
+    "temporal_final_accessed": false
+  },
+  "comparison": {
+    "Coverage@100": {
+      "absolute_change": 0.0,
+      "hybrid": 0.4981313400961025,
+      "relative_change": 0.0,
+      "reranker": 0.4981313400961025
+    },
+    "Data-Cold Recall@100": {
+      "absolute_change": 0.0,
+      "hybrid": 0.05711326652250865,
+      "relative_change": 0.0,
+      "reranker": 0.05711326652250865
+    },
+    "NDCG@20": {
+      "absolute_change": 0.04344747642614917,
+      "hybrid": 0.0165352322563464,
+      "relative_change": 2.6275697705711734,
+      "reranker": 0.05998270868249557
+    },
+    "Recall@100": {
+      "absolute_change": 0.0,
+      "hybrid": 0.07028942797197764,
+      "relative_change": 0.0,
+      "reranker": 0.07028942797197764
+    },
+    "Recall@20": {
+      "absolute_change": 0.036004109574970855,
+      "hybrid": 0.01598045542027521,
+      "relative_change": 2.253008980538228,
+      "reranker": 0.05198456499524606
+    },
+    "Recall@50": {
+      "absolute_change": 0.029940502637827687,
+      "hybrid": 0.03503249327781162,
+      "relative_change": 0.8546494935543447,
+      "reranker": 0.0649729959156393
+    }
+  },
+  "configuration": {
+    "candidates": {
+      "bpr_top_k": 500,
+      "fixed_rerank_top_k": 100,
+      "hybrid_alpha": 0.75,
+      "retain_all_retrieved_positives": true,
+      "rrf_rank_constant": 60,
+      "training_negative_cap_per_query": null,
+      "two_tower_top_k": 500
+    },
+    "claims": {
+      "adaptive_validation_development": true,
+      "effectiveness_claim_scope": "reused_big_validation_development_users_only",
+      "no_hyperparameter_search": true,
+      "single_configuration": true
+    },
+    "evaluation": {
+      "baseline": "frozen_hybrid_alpha_0.75",
+      "gate": {
+        "coverage100_exactly_equal": true,
+        "ndcg20_strictly_higher": true,
+        "recall100_exactly_equal": true
+      },
+      "output_k": 100,
+      "tie_break": "ascending_item_id"
+    },
+    "features": [
+      "two_tower_score",
+      "bpr_score",
+      "two_tower_reciprocal_rank",
+      "bpr_reciprocal_rank",
+      "frozen_hybrid_rrf_score",
+      "log1p_train_popularity",
+      "history_category_affinity",
+      "data_cold_item",
+      "log1p_history_length",
+      "log1p_video_duration"
+    ],
+    "model": {
+      "deterministic": true,
+      "force_col_wise": true,
+      "implementation": "lightgbm.LGBMRanker",
+      "learning_rate": 0.05,
+      "min_child_samples": 100,
+      "n_estimators": 150,
+      "n_jobs": 8,
+      "num_leaves": 31,
+      "objective": "lambdarank",
+      "random_state": 20260724,
+      "reg_lambda": 1.0
+    },
+    "phase": "phase-b5b-recall-preserving-reranker",
+    "scope": {
+      "base_models_fit": "canonical_big_train",
+      "forbidden": [
+        "small_matrix",
+        "temporal_final",
+        "final_refit_artifacts"
+      ],
+      "reranker_evaluate": "reused_30_percent_big_validation_development_users",
+      "reranker_fit": "stable_70_percent_of_warm_big_validation_users"
+    },
+    "split": {
+      "fit_percent": 70,
+      "salt": "phase-b5a-reranker-split-v1"
+    }
+  },
+  "feature_importance_gain": {
+    "bpr_reciprocal_rank": 2782.87885928154,
+    "bpr_score": 15429.586356401443,
+    "data_cold_item": 439.78444170951843,
+    "frozen_hybrid_rrf_score": 2497.6002264022827,
+    "history_category_affinity": 2663.0288128852844,
+    "log1p_history_length": 0.0,
+    "log1p_train_popularity": 22605.629376411438,
+    "log1p_video_duration": 35095.04449534416,
+    "two_tower_reciprocal_rank": 4408.470236301422,
+    "two_tower_score": 7675.6242825984955
+  },
+  "gate": {
+    "checks": {
+      "coverage100_exactly_equal": true,
+      "ndcg20_strictly_higher": true,
+      "recall100_exactly_equal": true
+    },
+    "passed": true
+  },
+  "phase": "phase-b5b-recall-preserving-reranker",
+  "results": {
+    "Frozen Hybrid alpha=0.75": {
+      "cold_user_denominators": {
+        "query_count": 0,
+        "target_count": 0
+      },
+      "cold_user_metrics": null,
+      "data_cold_is_descriptive": true,
+      "denominators": {
+        "all_query_count": 2019,
+        "all_target_count": 36412,
+        "candidate_union_count": 9365,
+        "data_cold_query_count": 1915,
+        "data_cold_target_count": 10888,
+        "query_count": 2019,
+        "target_count": 36412,
+        "user_count": 2019
+      },
+      "metrics": {
+        "Coverage@100": 0.4981313400961025,
+        "Data-Cold Recall@100": 0.05711326652250865,
+        "NDCG@20": 0.0165352322563464,
+        "Recall@100": 0.07028942797197764,
+        "Recall@20": 0.01598045542027521,
+        "Recall@50": 0.03503249327781162
+      }
+    },
+    "Local LightGBM LambdaRank": {
+      "cold_user_denominators": {
+        "query_count": 0,
+        "target_count": 0
+      },
+      "cold_user_metrics": null,
+      "data_cold_is_descriptive": true,
+      "denominators": {
+        "all_query_count": 2019,
+        "all_target_count": 36412,
+        "candidate_union_count": 9365,
+        "data_cold_query_count": 1915,
+        "data_cold_target_count": 10888,
+        "query_count": 2019,
+        "target_count": 36412,
+        "user_count": 2019
+      },
+      "metrics": {
+        "Coverage@100": 0.4981313400961025,
+        "Data-Cold Recall@100": 0.05711326652250865,
+        "NDCG@20": 0.05998270868249557,
+        "Recall@100": 0.07028942797197764,
+        "Recall@20": 0.05198456499524606,
+        "Recall@50": 0.0649729959156393
+      }
+    }
+  },
+  "retrieval_preservation": {
+    "query_count": 2019,
+    "top100_item_sets_exactly_equal": true
+  },
+  "runtime": {
+    "peak_rss_mb": 4272.46484375,
+    "wall_time_s": 594.4202796199825
+  },
+  "split": {
+    "eval_user_count": 2019,
+    "eval_user_membership_sha256": "adaf5db436a739862b084930868537754d6fb5b66e0819b0b71009a9869bcef4",
+    "fit_user_count": 4797,
+    "fit_user_membership_sha256": "d22c302d82b0c33a4ef6fa78487799c9b4d3c6202fbad8004d885ed81f223f4e"
+  },
+  "status": "gate_passed",
+  "training": {
+    "accepted_query_count": 2154,
+    "candidate_row_count": 215400,
+    "positive_row_count": 4390,
+    "skipped_no_top100_positive": 2643
+  }
+}

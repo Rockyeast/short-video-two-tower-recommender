@@ -1,0 +1,219 @@
+{
+  "artifacts": {
+    "bpr_checkpoint_sha256": "2c7bad508a019fc7f9d14e83aceb96170fc4a3b04da6a7412da09c650b4fd737",
+    "code_commit_at_run": "32e2c829c08d726b1bc4cfb030b0c552332d9414",
+    "input_tree_clean_at_start": true,
+    "model_locator": "ARTIFACT_DIR/phase_b5a/lightgbm_reranker.txt",
+    "two_tower_checkpoint_sha256": "76c72a3bef0321e719f1db16fa11c48b81d4c50a5cbf21d0fa54e1748b3cf42d"
+  },
+  "claim_boundary": {
+    "configuration_count": 1,
+    "final_refit_artifacts_used": false,
+    "hyperparameter_search_performed": false,
+    "small_matrix_accessed": false,
+    "split_count": 1,
+    "temporal_final_accessed": false,
+    "validation_development_result": true
+  },
+  "comparison": {
+    "Coverage@100": {
+      "absolute_change": 0.02295782167645488,
+      "hybrid": 0.4981313400961025,
+      "relative_change": 0.04608788853161843,
+      "reranker": 0.5210891617725574
+    },
+    "Data-Cold Recall@100": {
+      "absolute_change": -0.006559526890517364,
+      "hybrid": 0.05711326652250865,
+      "relative_change": -0.1148511946507598,
+      "reranker": 0.050553739631991286
+    },
+    "NDCG@20": {
+      "absolute_change": -0.005549980456716522,
+      "hybrid": 0.0165352322563464,
+      "relative_change": -0.3356457514883941,
+      "reranker": 0.010985251799629878
+    },
+    "Recall@100": {
+      "absolute_change": -0.03110966576467912,
+      "hybrid": 0.07028942797197764,
+      "relative_change": -0.4425938105099055,
+      "reranker": 0.03917976220729852
+    },
+    "Recall@20": {
+      "absolute_change": -0.006113899345272549,
+      "hybrid": 0.01598045542027521,
+      "relative_change": -0.3825860518039765,
+      "reranker": 0.009866556075002662
+    },
+    "Recall@50": {
+      "absolute_change": -0.014459497600690274,
+      "hybrid": 0.03503249327781162,
+      "relative_change": -0.4127453186396078,
+      "reranker": 0.020572995677121345
+    }
+  },
+  "configuration": {
+    "candidates": {
+      "bpr_top_k": 500,
+      "retain_all_retrieved_positives": true,
+      "training_negative_cap_per_query": 256,
+      "training_negative_order": "frozen_hybrid_score_then_item_id",
+      "two_tower_top_k": 500,
+      "union": "stable_unique_union"
+    },
+    "claims": {
+      "effectiveness_claim_scope": "held_out_big_validation_users_only",
+      "no_hyperparameter_search": true,
+      "single_configuration": true,
+      "single_split": true
+    },
+    "evaluation": {
+      "baseline": "frozen_hybrid_alpha_0.75",
+      "gate": {
+        "coverage100_retention": 0.9,
+        "ndcg20_strictly_higher": true,
+        "recall100_retention": 0.98
+      },
+      "output_k": 100,
+      "tie_break": "ascending_item_id"
+    },
+    "features": [
+      "two_tower_score",
+      "bpr_score",
+      "two_tower_reciprocal_rank",
+      "bpr_reciprocal_rank",
+      "frozen_hybrid_rrf_score",
+      "log1p_train_popularity",
+      "history_category_affinity",
+      "data_cold_item",
+      "log1p_history_length",
+      "log1p_video_duration"
+    ],
+    "model": {
+      "deterministic": true,
+      "force_col_wise": true,
+      "implementation": "lightgbm.LGBMRanker",
+      "learning_rate": 0.05,
+      "min_child_samples": 100,
+      "n_estimators": 150,
+      "n_jobs": 8,
+      "num_leaves": 31,
+      "objective": "lambdarank",
+      "random_state": 20260724,
+      "reg_lambda": 1.0
+    },
+    "phase": "phase-b5a-lightgbm-reranker",
+    "scope": {
+      "base_models_fit": "canonical_big_train",
+      "forbidden": [
+        "small_matrix",
+        "temporal_final",
+        "final_refit_artifacts"
+      ],
+      "reranker_evaluate": "held_out_30_percent_of_warm_big_validation_users",
+      "reranker_fit": "stable_70_percent_of_warm_big_validation_users"
+    },
+    "split": {
+      "fit_percent": 70,
+      "salt": "phase-b5a-reranker-split-v1"
+    }
+  },
+  "feature_importance_gain": {
+    "bpr_reciprocal_rank": 6052.550279855728,
+    "bpr_score": 12883.874596357346,
+    "data_cold_item": 348.83050632476807,
+    "frozen_hybrid_rrf_score": 516844.9048435688,
+    "history_category_affinity": 5209.353120803833,
+    "log1p_history_length": 0.0,
+    "log1p_train_popularity": 32901.259793519974,
+    "log1p_video_duration": 59421.13034105301,
+    "two_tower_reciprocal_rank": 4881.753858089447,
+    "two_tower_score": 15212.66503572464
+  },
+  "gate": {
+    "checks": {
+      "coverage100_retained": true,
+      "ndcg20_strictly_higher": false,
+      "recall100_retained": false
+    },
+    "passed": false
+  },
+  "phase": "phase-b5a-lightgbm-reranker",
+  "results": {
+    "Frozen Hybrid alpha=0.75": {
+      "cold_user_denominators": {
+        "query_count": 0,
+        "target_count": 0
+      },
+      "cold_user_metrics": null,
+      "data_cold_is_descriptive": true,
+      "denominators": {
+        "all_query_count": 2019,
+        "all_target_count": 36412,
+        "candidate_union_count": 9365,
+        "data_cold_query_count": 1915,
+        "data_cold_target_count": 10888,
+        "query_count": 2019,
+        "target_count": 36412,
+        "user_count": 2019
+      },
+      "metrics": {
+        "Coverage@100": 0.4981313400961025,
+        "Data-Cold Recall@100": 0.05711326652250865,
+        "NDCG@20": 0.0165352322563464,
+        "Recall@100": 0.07028942797197764,
+        "Recall@20": 0.01598045542027521,
+        "Recall@50": 0.03503249327781162
+      }
+    },
+    "LightGBM LambdaRank": {
+      "cold_user_denominators": {
+        "query_count": 0,
+        "target_count": 0
+      },
+      "cold_user_metrics": null,
+      "data_cold_is_descriptive": true,
+      "denominators": {
+        "all_query_count": 2019,
+        "all_target_count": 36412,
+        "candidate_union_count": 9365,
+        "data_cold_query_count": 1915,
+        "data_cold_target_count": 10888,
+        "query_count": 2019,
+        "target_count": 36412,
+        "user_count": 2019
+      },
+      "metrics": {
+        "Coverage@100": 0.5210891617725574,
+        "Data-Cold Recall@100": 0.050553739631991286,
+        "NDCG@20": 0.010985251799629878,
+        "Recall@100": 0.03917976220729852,
+        "Recall@20": 0.009866556075002662,
+        "Recall@50": 0.020572995677121345
+      }
+    }
+  },
+  "runtime": {
+    "peak_rss_mb": 4258.79296875,
+    "wall_time_s": 747.4836530609755
+  },
+  "split": {
+    "eval_user_count": 2019,
+    "eval_user_membership_sha256": "adaf5db436a739862b084930868537754d6fb5b66e0819b0b71009a9869bcef4",
+    "fit_percent": 70,
+    "fit_user_count": 4797,
+    "fit_user_membership_sha256": "d22c302d82b0c33a4ef6fa78487799c9b4d3c6202fbad8004d885ed81f223f4e",
+    "salt": "phase-b5a-reranker-split-v1",
+    "user_overlap_count": 0,
+    "warm_user_count": 6816
+  },
+  "status": "gate_failed",
+  "training": {
+    "accepted_query_count": 4223,
+    "candidate_row_count": 1106943,
+    "negative_row_count": 1081088,
+    "positive_row_count": 25855,
+    "skipped_no_retrieved_positive": 574
+  }
+}
