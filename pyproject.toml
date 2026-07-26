@@ -21,6 +21,7 @@ dev = [
   "lightgbm==4.6.0",
   "pydantic==2.12.5",
   "pytest==8.4.2",
+  "scikit-learn==1.9.0",
   "uvicorn==0.35.0",
 ]
 serving = [
