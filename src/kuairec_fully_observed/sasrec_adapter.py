@@ -175,6 +175,148 @@ def build_recbole_sasrec(
     return model.to(device)
 
 
+def build_content_recbole_sasrec(
+    *,
+    num_event_items: int,
+    max_history: int,
+    model_config: dict[str, Any],
+    content_embeddings: np.ndarray,
+    id_embedding_enabled: np.ndarray,
+    device: torch.device,
+) -> torch.nn.Module:
+    """Build SASRec with a frozen content vector plus a warm-ID residual.
+
+    RecBole still supplies the Transformer, positional encoding and loss
+    contract. Only the item representation is replaced:
+
+        item = enabled ID embedding + projected frozen content embedding
+
+    An item without a train-period interaction has its ID residual disabled,
+    while its content path remains available.
+    """
+
+    from recbole.model.sequential_recommender.sasrec import SASRec
+
+    content = np.asarray(content_embeddings, dtype=np.float32)
+    enabled = np.asarray(id_embedding_enabled, dtype=bool)
+    expected_rows = int(num_event_items) + 1
+    if content.ndim != 2 or content.shape[0] != expected_rows:
+        raise ValueError("content_embeddings must include one padding row")
+    if enabled.shape != (expected_rows,):
+        raise ValueError("id_embedding_enabled must include one padding row")
+    if not np.isfinite(content).all():
+        raise ValueError("content_embeddings must be finite")
+    if np.any(content[0] != 0) or bool(enabled[0]):
+        raise ValueError("padding content and ID gate must be zero")
+
+    config = {
+        "USER_ID_FIELD": "user_id",
+        "ITEM_ID_FIELD": "item_id",
+        "LIST_SUFFIX": "_list",
+        "ITEM_LIST_LENGTH_FIELD": "item_length",
+        "NEG_PREFIX": "neg_",
+        "MAX_ITEM_LIST_LENGTH": int(max_history),
+        "device": str(device),
+        **model_config,
+    }
+
+    class ContentSASRec(SASRec):
+        def __init__(self) -> None:
+            super().__init__(
+                config, _RecBoleItemDataset(int(num_event_items) + 1)
+            )
+            self.register_buffer(
+                "frozen_content_embeddings",
+                torch.as_tensor(content, dtype=torch.float32),
+            )
+            self.register_buffer(
+                "id_embedding_enabled",
+                torch.as_tensor(enabled, dtype=torch.bool),
+            )
+            self.content_projection = torch.nn.Linear(
+                content.shape[1], self.hidden_size, bias=False
+            )
+            self._init_weights(self.content_projection)
+
+        def item_representations(
+            self, item_ids: torch.Tensor | None = None
+        ) -> torch.Tensor:
+            if item_ids is None:
+                ids = torch.arange(
+                    self.n_items,
+                    dtype=torch.long,
+                    device=self.item_embedding.weight.device,
+                )
+            else:
+                ids = item_ids
+            id_part = self.item_embedding(ids)
+            id_part = id_part * self.id_embedding_enabled[ids].unsqueeze(
+                -1
+            ).to(id_part.dtype)
+            content_part = self.content_projection(
+                self.frozen_content_embeddings[ids]
+            )
+            return id_part + content_part
+
+        def forward(
+            self, item_seq: torch.Tensor, item_seq_len: torch.Tensor
+        ) -> torch.Tensor:
+            position_ids = torch.arange(
+                item_seq.size(1), dtype=torch.long, device=item_seq.device
+            )
+            position_ids = position_ids.unsqueeze(0).expand_as(item_seq)
+            input_emb = self.item_representations(item_seq)
+            input_emb = input_emb + self.position_embedding(position_ids)
+            input_emb = self.LayerNorm(input_emb)
+            input_emb = self.dropout(input_emb)
+            trm_output = self.trm_encoder(
+                input_emb,
+                self.get_attention_mask(item_seq),
+                output_all_encoded_layers=True,
+            )
+            return self.gather_indexes(trm_output[-1], item_seq_len - 1)
+
+        def calculate_loss(self, interaction: Any) -> torch.Tensor:
+            item_seq = interaction[self.ITEM_SEQ]
+            item_seq_len = interaction[self.ITEM_SEQ_LEN]
+            seq_output = self.forward(item_seq, item_seq_len)
+            pos_items = interaction[self.POS_ITEM_ID]
+            if self.loss_type == "BPR":
+                neg_items = interaction[self.NEG_ITEM_ID]
+                pos_score = torch.sum(
+                    seq_output * self.item_representations(pos_items), dim=-1
+                )
+                neg_score = torch.sum(
+                    seq_output * self.item_representations(neg_items), dim=-1
+                )
+                return self.loss_fct(pos_score, neg_score)
+            logits = torch.matmul(
+                seq_output, self.item_representations().transpose(0, 1)
+            )
+            return self.loss_fct(logits, pos_items)
+
+        def predict(self, interaction: Any) -> torch.Tensor:
+            output = self.forward(
+                interaction[self.ITEM_SEQ],
+                interaction[self.ITEM_SEQ_LEN],
+            )
+            item_vectors = self.item_representations(
+                interaction[self.ITEM_ID]
+            )
+            return torch.mul(output, item_vectors).sum(dim=1)
+
+        def full_sort_predict(self, interaction: Any) -> torch.Tensor:
+            output = self.forward(
+                interaction[self.ITEM_SEQ],
+                interaction[self.ITEM_SEQ_LEN],
+            )
+            return torch.matmul(
+                output, self.item_representations().transpose(0, 1)
+            )
+
+    return ContentSASRec().to(device)
+
+
 def train_sasrec_epoch(
     model: torch.nn.Module,
     dataset: SASRecTrainingDataset,

@@ -9,6 +9,7 @@ import torch
 from kuairec_fully_observed.data import RetrievalQueries
 from kuairec_fully_observed.sasrec_adapter import (
     SASRecTrainingDataset,
+    build_content_recbole_sasrec,
     build_recbole_sasrec,
     build_validation_sequences,
     collate_sasrec_examples,
@@ -120,6 +121,46 @@ def test_recbole_sasrec_smoke_learns_and_ranks_candidates() -> None:
     )
     assert set(ranked[0]) == {1, 2, 3}
     assert ranked[1].tolist() == [3, 2, 1]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("recbole") is None,
+    reason="RecBole is an optional sequential dependency",
+)
+def test_content_sasrec_disables_untrained_id_but_keeps_content() -> None:
+    content = np.zeros((6, 4), dtype=np.float32)
+    content[3] = [1.0, 2.0, 3.0, 4.0]
+    enabled = np.asarray([False, True, True, False, True, True])
+    model = build_content_recbole_sasrec(
+        num_event_items=5,
+        max_history=3,
+        model_config={
+            "n_layers": 1,
+            "n_heads": 1,
+            "hidden_size": 4,
+            "inner_size": 8,
+            "hidden_dropout_prob": 0.0,
+            "attn_dropout_prob": 0.0,
+            "hidden_act": "gelu",
+            "layer_norm_eps": 1e-12,
+            "initializer_range": 0.02,
+            "loss_type": "CE",
+        },
+        content_embeddings=content,
+        id_embedding_enabled=enabled,
+        device=torch.device("cpu"),
+    )
+    with torch.no_grad():
+        model.content_projection.weight.copy_(torch.eye(4))
+        model.item_embedding.weight[3].fill_(100.0)
+
+    cold = model.item_representations(torch.as_tensor([3]))
+    np.testing.assert_allclose(
+        cold.detach().numpy(), [[1.0, 2.0, 3.0, 4.0]]
+    )
+    cold.sum().backward()
+    assert torch.count_nonzero(model.item_embedding.weight.grad[3]) == 0
+    assert torch.count_nonzero(model.content_projection.weight.grad) > 0
 
 
 def test_collation_right_pads_with_zero() -> None:
